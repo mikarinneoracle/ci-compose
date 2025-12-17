@@ -166,6 +166,31 @@ function loadPortsAndVolumesForCIName(ciName) {
     }
 }
 
+// Load ports and volumes for details edit mode (returns data, doesn't modify global variables)
+function loadPortsAndVolumesForCINameForDetails(ciName) {
+    if (!ciName) {
+        return { ports: [], volumes: [] };
+    }
+    
+    const key = `ciPortsVolumes_${ciName}`;
+    const saved = localStorage.getItem(key);
+    
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            return {
+                ports: data.ports || [],
+                volumes: data.volumes || []
+            };
+        } catch (error) {
+            console.error('Error loading ports and volumes:', error);
+            return { ports: [], volumes: [] };
+        }
+    } else {
+        return { ports: [], volumes: [] };
+    }
+}
+
 async function showConfigModal() {
     loadConfiguration();
     
@@ -790,7 +815,7 @@ function displayContainerInstanceDetails(instance) {
     
     // Parse freeformTags to extract volumes and port mappings
     const freeformTags = instance.freeformTags || {};
-    const volumesList = [];
+    let volumesList = [];
     const portMap = {}; // containerName -> port
     
     // Parse volumes tag (format: "name1:path1,name2:path2")
@@ -820,7 +845,9 @@ function displayContainerInstanceDetails(instance) {
     html += '<div class="d-flex justify-content-between align-items-center mb-3">';
     html += '<h5 class="border-bottom pb-2 mb-0">Containers</h5>';
     // CRUD buttons only visible in edit mode (controlled by isInEditMode flag)
-    html += `<button class="btn btn-info btn-sm" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
+    html += `<button class="btn btn-info btn-sm me-2" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
+    html += `<button class="btn btn-secondary btn-sm me-2" id="detailsAddSidecarBtn" onclick="showAddSidecarModalToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Sidecar</button>`;
+    html += `<button class="btn btn-warning btn-sm" id="detailsAddPortBtn" onclick="addPortToDetails('${instance.id}')" style="display: none;"><i class="bi bi-plus"></i> Add Port</button>`;
     html += '</div>';
     
     // Store containers data for CRUD operations (convert to editable format)
@@ -908,16 +935,49 @@ function displayContainerInstanceDetails(instance) {
     // Store containers data globally for this instance
     window[`detailsContainers_${containerInstanceId}`] = detailsContainersData;
     
-    // Store ports data for this instance (extract unique ports from portMap)
-    const uniquePorts = new Set();
+    // Store ports data for this instance
+    // First try to load from localStorage (if CI was edited before)
+    let detailsPortsData = [];
+    const config = getConfiguration();
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        detailsPortsData = existingData.ports || [];
+    }
+    
+    // Merge with ports from portMap (tags) - add any missing ports
+    const portsFromTags = new Set();
     Object.entries(portMap).forEach(([containerName, portNum]) => {
-        uniquePorts.add(parseInt(portNum));
+        portsFromTags.add(parseInt(portNum));
     });
-    const detailsPortsData = Array.from(uniquePorts).map(portNum => ({
-        port: portNum,
-        name: null // We don't have port names in the tags, just numbers
-    }));
+    
+    // Add any ports from tags that aren't already in detailsPortsData
+    portsFromTags.forEach(portNum => {
+        const exists = detailsPortsData.some(p => p.port === portNum);
+        if (!exists) {
+            detailsPortsData.push({
+                port: portNum,
+                name: null // We don't have port names in the tags, just numbers
+            });
+        }
+    });
+    
     window[`detailsPorts_${containerInstanceId}`] = detailsPortsData;
+    
+    // Also load volumes from localStorage if available
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        if (existingData.volumes && existingData.volumes.length > 0) {
+            // Use volumes from localStorage (they may have been edited previously)
+            const mergedVolumes = existingData.volumes.map((v, idx) => ({
+                index: idx,
+                name: v.name || '',
+                path: v.path || ''
+            }));
+            window[`detailsVolumes_${containerInstanceId}`] = mergedVolumes;
+            // Update the volumes list used in display
+            volumesList = existingData.volumes.map(v => ({ name: v.name || '', path: v.path || '' }));
+        }
+    }
     
     html += '</div>';
     html += '</div>';
@@ -932,13 +992,13 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     
     // Store volumes data for CRUD operations
+    // volumesList was potentially updated above from localStorage
     const detailsVolumesData = volumesList.map((volume, idx) => ({
         index: idx,
         name: volume.name || '',
         path: volume.path || ''
     }));
     
-    // Store in data attribute for access by CRUD functions
     window[`detailsVolumes_${containerInstanceId}`] = detailsVolumesData;
     
     if (detailsVolumesData.length > 0) {
@@ -1014,8 +1074,17 @@ function enterEditMode(instanceId) {
     const addContainerBtn = document.getElementById('detailsAddContainerBtn');
     if (addContainerBtn) addContainerBtn.style.display = 'inline-block';
     
+    const addSidecarBtn = document.getElementById('detailsAddSidecarBtn');
+    if (addSidecarBtn) addSidecarBtn.style.display = 'inline-block';
+    
+    const addPortBtn = document.getElementById('detailsAddPortBtn');
+    if (addPortBtn) addPortBtn.style.display = 'inline-block';
+    
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'inline-block';
+    
+    // Initialize and display volumes table
+    refreshDetailsVolumesTable(instanceId);
     
     // Show Edit/Delete buttons for containers
     const containers = window[`detailsContainers_${instanceId}`] || [];
@@ -1062,15 +1131,43 @@ function addContainerToDetails() {
     document.getElementById('editContainerForm').reset();
     document.getElementById('editContainerIndex').value = '';
     
-    // Use details ports data for dropdown
-    const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+    // Load ports from localStorage for this CI name and update port dropdown
+    let detailsPorts = [];
+    const config = getConfiguration();
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        detailsPorts = (existingData.ports || []).map(p => ({
+            port: typeof p.port === 'number' ? p.port : parseInt(p.port),
+            name: p.name || null
+        }));
+    }
+    
+    // Also include ports from detailsPorts (from tags)
+    const portsFromTags = window[`detailsPorts_${instanceId}`] || [];
+    // Merge: add ports from tags that don't already exist in localStorage ports
+    portsFromTags.forEach(tagPort => {
+        const tagPortNum = typeof tagPort.port === 'number' ? tagPort.port : parseInt(tagPort.port);
+        const exists = detailsPorts.some(p => {
+            const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+            return pPortNum === tagPortNum;
+        });
+        if (!exists) {
+            detailsPorts.push({
+                port: tagPortNum,
+                name: tagPort.name || null
+            });
+        }
+    });
+    
+    // Update port dropdown
     const portSelect = document.getElementById('editContainerPort');
     if (portSelect) {
         portSelect.innerHTML = '<option value="">No port</option>';
         detailsPorts.forEach((port, index) => {
             const option = document.createElement('option');
             option.value = index.toString();
-            const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+            const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+            const displayText = port.name ? `${port.name} (${portNum})` : `Port ${portNum}`;
             option.textContent = displayText;
             portSelect.appendChild(option);
         });
@@ -1123,29 +1220,58 @@ function editContainerInDetails(index, instanceId) {
     document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '1';
     document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '1';
     
-        // Use details ports data for dropdown
-        const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
-        const portSelect = document.getElementById('editContainerPort');
-        if (portSelect) {
-            portSelect.innerHTML = '<option value="">No port</option>';
-            let selectedPortIndex = '';
-            detailsPorts.forEach((port, idx) => {
-                const option = document.createElement('option');
-                option.value = idx.toString();
-                const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
-                option.textContent = displayText;
-                if (container.port && port.port === parseInt(container.port)) {
-                    option.selected = true;
-                    selectedPortIndex = idx.toString();
-                }
-                portSelect.appendChild(option);
+    // Load ports from localStorage for this CI name and update port dropdown
+    let detailsPorts = [];
+    const config = getConfiguration();
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        detailsPorts = (existingData.ports || []).map(p => ({
+            port: typeof p.port === 'number' ? p.port : parseInt(p.port),
+            name: p.name || null
+        }));
+    }
+    
+    // Also include ports from detailsPorts (from tags)
+    const portsFromTags = window[`detailsPorts_${instanceId}`] || [];
+    // Merge: add ports from tags that don't already exist in localStorage ports
+    portsFromTags.forEach(tagPort => {
+        const tagPortNum = typeof tagPort.port === 'number' ? tagPort.port : parseInt(tagPort.port);
+        const exists = detailsPorts.some(p => {
+            const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+            return pPortNum === tagPortNum;
+        });
+        if (!exists) {
+            detailsPorts.push({
+                port: tagPortNum,
+                name: tagPort.name || null
             });
-            // Set the selected value
-            if (selectedPortIndex) {
-                portSelect.value = selectedPortIndex;
-                container.portIndex = parseInt(selectedPortIndex);
-            }
         }
+    });
+    
+    // Update port dropdown
+    const portSelect = document.getElementById('editContainerPort');
+    if (portSelect) {
+        portSelect.innerHTML = '<option value="">No port</option>';
+        let selectedPortIndex = '';
+        detailsPorts.forEach((port, idx) => {
+            const option = document.createElement('option');
+            option.value = idx.toString();
+            const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+            const displayText = port.name ? `${port.name} (${portNum})` : `Port ${portNum}`;
+            option.textContent = displayText;
+            const containerPortNum = container.port ? parseInt(container.port) : null;
+            if (containerPortNum && portNum === containerPortNum) {
+                option.selected = true;
+                selectedPortIndex = idx.toString();
+            }
+            portSelect.appendChild(option);
+        });
+        // Set the selected value
+        if (selectedPortIndex) {
+            portSelect.value = selectedPortIndex;
+            container.portIndex = parseInt(selectedPortIndex);
+        }
+    }
     
     // Convert env vars object to comma-separated KEY=VALUE string
     if (container.environmentVariables && typeof container.environmentVariables === 'object') {
@@ -1324,8 +1450,43 @@ function deleteVolumeInDetails(index, instanceId) {
     volumes.splice(index, 1);
     window[`detailsVolumes_${instanceId}`] = volumes;
     
+    // Save volumes to localStorage using CI name from configuration
+    const config = getConfiguration();
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
+        portsData = existingData.ports || [];
+        savePortsAndVolumesForCIName(config.projectName);
+    }
+    
     // Refresh the display by re-rendering the volumes table
     refreshDetailsVolumesTable(instanceId);
+}
+
+// Port CRUD functions for Details Modal
+function addPortToDetails(instanceId) {
+    // Set edit mode flag to prevent auto-refresh
+    isInEditMode = true;
+    
+    // Set editing context
+    editingDetailsContext = { type: 'details', instanceId: instanceId, itemType: 'port' };
+    
+    // Reset edit form
+    document.getElementById('editPortForm').reset();
+    document.getElementById('editPortIndex').value = '';
+    
+    const modalElement = document.getElementById('editPortModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'port') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
+    modal.show();
 }
 
 function refreshDetailsVolumesTable(instanceId) {
@@ -1512,6 +1673,12 @@ function exitEditMode() {
     // Hide Add buttons
     const addContainerBtn = document.getElementById('detailsAddContainerBtn');
     if (addContainerBtn) addContainerBtn.style.display = 'none';
+    
+    const addSidecarBtn = document.getElementById('detailsAddSidecarBtn');
+    if (addSidecarBtn) addSidecarBtn.style.display = 'none';
+    
+    const addPortBtn = document.getElementById('detailsAddPortBtn');
+    if (addPortBtn) addPortBtn.style.display = 'none';
     
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'none';
@@ -2055,6 +2222,12 @@ function addSidecar(index) {
     const sidecar = sidecars[index];
     if (!sidecar) return;
     
+    // Check if we're in details edit mode
+    if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'sidecar') {
+        addSidecarToDetails(index);
+        return;
+    }
+    
     // Convert envs array to object format
     const environmentVariables = {};
     if (Array.isArray(sidecar.envs)) {
@@ -2080,6 +2253,61 @@ function addSidecar(index) {
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
     modal.hide();
+}
+
+// Show sidecar modal for details edit mode
+function showAddSidecarModalToDetails() {
+    // Store context that we're adding to details
+    editingDetailsContext = { type: 'details', instanceId: currentEditingInstance?.id, itemType: 'sidecar' };
+    const modal = new bootstrap.Modal(document.getElementById('addSidecarModal'));
+    modal.show();
+}
+
+// Add sidecar to details (edit mode)
+function addSidecarToDetails(index) {
+    const sidecar = sidecars[index];
+    if (!sidecar) return;
+    
+    if (!editingDetailsContext || editingDetailsContext.type !== 'details' || editingDetailsContext.itemType !== 'sidecar') {
+        // Fallback to normal creation flow
+        addSidecar(index);
+        return;
+    }
+    
+    const instanceId = editingDetailsContext.instanceId;
+    if (!instanceId) return;
+    
+    // Convert envs array to object format
+    const environmentVariables = {};
+    if (Array.isArray(sidecar.envs)) {
+        sidecar.envs.forEach(env => {
+            if (env.var && env.value !== undefined) {
+                environmentVariables[env.var] = env.value;
+            }
+        });
+    }
+    
+    const container = {
+        displayName: sidecar.name,
+        imageUrl: sidecar.image,
+        resourceConfig: {
+            memoryInGBs: parseFloat(sidecar.mem),
+            vcpus: parseFloat(sidecar.ocpu)
+        },
+        environmentVariables: environmentVariables,
+        lifecycleState: 'ACTIVE'
+    };
+    
+    const containers = window[`detailsContainers_${instanceId}`] || [];
+    containers.push(container);
+    window[`detailsContainers_${instanceId}`] = containers;
+    
+    refreshDetailsContainersTable(instanceId);
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
+    modal.hide();
+    
+    editingDetailsContext = null;
 }
 
 // Volume CRUD functions
@@ -2164,8 +2392,18 @@ function saveEditedVolume() {
         
         window[`detailsVolumes_${instanceId}`] = volumes;
         refreshDetailsVolumesTable(instanceId);
+        
+        // Save volumes to localStorage using CI name from configuration
+        const config = getConfiguration();
+        if (config.projectName) {
+            const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+            volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
+            portsData = existingData.ports || [];
+            savePortsAndVolumesForCIName(config.projectName);
+        }
+        
         editingDetailsContext = null;
-        isInEditMode = false;
+        // Don't set isInEditMode = false here, we're still in edit mode
     } else {
         // Normal creation flow
         if (index === '' || index === null) {
@@ -2256,17 +2494,53 @@ function saveEditedPort() {
         port.name = name;
     }
     
-    if (index === '' || index === null) {
-        portsData.push(port);
+    // Check if we're editing in details modal context
+    if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'port') {
+        const instanceId = editingDetailsContext.instanceId;
+        const ports = window[`detailsPorts_${instanceId}`] || [];
+        
+        if (index === '' || index === null) {
+            ports.push(port);
+        } else {
+            ports[parseInt(index)] = port;
+        }
+        
+        window[`detailsPorts_${instanceId}`] = ports;
+        
+        // Save ports to localStorage using CI name from configuration
+        const config = getConfiguration();
+        if (config.projectName) {
+            const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+            volumesData = existingData.volumes || [];
+            // Ensure ports have proper structure for localStorage
+            portsData = ports.map(p => {
+                const portObj = {
+                    port: typeof p.port === 'number' ? p.port : parseInt(p.port)
+                };
+                if (p.name && p.name.trim()) {
+                    portObj.name = p.name.trim();
+                }
+                return portObj;
+            });
+            savePortsAndVolumesForCIName(config.projectName);
+        }
+        
+        editingDetailsContext = null;
+        // Don't set isInEditMode = false here, we're still in edit mode
     } else {
-        portsData[parseInt(index)] = port;
+        // Normal creation flow
+        if (index === '' || index === null) {
+            portsData.push(port);
+        } else {
+            portsData[parseInt(index)] = port;
+        }
+        
+        // Save ports to localStorage for current CI name
+        const config = getConfiguration();
+        savePortsAndVolumesForCIName(config.projectName);
+        
+        updatePortsTable();
     }
-    
-    // Save ports to localStorage for current CI name
-    const config = getConfiguration();
-    savePortsAndVolumesForCIName(config.projectName);
-    
-    updatePortsTable();
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editPortModal'));
     modal.hide();
