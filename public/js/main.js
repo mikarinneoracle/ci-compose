@@ -122,7 +122,8 @@ function getConfiguration() {
 let containersData = []; // Array to store container data for creation
 let volumesData = []; // Array to store volume data for creation
 let portsData = []; // Array to store port data for creation
-let containerInstancesCount = 0; // Count of container instances found on front page
+let containerInstancesCount = 0; // Count of container instances found on front page (total including deleted)
+let showDeletedCIs = false; // Toggle state for showing/hiding deleted CIs
 
 // Save ports and volumes for a specific CI name (projectName)
 function savePortsAndVolumesForCIName(ciName) {
@@ -441,8 +442,10 @@ async function loadContainerInstances() {
             });
             
             if (matchingInstances.length > 0) {
-                // Store the count of matching instances for default CI name
-                containerInstancesCount = matchingInstances.length;
+                // Store the count of unique display names (including deleted) for default CI name
+                // Multiple CIs with the same name count as 1
+                const uniqueNames = new Set(matchingInstances.map(instance => instance.displayName || ''));
+                containerInstancesCount = uniqueNames.size;
                 
                 // Sort by creation date (most recent first) and limit to last 10
                 const sortedInstances = matchingInstances
@@ -487,7 +490,7 @@ async function loadContainerInstances() {
                     // Update previous states
                     previousInstanceStates = currentStates;
                     
-                    // Display instances with VNIC details (this function will fetch VNIC info)
+                    // Display instances with VNIC details (this function will fetch VNIC info and apply filter)
                     await displayContainerInstancesWithDetails(instancesWithDetails);
                 }
                 // If no state change, silently skip the update to avoid unnecessary DOM manipulation
@@ -514,14 +517,27 @@ async function loadContainerInstances() {
 async function displayContainerInstancesWithDetails(instances) {
     const contentDiv = document.getElementById('containerInstancesContent');
     
-    if (instances.length === 0) {
-        contentDiv.innerHTML = '<p class="text-muted">No container instances to display.</p>';
+    // Filter out DELETED instances if toggle is off
+    let instancesToDisplay = instances;
+    if (!showDeletedCIs) {
+        instancesToDisplay = instances.filter(instance => {
+            const state = instance.lifecycleState || 'UNKNOWN';
+            return state !== 'DELETED';
+        });
+    }
+    
+    if (instancesToDisplay.length === 0) {
+        if (instances.length > 0 && !showDeletedCIs) {
+            contentDiv.innerHTML = '<p class="text-muted">No container instances to display (deleted instances are hidden).</p>';
+        } else {
+            contentDiv.innerHTML = '<p class="text-muted">No container instances to display.</p>';
+        }
         return;
     }
     
     // Fetch VNIC details for each instance to get IP addresses
     const instancesWithDetails = await Promise.all(
-        instances.map(async (instance) => {
+        instancesToDisplay.map(async (instance) => {
             // If we have a VNIC ID, fetch VNIC details to get private IP and public IP
             if (instance.vnics && instance.vnics.length > 0 && instance.vnics[0].vnicId) {
                 try {
@@ -549,7 +565,11 @@ async function displayContainerInstancesWithDetails(instances) {
         })
     );
     
-    let html = `<p class="text-muted mb-3">Showing last ${instancesWithDetails.length} container instance(s)</p>`;
+    let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${instances.length} container instance(s)`;
+    if (!showDeletedCIs && instances.length > instancesWithDetails.length) {
+        html += ` (${instances.length - instancesWithDetails.length} deleted hidden)`;
+    }
+    html += `</p>`;
     html += '<div class="table-responsive"><table class="table table-hover">';
     html += '<thead><tr><th>Display Name</th><th>State</th><th>Private IP</th><th>Public IP</th><th>Created</th></tr></thead>';
     html += '<tbody>';
@@ -575,6 +595,18 @@ async function displayContainerInstancesWithDetails(instances) {
     
     html += '</tbody></table></div>';
     contentDiv.innerHTML = html;
+}
+
+// Toggle function to show/hide deleted container instances
+function toggleDeletedCIs() {
+    const toggle = document.getElementById('showDeletedToggle');
+    if (toggle) {
+        showDeletedCIs = toggle.checked;
+        // Force reload by clearing previous states to trigger display update
+        previousInstanceStates.clear();
+        // Reload container instances to apply the filter
+        loadContainerInstances();
+    }
 }
 
 async function showContainerInstanceDetails(instanceId) {
