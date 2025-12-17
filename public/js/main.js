@@ -518,7 +518,7 @@ async function displayContainerInstancesWithDetails(instances) {
         
         html += '<tr style="cursor: pointer;" onclick="showContainerInstanceDetails(\'' + instance.id + '\')">';
         html += `<td><strong>${instance.displayName || 'N/A'}</strong></td>`;
-        html += `<td><span class="badge bg-${getStateColor(instance.lifecycleState)}">${instance.lifecycleState || 'N/A'}</span></td>`;
+        html += `<td>${getStateBadgeHtml(instance.lifecycleState)}</td>`;
         html += `<td>${privateIp}</td>`;
         html += `<td>${publicIp}</td>`;
         html += `<td>${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</td>`;
@@ -695,7 +695,7 @@ function displayContainerInstanceDetails(instance) {
     html += '<h5 class="border-bottom pb-2 mb-3">Basic Information</h5>';
     html += '<dl class="row">';
     html += `<dt class="col-sm-4">Display Name:</dt><dd class="col-sm-8"><strong>${instance.displayName || 'N/A'}</strong></dd>`;
-    html += `<dt class="col-sm-4">State:</dt><dd class="col-sm-8"><span class="badge bg-${getStateColor(instance.lifecycleState)}">${instance.lifecycleState || 'N/A'}</span></dd>`;
+    html += `<dt class="col-sm-4">State:</dt><dd class="col-sm-8">${getStateBadgeHtml(instance.lifecycleState)}</dd>`;
     html += `<dt class="col-sm-4">Compartment:</dt><dd class="col-sm-8">${instance.compartmentName || 'N/A'}</dd>`;
     html += `<dt class="col-sm-4">Created:</dt><dd class="col-sm-8">${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</dd>`;
     html += `<dt class="col-sm-4">Updated:</dt><dd class="col-sm-8">${instance.timeUpdated ? new Date(instance.timeUpdated).toLocaleString() : 'N/A'}</dd>`;
@@ -734,7 +734,7 @@ function displayContainerInstanceDetails(instance) {
             html += '<tr>';
             
             // State - first column
-            html += `<td><span class="badge bg-${getStateColor(container.lifecycleState)}">${container.lifecycleState || 'N/A'}</span></td>`;
+            html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
             
             // Container name with text-primary class
             html += `<td><strong class="text-primary">${container.displayName || container.name || 'N/A'}</strong></td>`;
@@ -841,6 +841,22 @@ function getStateColor(state) {
     if (stateLower === 'failed' || stateLower === 'deleting') return 'danger';
     if (stateLower === 'deleted') return 'secondary';
     return 'secondary';
+}
+
+// Check if state should show a spinner
+function shouldShowSpinner(state) {
+    if (!state) return false;
+    const stateLower = state.toLowerCase();
+    return stateLower === 'creating' || stateLower === 'updating' || stateLower === 'deleting';
+}
+
+// Get state badge HTML with optional spinner
+function getStateBadgeHtml(state) {
+    const stateLower = (state || '').toLowerCase();
+    const spinnerHtml = shouldShowSpinner(state) 
+        ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>'
+        : '';
+    return `<span class="badge bg-${getStateColor(state)}">${spinnerHtml}${state || 'N/A'}</span>`;
 }
 
 
