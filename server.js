@@ -646,6 +646,30 @@ app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
   }
 });
 
+// Container Instances - Delete Container Instance
+app.delete('/api/oci/container-instances/:instanceId', async (req, res) => {
+  try {
+    const instanceId = req.params.instanceId;
+
+    const deleteContainerInstanceRequest = {
+      containerInstanceId: instanceId
+    };
+
+    const response = await containerInstancesClient.deleteContainerInstance(deleteContainerInstanceRequest);
+    
+    res.json({
+      success: true,
+      message: 'Container instance deletion initiated'
+    });
+  } catch (error) {
+    console.error('Error deleting container instance:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Container Instances - Get Container Details
 app.get('/api/oci/containers/:containerId', async (req, res) => {
   try {

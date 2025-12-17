@@ -553,13 +553,15 @@ async function showContainerInstanceDetails(instanceId) {
             modalElement.removeAttribute('data-refresh-interval-id');
         }
         currentModalInstanceId = null;
+        exitEditMode(); // Exit edit mode and reset flags when modal closes
+        editingDetailsContext = null;
     }, { once: true });
     
     // Set up interval to refresh modal content every 5 seconds while modal is open
     const modalRefreshInterval = setInterval(async () => {
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
-        // Only refresh if modal is still open and viewing the same instance
-        if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId) {
+        // Only refresh if modal is still open, viewing the same instance, and not in edit mode
+        if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
             await refreshContainerInstanceModal(instanceId);
         } else {
             // Modal closed, clear interval
@@ -693,8 +695,25 @@ async function refreshContainerInstanceModal(instanceId) {
     }
 }
 
+// Store original instance data for edit operations
+let currentEditingInstance = null;
+// Track if we're in edit mode to prevent auto-refresh
+let isInEditMode = false;
+
 function displayContainerInstanceDetails(instance) {
     const detailsDiv = document.getElementById('containerInstanceDetails');
+    
+    // Store the original instance data for later use in save operation
+    currentEditingInstance = {
+        id: instance.id,
+        displayName: instance.displayName,
+        compartmentId: instance.compartmentId,
+        subnetId: instance.subnetId,
+        shape: instance.shape,
+        shapeConfig: instance.shapeConfig,
+        containerRestartPolicy: instance.containerRestartPolicy || 'NEVER',
+        lifecycleState: instance.lifecycleState
+    };
     
     let html = '<div class="row">';
     
@@ -775,73 +794,84 @@ function displayContainerInstanceDetails(instance) {
     // Containers Information
     html += '<div class="row">';
     html += '<div class="col-12 mb-4">';
-    html += '<h5 class="border-bottom pb-2 mb-3">Containers</h5>';
+    html += '<div class="d-flex justify-content-between align-items-center mb-3">';
+    html += '<h5 class="border-bottom pb-2 mb-0">Containers</h5>';
+    // CRUD buttons only visible in edit mode (controlled by isInEditMode flag)
+    html += `<button class="btn btn-info btn-sm" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
+    html += '</div>';
     
-    if (instance.containers && instance.containers.length > 0) {
-        html += '<div class="table-responsive"><table class="table table-sm">';
-        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Environment Variables</th></tr></thead>';
-        html += '<tbody>';
+    // Store containers data for CRUD operations (convert to editable format)
+    const detailsContainersData = (instance.containers || []).map((container, idx) => {
+        const containerName = container.displayName || container.name || 'N/A';
+        const resourceConfig = container.resourceConfig || {};
+        const memory = resourceConfig.memoryInGBs || resourceConfig.memoryLimitInGBs || 1;
+        const vcpus = resourceConfig.vcpus || resourceConfig.vcpusLimit || 1;
         
-        instance.containers.forEach(container => {
-            console.log('Processing container in display:', container);
+        const portNum = portMap[containerName] || null;
+        return {
+            index: idx,
+            displayName: containerName,
+            imageUrl: container.imageUrl || container.image || container.imageName || 'N/A',
+            resourceConfig: {
+                memoryInGBs: memory,
+                vcpus: vcpus
+            },
+            environmentVariables: container.environmentVariables || {},
+            arguments: container.arguments || [],
+            command: container.command || [],
+            lifecycleState: container.lifecycleState,
+            port: portNum ? portNum.toString() : null,
+            portIndex: null // Will be set when editing if port matches a port in detailsPortsData
+        };
+    });
+    
+    // Store in data attribute for access by CRUD functions
+    const containerInstanceId = instance.id;
+    
+    if (detailsContainersData.length > 0) {
+        html += '<div class="table-responsive"><table class="table table-sm">';
+        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Environment Variables</th><th>Actions</th></tr></thead>';
+        html += '<tbody id="detailsContainersTableBody">';
+        
+        detailsContainersData.forEach((container, idx) => {
+            const containerName = container.displayName;
             html += '<tr>';
             
             // State - first column
             html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
             
             // Container name with text-primary class
-            const containerName = container.displayName || container.name || 'N/A';
             html += `<td><strong class="text-primary">${containerName}</strong></td>`;
             
-            // Port - look up in portMap by container name
-            const port = portMap[containerName] || '-';
-            html += `<td>${port}</td>`;
+            // Port
+            html += `<td>${container.port || '-'}</td>`;
             
-            // Image URL - check multiple possible field names
-            const imageName = container.imageUrl || container.image || container.imageName || 'N/A';
-            console.log('Container imageName:', imageName, 'from container:', container);
-            html += `<td><code>${imageName}</code></td>`;
+            // Image URL
+            html += `<td><code>${container.imageUrl}</code></td>`;
             
-            // Resource Config - check both old and new field names
-            const resourceConfig = container.resourceConfig || {};
-            console.log('Container resourceConfig:', resourceConfig);
+            // Resource Config
             html += `<td>`;
-            // Memory: try memoryInGBs first (standard), then memoryLimitInGBs
-            const memory = resourceConfig.memoryInGBs || resourceConfig.memoryLimitInGBs;
-            html += `Memory: ${memory ? memory + ' GB' : 'N/A'}<br>`;
-            // VCPUs: try vcpus first (standard), then vcpusLimit
-            const vcpus = resourceConfig.vcpus || resourceConfig.vcpusLimit;
-            html += `VCPUs: ${vcpus || 'N/A'}`;
+            html += `Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>`;
+            html += `VCPUs: ${container.resourceConfig.vcpus || 'N/A'}`;
             html += `</td>`;
             
-            // Environment Variables - handle both array and object formats
+            // Environment Variables
             const envVars = container.environmentVariables;
-            console.log('Container environmentVariables:', envVars);
-            if (envVars) {
-                if (Array.isArray(envVars) && envVars.length > 0) {
-                    // Array format: [{name: 'KEY', value: 'VALUE'}, ...]
-                    html += '<td><small>';
-                    envVars.forEach(env => {
-                        const key = env.name || env.key || '';
-                        const value = env.value || '';
-                        if (key) {
-                            html += `${key}=${value}<br>`;
-                        }
-                    });
-                    html += '</small></td>';
-                } else if (typeof envVars === 'object' && Object.keys(envVars).length > 0) {
-                    // Object format: {KEY: 'VALUE', ...}
-                    html += '<td><small>';
-                    Object.entries(envVars).forEach(([key, value]) => {
-                        html += `${key}=${value}<br>`;
-                    });
-                    html += '</small></td>';
-                } else {
-                    html += '<td class="text-muted">None</td>';
-                }
+            if (envVars && typeof envVars === 'object' && Object.keys(envVars).length > 0) {
+                html += '<td><small>';
+                Object.entries(envVars).forEach(([key, value]) => {
+                    html += `${key}=${value}<br>`;
+                });
+                html += '</small></td>';
             } else {
                 html += '<td class="text-muted">None</td>';
             }
+            
+            // Actions column - only show CRUD buttons in edit mode
+            html += `<td id="containerActions_${idx}" style="display: none;">`;
+            html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
+            html += `</td>`;
             
             html += '</tr>';
         });
@@ -849,33 +879,605 @@ function displayContainerInstanceDetails(instance) {
         html += '</tbody></table></div>';
     } else {
         html += '<p class="text-muted">No containers found.</p>';
+        html += '<tbody id="detailsContainersTableBody"></tbody>';
     }
+    
+    // Store containers data globally for this instance
+    window[`detailsContainers_${containerInstanceId}`] = detailsContainersData;
+    
+    // Store ports data for this instance (extract unique ports from portMap)
+    const uniquePorts = new Set();
+    Object.entries(portMap).forEach(([containerName, portNum]) => {
+        uniquePorts.add(parseInt(portNum));
+    });
+    const detailsPortsData = Array.from(uniquePorts).map(portNum => ({
+        port: portNum,
+        name: null // We don't have port names in the tags, just numbers
+    }));
+    window[`detailsPorts_${containerInstanceId}`] = detailsPortsData;
     
     html += '</div>';
     html += '</div>';
     
     // Volumes Information
-    if (volumesList.length > 0) {
-        html += '<div class="row mt-3">';
-        html += '<div class="col-12 mb-4">';
-        html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
+    html += '<div class="row mt-3">';
+    html += '<div class="col-12 mb-4">';
+    html += '<div class="d-flex justify-content-between align-items-center mb-3">';
+    html += '<h5 class="border-bottom pb-2 mb-0">Volumes</h5>';
+    // CRUD buttons only visible in edit mode
+    html += `<button class="btn btn-success btn-sm" id="detailsAddVolumeBtn" onclick="addVolumeToDetails('${containerInstanceId}')" style="display: none;"><i class="bi bi-plus"></i> Add Volume</button>`;
+    html += '</div>';
+    
+    // Store volumes data for CRUD operations
+    const detailsVolumesData = volumesList.map((volume, idx) => ({
+        index: idx,
+        name: volume.name || '',
+        path: volume.path || ''
+    }));
+    
+    // Store in data attribute for access by CRUD functions
+    window[`detailsVolumes_${containerInstanceId}`] = detailsVolumesData;
+    
+    if (detailsVolumesData.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
-        html += '<thead class="table-light"><tr><th>Name</th><th>Path</th></tr></thead>';
-        html += '<tbody>';
+        html += '<thead class="table-light"><tr><th>Name</th><th>Path</th><th>Actions</th></tr></thead>';
+        html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '">';
         
-        volumesList.forEach(volume => {
+        detailsVolumesData.forEach((volume, idx) => {
             html += '<tr>';
             html += `<td>${volume.name || '-'}</td>`;
             html += `<td><code>${volume.path || 'N/A'}</code></td>`;
+            // Actions column - only show CRUD buttons in edit mode
+            html += `<td id="volumeActions_${idx}" style="display: none;">`;
+            html += `<button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
+            html += `</td>`;
             html += '</tr>';
         });
         
         html += '</tbody></table></div>';
-        html += '</div>';
-        html += '</div>';
+    } else {
+        html += '<p class="text-muted">No volumes found.</p>';
+        html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '"></tbody>';
     }
     
+    html += '</div>';
+    html += '</div>';
+    
+    // Edit and Save Changes buttons
+    const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const editDisabledAttr = canEdit ? '' : 'disabled';
+    html += '<div class="row mt-4">';
+    html += '<div class="col-12 text-end">';
+    html += `<button class="btn btn-secondary btn-lg me-2" id="detailsEditBtn" onclick="enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
+    html += '<i class="bi bi-pencil"></i> Edit';
+    html += '</button>';
+    html += `<button class="btn btn-primary btn-lg" id="detailsSaveBtn" onclick="saveCIChanges('${containerInstanceId}')" style="display: none;">`;
+    html += '<i class="bi bi-save"></i> Save Changes (Delete & Recreate)';
+    html += '</button>';
+    html += '</div>';
+    html += '</div>';
+    
     detailsDiv.innerHTML = html;
+}
+
+// CRUD functions for Containers in Details Modal
+let editingDetailsContext = null; // Store { type: 'details', instanceId: '...' } when editing in details modal
+
+// Enter edit mode - show CRUD buttons
+function enterEditMode(instanceId) {
+    isInEditMode = true;
+    
+    // Show Add buttons
+    const addContainerBtn = document.getElementById('detailsAddContainerBtn');
+    if (addContainerBtn) addContainerBtn.style.display = 'inline-block';
+    
+    const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
+    if (addVolumeBtn) addVolumeBtn.style.display = 'inline-block';
+    
+    // Show Edit/Delete buttons for containers
+    const containers = window[`detailsContainers_${instanceId}`] || [];
+    containers.forEach((container, idx) => {
+        const actionsCell = document.getElementById(`containerActions_${idx}`);
+        if (actionsCell) actionsCell.style.display = 'table-cell';
+    });
+    
+    // Show Edit/Delete buttons for volumes
+    const volumes = window[`detailsVolumes_${instanceId}`] || [];
+    volumes.forEach((volume, idx) => {
+        const actionsCell = document.getElementById(`volumeActions_${idx}`);
+        if (actionsCell) actionsCell.style.display = 'table-cell';
+    });
+    
+    // Show Save button, hide Edit button
+    const editBtn = document.getElementById('detailsEditBtn');
+    if (editBtn) editBtn.style.display = 'none';
+    
+    const saveBtn = document.getElementById('detailsSaveBtn');
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+}
+
+function addContainerToDetails() {
+    // Set editing context
+    const instanceId = currentEditingInstance?.id;
+    if (!instanceId) return;
+    
+    editingDetailsContext = { type: 'details', instanceId: instanceId };
+    
+    // Reset edit form
+    document.getElementById('editContainerForm').reset();
+    document.getElementById('editContainerIndex').value = '';
+    
+    // Use details ports data for dropdown
+    const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+    const portSelect = document.getElementById('editContainerPort');
+    if (portSelect) {
+        portSelect.innerHTML = '<option value="">No port</option>';
+        detailsPorts.forEach((port, index) => {
+            const option = document.createElement('option');
+            option.value = index.toString();
+            const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+            option.textContent = displayText;
+            portSelect.appendChild(option);
+        });
+    }
+    
+    // Reset tabs to first tab
+    const envTab = document.getElementById('env-tab');
+    const envPane = document.getElementById('env-pane');
+    if (envTab) envTab.classList.add('active');
+    if (envPane) envPane.classList.add('show', 'active');
+    
+    const argsTab = document.getElementById('args-tab');
+    const cmdTab = document.getElementById('cmd-tab');
+    const argsPane = document.getElementById('args-pane');
+    const cmdPane = document.getElementById('cmd-pane');
+    if (argsTab) argsTab.classList.remove('active');
+    if (cmdTab) cmdTab.classList.remove('active');
+    if (argsPane) argsPane.classList.remove('show', 'active');
+    if (cmdPane) cmdPane.classList.remove('show', 'active');
+    
+    const modalElement = document.getElementById('editContainerModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
+    modal.show();
+}
+
+function editContainerInDetails(index, instanceId) {
+    const containers = window[`detailsContainers_${instanceId}`] || [];
+    const container = containers[index];
+    if (!container) return;
+    
+    // Set edit mode flag to prevent auto-refresh
+    isInEditMode = true;
+    
+    // Set editing context
+    editingDetailsContext = { type: 'details', instanceId: instanceId, index: index };
+    
+    // Populate edit form with container data
+    document.getElementById('editContainerIndex').value = index;
+    document.getElementById('editContainerName').value = container.displayName || '';
+    document.getElementById('editContainerImage').value = container.imageUrl || '';
+    document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '1';
+    document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '1';
+    
+        // Use details ports data for dropdown
+        const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+        const portSelect = document.getElementById('editContainerPort');
+        if (portSelect) {
+            portSelect.innerHTML = '<option value="">No port</option>';
+            let selectedPortIndex = '';
+            detailsPorts.forEach((port, idx) => {
+                const option = document.createElement('option');
+                option.value = idx.toString();
+                const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+                option.textContent = displayText;
+                if (container.port && port.port === parseInt(container.port)) {
+                    option.selected = true;
+                    selectedPortIndex = idx.toString();
+                }
+                portSelect.appendChild(option);
+            });
+            // Set the selected value
+            if (selectedPortIndex) {
+                portSelect.value = selectedPortIndex;
+                container.portIndex = parseInt(selectedPortIndex);
+            }
+        }
+    
+    // Convert env vars object to comma-separated KEY=VALUE string
+    if (container.environmentVariables && typeof container.environmentVariables === 'object') {
+        const envArray = Object.entries(container.environmentVariables).map(([key, value]) => `${key}=${value}`);
+        document.getElementById('editContainerEnvVars').value = envArray.join(', ');
+    } else {
+        document.getElementById('editContainerEnvVars').value = '';
+    }
+    
+    // Convert args array to comma-separated string
+    if (Array.isArray(container.arguments) && container.arguments.length > 0) {
+        document.getElementById('editContainerArgs').value = container.arguments.join(', ');
+    } else {
+        document.getElementById('editContainerArgs').value = '';
+    }
+    
+    // Convert command array to comma-separated string
+    if (Array.isArray(container.command) && container.command.length > 0) {
+        document.getElementById('editContainerCmd').value = container.command.join(', ');
+    } else {
+        document.getElementById('editContainerCmd').value = '';
+    }
+    
+    // Reset tabs to first tab
+    const envTab = document.getElementById('env-tab');
+    const envPane = document.getElementById('env-pane');
+    if (envTab) envTab.classList.add('active');
+    if (envPane) envPane.classList.add('show', 'active');
+    
+    const argsTab = document.getElementById('args-tab');
+    const cmdTab = document.getElementById('cmd-tab');
+    const argsPane = document.getElementById('args-pane');
+    const cmdPane = document.getElementById('cmd-pane');
+    if (argsTab) argsTab.classList.remove('active');
+    if (cmdTab) cmdTab.classList.remove('active');
+    if (argsPane) argsPane.classList.remove('show', 'active');
+    if (cmdPane) cmdPane.classList.remove('show', 'active');
+    
+    const modalElement = document.getElementById('editContainerModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
+    modal.show();
+}
+
+function deleteContainerInDetails(index, instanceId) {
+    const containers = window[`detailsContainers_${instanceId}`] || [];
+    const container = containers[index];
+    if (!container) return;
+    
+    if (confirm(`Delete container "${container.displayName}"? The changes will be saved when you click "Save Changes".`)) {
+        // Remove from local array and refresh display
+        containers.splice(index, 1);
+        window[`detailsContainers_${instanceId}`] = containers;
+        
+        // Refresh the display by re-rendering the containers table
+        refreshDetailsContainersTable(instanceId);
+    }
+}
+
+function refreshDetailsContainersTable(instanceId) {
+    const tbody = document.getElementById('detailsContainersTableBody');
+    if (!tbody) return;
+    
+    const containers = window[`detailsContainers_${instanceId}`] || [];
+    
+    // Get instance state from currentEditingInstance
+    const instanceCanEdit = currentEditingInstance && currentEditingInstance.id === instanceId
+        ? (currentEditingInstance.lifecycleState !== 'UPDATING' && currentEditingInstance.lifecycleState !== 'CREATING' && currentEditingInstance.lifecycleState !== 'DELETING')
+        : true; // Default to true if we can't determine state
+    
+    if (containers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No containers</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = containers.map((container, idx) => {
+        const containerName = container.displayName;
+        let html = '<tr>';
+        
+        html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
+        html += `<td><strong class="text-primary">${containerName}</strong></td>`;
+        html += `<td>${container.port || '-'}</td>`;
+        html += `<td><code>${container.imageUrl}</code></td>`;
+        html += `<td>Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>VCPUs: ${container.resourceConfig.vcpus || 'N/A'}</td>`;
+        
+        const envVars = container.environmentVariables;
+        if (envVars && typeof envVars === 'object' && Object.keys(envVars).length > 0) {
+            html += '<td><small>';
+            Object.entries(envVars).forEach(([key, value]) => {
+                html += `${key}=${value}<br>`;
+            });
+            html += '</small></td>';
+        } else {
+            html += '<td class="text-muted">None</td>';
+        }
+        
+        // Actions column - visibility controlled by edit mode
+        const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
+        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay};">`;
+        html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
+        html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
+        html += `</td>`;
+        html += '</tr>';
+        return html;
+    }).join('');
+}
+
+// CRUD functions for Volumes in Details Modal
+function addVolumeToDetails(instanceId) {
+    // Set edit mode flag to prevent auto-refresh
+    isInEditMode = true;
+    
+    // Set editing context
+    editingDetailsContext = { type: 'details', instanceId: instanceId, itemType: 'volume' };
+    
+    // Reset edit form
+    document.getElementById('editVolumeForm').reset();
+    document.getElementById('editVolumeIndex').value = '';
+    
+    const modalElement = document.getElementById('editVolumeModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'volume') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
+    modal.show();
+}
+
+function editVolumeInDetails(index, instanceId) {
+    const volumes = window[`detailsVolumes_${instanceId}`] || [];
+    const volume = volumes[index];
+    if (!volume) return;
+    
+    // Set edit mode flag to prevent auto-refresh
+    isInEditMode = true;
+    
+    // Set editing context
+    editingDetailsContext = { type: 'details', instanceId: instanceId, index: index, itemType: 'volume' };
+    
+    // Populate edit form
+    document.getElementById('editVolumeIndex').value = index;
+    document.getElementById('editVolumeName').value = volume.name || '';
+    document.getElementById('editVolumePath').value = volume.path || '';
+    
+    const modalElement = document.getElementById('editVolumeModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'volume') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
+    modal.show();
+}
+
+function deleteVolumeInDetails(index, instanceId) {
+    const volumes = window[`detailsVolumes_${instanceId}`] || [];
+    const volume = volumes[index];
+    if (!volume) return;
+    
+    if (confirm(`Delete volume "${volume.name || volume.path}"? The changes will be saved when you click "Save Changes".`)) {
+        // Remove from local array and refresh display
+        volumes.splice(index, 1);
+        window[`detailsVolumes_${instanceId}`] = volumes;
+        
+        // Refresh the display by re-rendering the volumes table
+        refreshDetailsVolumesTable(instanceId);
+    }
+}
+
+function refreshDetailsVolumesTable(instanceId) {
+    const tbody = document.getElementById(`detailsVolumesTableBody_${instanceId}`);
+    if (!tbody) return;
+    
+    const volumes = window[`detailsVolumes_${instanceId}`] || [];
+    
+    // Get instance state from currentEditingInstance
+    const canEditVolumesRefresh = currentEditingInstance && currentEditingInstance.id === instanceId 
+        ? (currentEditingInstance.lifecycleState !== 'UPDATING' && currentEditingInstance.lifecycleState !== 'CREATING' && currentEditingInstance.lifecycleState !== 'DELETING')
+        : true; // Default to true if we can't determine state
+    
+    if (volumes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No volumes</td></tr>';
+        return;
+    }
+    
+    // Actions column visibility controlled by edit mode
+    const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
+    tbody.innerHTML = volumes.map((volume, idx) => {
+        return `
+            <tr>
+                <td>${volume.name || '-'}</td>
+                <td><code>${volume.path || 'N/A'}</code></td>
+                <td id="volumeActions_${idx}" style="display: ${actionsDisplay};">
+                    <button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${instanceId}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${instanceId}')">Delete</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Save CI changes by deleting old CI and creating new one with same name
+async function saveCIChanges(instanceId) {
+    if (!currentEditingInstance || currentEditingInstance.id !== instanceId) {
+        alert('Error: Instance data not available');
+        return;
+    }
+    
+    if (!confirm(`This will delete the current container instance "${currentEditingInstance.displayName}" and create a new one with the same name using the updated configuration. Continue?`)) {
+        return;
+    }
+    
+    try {
+        // Get updated containers and volumes
+        const containers = window[`detailsContainers_${instanceId}`] || [];
+        const volumes = window[`detailsVolumes_${instanceId}`] || [];
+        const ports = window[`detailsPorts_${instanceId}`] || [];
+        
+        if (containers.length === 0) {
+            alert('Error: At least one container is required');
+            return;
+        }
+        
+        // Build containers payload (similar to confirmCreateContainerInstance)
+        const cleanedContainers = containers.map(container => {
+            const cleaned = {
+                displayName: container.displayName,
+                imageUrl: container.imageUrl,
+                resourceConfig: {
+                    memoryInGBs: parseFloat(container.resourceConfig?.memoryInGBs) || 1,
+                    vcpus: parseFloat(container.resourceConfig?.vcpus) || 1
+                }
+            };
+            
+            if (container.environmentVariables && typeof container.environmentVariables === 'object' && Object.keys(container.environmentVariables).length > 0) {
+                cleaned.environmentVariables = container.environmentVariables;
+            }
+            if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+                cleaned.arguments = container.arguments;
+            }
+            if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+                cleaned.command = container.command;
+            }
+            
+            return cleaned;
+        });
+        
+        // Build volumes payload
+        const volumesPayload = volumes.map((v, idx) => ({
+            name: v.name || `volume-${idx}`,
+            volumeType: 'EMPTYDIR',
+            backingStore: 'EPHEMERAL_STORAGE'
+        }));
+        
+        // Map volumes to containers
+        if (volumesPayload.length > 0) {
+            cleanedContainers.forEach(container => {
+                container.volumeMounts = volumesPayload.map((v, idx) => ({
+                    mountPath: volumes[idx].path,
+                    volumeName: v.name
+                }));
+            });
+        }
+        
+        // Build freeformTags (volumes and ports)
+        const baseFreeformTags = {};
+        if (volumes.length > 0) {
+            const volumesTag = volumes.map((v, idx) => {
+                const volumeName = v.name || `volume-${idx}`;
+                return `${volumeName}:${v.path}`;
+            }).join(',');
+            baseFreeformTags.volumes = volumesTag;
+        }
+        
+        // Add port mappings - use port string directly if available
+        containers.forEach((container) => {
+            if (container.port) {
+                baseFreeformTags[container.displayName] = container.port;
+            }
+        });
+        
+        const payload = {
+            displayName: currentEditingInstance.displayName,
+            compartmentId: currentEditingInstance.compartmentId,
+            shape: currentEditingInstance.shape,
+            shapeConfig: currentEditingInstance.shapeConfig || { memoryInGBs: 16, ocpus: 1 },
+            subnetId: currentEditingInstance.subnetId,
+            containers: cleanedContainers,
+            containerRestartPolicy: currentEditingInstance.containerRestartPolicy || 'NEVER',
+            volumes: volumesPayload,
+            freeformTags: Object.keys(baseFreeformTags).length > 0 ? baseFreeformTags : undefined
+        };
+        
+        // Step 1: Delete the old container instance
+        showNotification('Deleting old container instance...', 'info');
+        const deleteResponse = await fetch(`/api/oci/container-instances/${instanceId}`, {
+            method: 'DELETE'
+        });
+        
+        const deleteData = await deleteResponse.json();
+        if (!deleteData.success) {
+            throw new Error(deleteData.error || 'Failed to delete container instance');
+        }
+        
+        // Wait a bit for deletion to process
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Step 2: Create new container instance with same name
+        showNotification('Creating new container instance...', 'info');
+        const createResponse = await fetch('/api/oci/container-instances', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const createData = await createResponse.json();
+        
+        if (createData.success) {
+            // Close the details modal
+            const detailsModal = bootstrap.Modal.getInstance(document.getElementById('containerInstanceModal'));
+            if (detailsModal) {
+                detailsModal.hide();
+            }
+            
+            showNotification('Container instance updated successfully!', 'success');
+            
+            // Exit edit mode
+            exitEditMode();
+            
+            // Reload container instances
+            await loadContainerInstances();
+        } else {
+            throw new Error(createData.error || 'Failed to create new container instance');
+        }
+    } catch (error) {
+        console.error('Error saving CI changes:', error);
+        showNotification(`Error saving changes: ${error.message}`, 'error');
+        // Exit edit mode on error too
+        exitEditMode();
+    }
+}
+
+// Exit edit mode - hide CRUD buttons
+function exitEditMode() {
+    isInEditMode = false;
+    
+    // Hide Add buttons
+    const addContainerBtn = document.getElementById('detailsAddContainerBtn');
+    if (addContainerBtn) addContainerBtn.style.display = 'none';
+    
+    const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
+    if (addVolumeBtn) addVolumeBtn.style.display = 'none';
+    
+    // Hide all container action buttons
+    const containerActions = document.querySelectorAll('[id^="containerActions_"]');
+    containerActions.forEach(el => el.style.display = 'none');
+    
+    // Hide all volume action buttons
+    const volumeActions = document.querySelectorAll('[id^="volumeActions_"]');
+    volumeActions.forEach(el => el.style.display = 'none');
+    
+    // Show Edit button, hide Save button
+    const editBtn = document.getElementById('detailsEditBtn');
+    if (editBtn) editBtn.style.display = 'inline-block';
+    
+    const saveBtn = document.getElementById('detailsSaveBtn');
+    if (saveBtn) saveBtn.style.display = 'none';
 }
 
 function getStateColor(state) {
@@ -1068,7 +1670,17 @@ function addContainerToTable() {
     cmdPane.classList.remove('show', 'active');
     
     // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('editContainerModal'));
+    const modalElement = document.getElementById('editContainerModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
     modal.show();
 }
 
@@ -1128,7 +1740,17 @@ function editContainer(index) {
     argsPane.classList.remove('show', 'active');
     cmdPane.classList.remove('show', 'active');
     
-    const modal = new bootstrap.Modal(document.getElementById('editContainerModal'));
+    const modalElement = document.getElementById('editContainerModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
     modal.show();
 }
 
@@ -1194,15 +1816,54 @@ function saveEditedContainer() {
         container.command = cmdStr.split(',').map(cmd => cmd.trim()).filter(cmd => cmd.length > 0);
     }
     
-    if (index === '' || index === null) {
-        // Add new container
-        containersData.push(container);
+    // Check if we're editing in details modal context
+    if (editingDetailsContext && editingDetailsContext.type === 'details') {
+        const instanceId = editingDetailsContext.instanceId;
+        const containers = window[`detailsContainers_${instanceId}`] || [];
+        
+        // Add port info from details ports - use portIndex if set, otherwise keep existing port
+        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            if (detailsPorts[container.portIndex]) {
+                container.port = detailsPorts[container.portIndex].port.toString();
+            } else {
+                // If portIndex doesn't match, clear port
+                container.port = null;
+            }
+        } else {
+            // If no portIndex selected, clear port
+            container.port = null;
+        }
+        
+        // Preserve lifecycleState
+        if (index !== '' && index !== null && containers[parseInt(index)]) {
+            container.lifecycleState = containers[parseInt(index)].lifecycleState;
+        }
+        
+        if (index === '' || index === null) {
+            // Add new container
+            containers.push(container);
+        } else {
+            // Update existing container
+            containers[parseInt(index)] = container;
+        }
+        
+        window[`detailsContainers_${instanceId}`] = containers;
+        refreshDetailsContainersTable(instanceId);
+        editingDetailsContext = null;
+        isInEditMode = false;
     } else {
-        // Update existing container
-        containersData[parseInt(index)] = container;
+        // Normal creation flow
+        if (index === '' || index === null) {
+            // Add new container
+            containersData.push(container);
+        } else {
+            // Update existing container
+            containersData[parseInt(index)] = container;
+        }
+        
+        updateContainersTable();
     }
-    
-    updateContainersTable();
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editContainerModal'));
     modal.hide();
@@ -1288,7 +1949,17 @@ function addVolumeToTable() {
     document.getElementById('editVolumeForm').reset();
     document.getElementById('editVolumeIndex').value = '';
     
-    const modal = new bootstrap.Modal(document.getElementById('editVolumeModal'));
+    const modalElement = document.getElementById('editVolumeModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'volume') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
     modal.show();
 }
 
@@ -1299,7 +1970,17 @@ function editVolume(index) {
     document.getElementById('editVolumeName').value = volume.name || '';
     document.getElementById('editVolumePath').value = volume.path || '';
     
-    const modal = new bootstrap.Modal(document.getElementById('editVolumeModal'));
+    const modalElement = document.getElementById('editVolumeModal');
+    const modal = new bootstrap.Modal(modalElement);
+    
+    // Reset edit mode when modal is closed without saving
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'volume') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+    
     modal.show();
 }
 
@@ -1332,17 +2013,35 @@ function saveEditedVolume() {
         volume.name = name;
     }
     
-    if (index === '' || index === null) {
-        volumesData.push(volume);
+    // Check if we're editing in details modal context
+    if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'volume') {
+        const instanceId = editingDetailsContext.instanceId;
+        const volumes = window[`detailsVolumes_${instanceId}`] || [];
+        
+        if (index === '' || index === null) {
+            volumes.push(volume);
+        } else {
+            volumes[parseInt(index)] = volume;
+        }
+        
+        window[`detailsVolumes_${instanceId}`] = volumes;
+        refreshDetailsVolumesTable(instanceId);
+        editingDetailsContext = null;
+        isInEditMode = false;
     } else {
-        volumesData[parseInt(index)] = volume;
+        // Normal creation flow
+        if (index === '' || index === null) {
+            volumesData.push(volume);
+        } else {
+            volumesData[parseInt(index)] = volume;
+        }
+        
+        // Save volumes to localStorage for current CI name
+        const config = getConfiguration();
+        savePortsAndVolumesForCIName(config.projectName);
+        
+        updateVolumesTable();
     }
-    
-    // Save volumes to localStorage for current CI name
-    const config = getConfiguration();
-    savePortsAndVolumesForCIName(config.projectName);
-    
-    updateVolumesTable();
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editVolumeModal'));
     modal.hide();
