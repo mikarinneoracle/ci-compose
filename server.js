@@ -249,6 +249,27 @@ app.get('/api/oci/compartments', async (req, res) => {
   }
 });
 
+// Get compartment details by compartment ID
+app.get('/api/oci/compartments/:compartmentId', async (req, res) => {
+  try {
+    const compartmentId = req.params.compartmentId;
+    
+    const getCompartmentRequest = {
+      compartmentId: compartmentId
+    };
+    
+    const response = await identityClient.getCompartment(getCompartmentRequest);
+    
+    res.json({
+      success: true,
+      data: response.compartment
+    });
+  } catch (error) {
+    console.error('Error getting compartment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/data', (req, res) => {
   res.json({
     message: 'Hello from the backend!',
@@ -380,6 +401,54 @@ app.get('/api/oci/container-instances', async (req, res) => {
   }
 });
 
+// Container Instances - Get Container Instance Details
+app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
+  try {
+    const instanceId = req.params.instanceId;
+
+    const getContainerInstanceRequest = {
+      containerInstanceId: instanceId
+    };
+
+    const response = await containerInstancesClient.getContainerInstance(getContainerInstanceRequest);
+    console.log('Container instance response:', JSON.stringify(response.containerInstance, null, 2));
+    console.log('Containers in response:', response.containerInstance.containers);
+    if (response.containerInstance.containers && response.containerInstance.containers.length > 0) {
+      console.log('First container keys:', Object.keys(response.containerInstance.containers[0]));
+      console.log('First container:', JSON.stringify(response.containerInstance.containers[0], null, 2));
+    }
+    res.json({
+      success: true,
+      data: response.containerInstance
+    });
+  } catch (error) {
+    console.error('Error getting container instance details:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Container Instances - Get Container Details
+app.get('/api/oci/containers/:containerId', async (req, res) => {
+  try {
+    const containerId = req.params.containerId;
+
+    const getContainerRequest = {
+      containerId: containerId
+    };
+
+    const response = await containerInstancesClient.getContainer(getContainerRequest);
+    console.log('Container details response:', JSON.stringify(response, null, 2));
+    console.log('Container object:', response.container);
+    res.json({
+      success: true,
+      data: response.container
+    });
+  } catch (error) {
+    console.error('Error getting container details:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Networking Service - List VCNs
 app.get('/api/oci/networking/vcns', async (req, res) => {
   try {
@@ -408,6 +477,19 @@ app.get('/api/oci/networking/subnets', async (req, res) => {
   try {
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     const vcnId = req.query.vcnId;
+    const subnetId = req.query.subnetId;
+    
+    // If subnetId is provided, get specific subnet details
+    if (subnetId) {
+      const getSubnetRequest = {
+        subnetId: subnetId
+      };
+      const response = await virtualNetworkClient.getSubnet(getSubnetRequest);
+      return res.json({
+        success: true,
+        data: response.subnet
+      });
+    }
     
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -471,6 +553,28 @@ app.get('/api/oci/networking/vcns/:vcnId', async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting VCN:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Networking Service - Get VNIC Details
+app.get('/api/oci/networking/vnics/:vnicId', async (req, res) => {
+  try {
+    const vnicId = req.params.vnicId;
+    
+    const getVnicRequest = {
+      vnicId: vnicId
+    };
+
+    const response = await virtualNetworkClient.getVnic(getVnicRequest);
+    // Return the full response structure including vnic property
+    res.json({
+      success: true,
+      vnic: response.vnic,
+      data: response.vnic // Also include as data for backward compatibility
+    });
+  } catch (error) {
+    console.error('Error getting VNIC:', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -39,45 +39,384 @@
     <!-- Main Content -->
     <div class="container my-5">
         <div class="row">
-            <div class="col-md-8 mx-auto">
+            <div class="col-md-10 mx-auto">
+                <!-- Project Name Display -->
+                <div class="mb-4">
+                    <h1 id="projectNameDisplay" class="display-5">Project Name</h1>
+                </div>
+
+                <!-- Container Instances Card -->
                 <div class="card shadow">
-                    <div class="card-header bg-primary text-white">
-                        <h2 class="mb-0">Welcome</h2>
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h3 class="mb-0">Container Instances</h3>
+                        <button class="btn btn-light btn-sm" onclick="showCreateContainerInstanceModal()">
+                            + Create Container Instance
+                        </button>
                     </div>
                     <div class="card-body">
-                        <h4 class="card-title">Node.js Backend with Plain JavaScript Frontend</h4>
-                        <p class="card-text">This is a starter project with Bootstrap styling and Node.js/Express backend.</p>
-                        
-                        <!-- API Status -->
-                        <div class="alert alert-info" role="alert" id="statusAlert">
-                            Checking server status...
+                        <div id="containerInstancesContent">
+                            <p class="text-muted">Loading container instances...</p>
+                        </div>
+                    </div>
+                </div>
+
+                        <!-- Container Instance Details Modal -->
+                        <div class="modal fade" id="containerInstanceModal" tabindex="-1">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title">Container Instance Details</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body" id="containerInstanceDetails">
+                                        <p class="text-muted">Loading details...</p>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Action Buttons -->
-                        <div class="mb-4">
-                            <button class="btn btn-primary me-2" onclick="fetchData()">Fetch Data from API</button>
-                            <button class="btn btn-success" onclick="showForm()">Send Data to API</button>
+                        <!-- Create Container Instance Modal -->
+                        <div class="modal fade" id="createContainerInstanceModal" tabindex="-1">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title">Create Container Instance</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="createContainerInstanceForm">
+                                            <!-- Basic Information -->
+                                            <div class="mb-4">
+                                                <h5 class="border-bottom pb-2 mb-3">Basic Information</h5>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="ciName" class="form-label">Name <span class="text-danger">*</span></label>
+                                                        <input type="text" class="form-control" id="ciName" required placeholder="my-container-instance">
+                                                        <small class="form-text text-muted">Display name for the container instance</small>
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="ciShape" class="form-label">Shape <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="ciShape" required onchange="updateShapeInfo()">
+                                                            <option value="">Select a shape...</option>
+                                                            <option value="CI.Standard.E2.Flex">CI.Standard.E2.Flex (1 OCPU, 8 GB memory)</option>
+                                                            <option value="CI.Standard.E3.Flex">CI.Standard.E3.Flex (2 OCPUs, 16 GB memory)</option>
+                                                            <option value="CI.Standard.E4.Flex" selected>CI.Standard.E4.Flex (4 OCPUs, 32 GB memory)</option>
+                                                            <option value="CI.Standard.E5.Flex">CI.Standard.E5.Flex (8 OCPUs, 64 GB memory)</option>
+                                                        </select>
+                                                        <small class="form-text text-muted" id="shapeInfo">Select a shape to see max resources</small>
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label">Compartment</label>
+                                                        <input type="text" class="form-control" id="ciCompartmentName" readonly>
+                                                        <small class="form-text text-muted">Compartment where the container instance will be created</small>
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label">Subnet</label>
+                                                        <input type="text" class="form-control" id="ciSubnetName" readonly>
+                                                        <small class="form-text text-muted">Subnet where the container instance will be created</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Containers -->
+                                            <div class="mb-4">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h5 class="mb-0">Containers</h5>
+                                                    <div>
+                                                        <button type="button" class="btn btn-info btn-sm me-2" onclick="addContainerToTable()">
+                                                            + Add Container
+                                                        </button>
+                                                        <button type="button" class="btn btn-secondary btn-sm" onclick="showAddSidecarModal()">
+                                                            + Add Sidecar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered" id="containersTable">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Name</th>
+                                                                <th>Image</th>
+                                                                <th>Memory (GB)</th>
+                                                                <th>VCPUs</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="containersTableBody">
+                                                            <tr>
+                                                                <td colspan="5" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Volumes -->
+                                            <div class="mb-4">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h5 class="mb-0">Volumes</h5>
+                                                    <button type="button" class="btn btn-success btn-sm" onclick="addVolumeToTable()">
+                                                        + Add Volume
+                                                    </button>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered" id="volumesTable">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Name</th>
+                                                                <th>Path</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="volumesTableBody">
+                                                            <tr>
+                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Ports -->
+                                            <div class="mb-4">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h5 class="mb-0">Ports</h5>
+                                                    <button type="button" class="btn btn-warning btn-sm" onclick="addPortToTable()">
+                                                        + Add Port
+                                                    </button>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered" id="portsTable">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Name</th>
+                                                                <th>Port</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="portsTableBody">
+                                                            <tr>
+                                                                <td colspan="3" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-primary" onclick="createContainerInstance()">Create Container Instance</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Data Display -->
-                        <div id="dataDisplay" class="mt-4"></div>
-
-                        <!-- Form Modal -->
-                        <div class="modal fade" id="dataModal" tabindex="-1">
+                        <!-- Add Sidecar Modal -->
+                        <div class="modal fade" id="addSidecarModal" tabindex="-1">
                             <div class="modal-dialog">
                                 <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title">Send Data to Backend</h5>
+                                    <div class="modal-header bg-secondary text-white">
+                                        <h5 class="modal-title">Add Sidecar</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <p class="text-muted mb-3">Select a sidecar to add to your container instance:</p>
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <div class="card h-100">
+                                                    <div class="card-body">
+                                                        <h6 class="card-title">OsReader</h6>
+                                                        <p class="card-text small text-muted">Object Storage Reader</p>
+                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(0)">
+                                                            Add OsReader
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="card h-100">
+                                                    <div class="card-body">
+                                                        <h6 class="card-title">VaultReader</h6>
+                                                        <p class="card-text small text-muted">Vault Secrets Reader</p>
+                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(1)">
+                                                            Add VaultReader
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="card h-100">
+                                                    <div class="card-body">
+                                                        <h6 class="card-title">LogWriter</h6>
+                                                        <p class="card-text small text-muted">Log Writer</p>
+                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(2)">
+                                                            Add LogWriter
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Volume Edit Modal -->
+                        <div class="modal fade" id="editVolumeModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-success text-white">
+                                        <h5 class="modal-title">Edit Volume</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="editVolumeForm">
+                                            <input type="hidden" id="editVolumeIndex">
+                                            <div class="mb-3">
+                                                <label for="editVolumeName" class="form-label">Name</label>
+                                                <input type="text" class="form-control" id="editVolumeName" placeholder="Optional">
+                                                <small class="form-text text-muted">Optional volume name</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="editVolumePath" class="form-label">Path <span class="text-danger">*</span></label>
+                                                <input type="text" class="form-control" id="editVolumePath" required placeholder="/path/to/mount">
+                                                <small class="form-text text-muted">Volume mount path</small>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-success" onclick="saveEditedVolume()">Save Volume</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Port Edit Modal -->
+                        <div class="modal fade" id="editPortModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-warning text-dark">
+                                        <h5 class="modal-title">Edit Port</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <form id="dataForm">
+                                        <form id="editPortForm">
+                                            <input type="hidden" id="editPortIndex">
                                             <div class="mb-3">
-                                                <label for="messageInput" class="form-label">Message</label>
-                                                <input type="text" class="form-control" id="messageInput" required>
+                                                <label for="editPortName" class="form-label">Name</label>
+                                                <input type="text" class="form-control" id="editPortName" placeholder="Optional">
+                                                <small class="form-text text-muted">Optional port name</small>
                                             </div>
-                                            <button type="submit" class="btn btn-primary">Submit</button>
+                                            <div class="mb-3">
+                                                <label for="editPortNumber" class="form-label">Port <span class="text-danger">*</span></label>
+                                                <input type="number" class="form-control" id="editPortNumber" required min="1" max="65535">
+                                                <small class="form-text text-muted">Port number (1-65535)</small>
+                                            </div>
                                         </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-warning" onclick="saveEditedPort()">Save Port</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Container Edit Modal -->
+                        <div class="modal fade" id="editContainerModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-info text-white">
+                                        <h5 class="modal-title">Edit Container</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="editContainerForm">
+                                            <input type="hidden" id="editContainerIndex">
+                                            <div class="mb-3">
+                                                <label for="editContainerName" class="form-label">Name <span class="text-danger">*</span></label>
+                                                <input type="text" class="form-control" id="editContainerName" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="editContainerImage" class="form-label">Image <span class="text-danger">*</span></label>
+                                                <input type="text" class="form-control" id="editContainerImage" required placeholder="docker.io/library/nginx:latest">
+                                                <small class="form-text text-muted">Container image URL</small>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="editContainerMemory" class="form-label">Memory (GB) <span class="text-danger">*</span></label>
+                                                    <select class="form-select" id="editContainerMemory" required>
+                                                        <option value="">Select memory...</option>
+                                                        <option value="1">1 GB</option>
+                                                        <option value="2">2 GB</option>
+                                                        <option value="4">4 GB</option>
+                                                        <option value="8">8 GB</option>
+                                                        <option value="16">16 GB</option>
+                                                        <option value="32">32 GB</option>
+                                                        <option value="64">64 GB</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6 mb-3">
+                                                    <label for="editContainerVcpus" class="form-label">vOCPU <span class="text-danger">*</span></label>
+                                                    <select class="form-select" id="editContainerVcpus" required>
+                                                        <option value="">Select vOCPU...</option>
+                                                        <option value="1">1 vOCPU</option>
+                                                        <option value="2">2 vOCPU</option>
+                                                        <option value="3">3 vOCPU</option>
+                                                        <option value="4">4 vOCPU</option>
+                                                        <option value="5">5 vOCPU</option>
+                                                        <option value="6">6 vOCPU</option>
+                                                        <option value="7">7 vOCPU</option>
+                                                        <option value="8">8 vOCPU</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <!-- Tabs for Environment Variables, Arguments, and Command -->
+                                            <div class="mb-3">
+                                                <ul class="nav nav-tabs" id="containerTabs" role="tablist">
+                                                    <li class="nav-item" role="presentation">
+                                                        <button class="nav-link active" id="env-tab" data-bs-toggle="tab" data-bs-target="#env-pane" type="button" role="tab">Environment Variables</button>
+                                                    </li>
+                                                    <li class="nav-item" role="presentation">
+                                                        <button class="nav-link" id="args-tab" data-bs-toggle="tab" data-bs-target="#args-pane" type="button" role="tab">Arguments</button>
+                                                    </li>
+                                                    <li class="nav-item" role="presentation">
+                                                        <button class="nav-link" id="cmd-tab" data-bs-toggle="tab" data-bs-target="#cmd-pane" type="button" role="tab">Command</button>
+                                                    </li>
+                                                </ul>
+                                                <div class="tab-content" id="containerTabsContent">
+                                                    <div class="tab-pane fade show active" id="env-pane" role="tabpanel">
+                                                        <label for="editContainerEnvVars" class="form-label mt-3">Environment Variables</label>
+                                                        <input type="text" class="form-control" id="editContainerEnvVars" placeholder="KEY1=value1, KEY2=value2">
+                                                        <small class="form-text text-muted">Comma-separated KEY=VALUE pairs</small>
+                                                    </div>
+                                                    <div class="tab-pane fade" id="args-pane" role="tabpanel">
+                                                        <label for="editContainerArgs" class="form-label mt-3">Arguments</label>
+                                                        <input type="text" class="form-control" id="editContainerArgs" placeholder="arg1, arg2, arg3">
+                                                        <small class="form-text text-muted">Comma-separated values</small>
+                                                    </div>
+                                                    <div class="tab-pane fade" id="cmd-pane" role="tabpanel">
+                                                        <label for="editContainerCmd" class="form-label mt-3">Command</label>
+                                                        <input type="text" class="form-control" id="editContainerCmd" placeholder="cmd1, cmd2, cmd3">
+                                                        <small class="form-text text-muted">Comma-separated values</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-info" onclick="saveEditedContainer()">Save Container</button>
                                     </div>
                                 </div>
                             </div>
