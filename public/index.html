@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursor AI Project</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">CI Compose</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">Home</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showConfigModal()">Configuration</button>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">About</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#">Contact</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-md-8 mx-auto">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="mb-0">Welcome</h2>
+                    </div>
+                    <div class="card-body">
+                        <h4 class="card-title">Node.js Backend with Plain JavaScript Frontend</h4>
+                        <p class="card-text">This is a starter project with Bootstrap styling and Node.js/Express backend.</p>
+                        
+                        <!-- API Status -->
+                        <div class="alert alert-info" role="alert" id="statusAlert">
+                            Checking server status...
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="mb-4">
+                            <button class="btn btn-primary me-2" onclick="fetchData()">Fetch Data from API</button>
+                            <button class="btn btn-success" onclick="showForm()">Send Data to API</button>
+                        </div>
+
+                        <!-- Data Display -->
+                        <div id="dataDisplay" class="mt-4"></div>
+
+                        <!-- Form Modal -->
+                        <div class="modal fade" id="dataModal" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Send Data to Backend</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="dataForm">
+                                            <div class="mb-3">
+                                                <label for="messageInput" class="form-label">Message</label>
+                                                <input type="text" class="form-control" id="messageInput" required>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">Submit</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Configuration Modal -->
+                        <div class="modal fade" id="configModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title">Configuration</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="configForm">
+                                            <div class="mb-3">
+                                                <label for="projectName" class="form-label">Project Name</label>
+                                                <input type="text" class="form-control" id="projectName" placeholder="My Project">
+                                                <small class="form-text text-muted">Name for this project</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="ociConfigFile" class="form-label">OCI Config File Path</label>
+                                                <input type="text" class="form-control" id="ociConfigFile" placeholder="~/.oci/config">
+                                                <small class="form-text text-muted">Path to OCI configuration file</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="ociConfigProfile" class="form-label">OCI Config Profile</label>
+                                                <input type="text" class="form-control" id="ociConfigProfile" placeholder="DEFAULT">
+                                                <small class="form-text text-muted">Profile name in OCI config file</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="region" class="form-label">Region</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" id="region" placeholder="us-ashburn-1">
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="loadRegionFromConfig()">
+                                                        <small>Load from Config</small>
+                                                    </button>
+                                                </div>
+                                                <small class="form-text text-muted">OCI Region (e.g., us-ashburn-1, us-phoenix-1) - Auto-loaded from config file when available</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="compartmentId" class="form-label">Compartment <span class="text-danger">*</span></label>
+                                                <div class="input-group">
+                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets()">
+                                                        <option value="">Loading compartments...</option>
+                                                    </select>
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="loadCompartments()">
+                                                        <small>Refresh</small>
+                                                    </button>
+                                                </div>
+                                                <small class="form-text text-muted">OCI Compartment for resource operations</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="subnetId" class="form-label">Subnet <span class="text-danger">*</span></label>
+                                                <div class="input-group">
+                                                    <select class="form-select" id="subnetId" required>
+                                                        <option value="">Select a compartment first...</option>
+                                                    </select>
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="loadSubnets()">
+                                                        <small>Refresh</small>
+                                                    </button>
+                                                </div>
+                                                <small class="form-text text-muted">OCI Subnet</small>
+                                            </div>
+                                            <div class="alert alert-info">
+                                                <strong>Note:</strong> These settings are stored in your browser's local storage and are used for API requests.
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-primary" onclick="saveConfiguration()">Save Configuration</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Custom JS -->
+    <script src="js/main.js"></script>
+</body>
+</html>
