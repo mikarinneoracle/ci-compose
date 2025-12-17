@@ -411,6 +411,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
       displayName,
       compartmentId,
       shape,
+      shapeConfig,
       subnetId,
       containers,
       volumes,
@@ -490,26 +491,38 @@ app.post('/api/oci/container-instances', async (req, res) => {
       return containerDetail;
     });
 
-    // Calculate total resources needed from all containers for shapeConfig
-    // For flex shapes, shapeConfig is required
-    let totalMemoryInGBs = 0;
-    let totalVcpus = 0;
-    containerDetails.forEach(container => {
-      if (container.resourceConfig) {
-        totalMemoryInGBs += container.resourceConfig.memoryLimitInGBs || 0;
-        totalVcpus += container.resourceConfig.vcpusLimit || 0;
-      }
-    });
-    
-    // Ensure minimum values - CI.Standard.E4.Flex requires at least 1 OCPU and minimum memory
-    // Minimum memory depends on OCPUs: at least 1GB per OCPU
-    // Ensure values are valid integers/floats
-    totalVcpus = Math.max(Math.ceil(totalVcpus), 1);
-    totalMemoryInGBs = Math.max(Math.ceil(totalMemoryInGBs), Math.max(totalVcpus, 1)); // At least 1GB per OCPU
+    // Use shapeConfig from request, or calculate from containers if not provided
+    let shapeConfigToUse;
+    if (shapeConfig && shapeConfig.memoryInGBs && shapeConfig.ocpus) {
+      // Use provided shapeConfig
+      shapeConfigToUse = {
+        memoryInGBs: parseFloat(shapeConfig.memoryInGBs),
+        ocpus: parseFloat(shapeConfig.ocpus)
+      };
+    } else {
+      // Fallback: Calculate total resources needed from all containers
+      let totalMemoryInGBs = 0;
+      let totalVcpus = 0;
+      containerDetails.forEach(container => {
+        if (container.resourceConfig) {
+          totalMemoryInGBs += container.resourceConfig.memoryLimitInGBs || 0;
+          totalVcpus += container.resourceConfig.vcpusLimit || 0;
+        }
+      });
+      
+      // Ensure minimum values
+      totalVcpus = Math.max(Math.ceil(totalVcpus), 1);
+      totalMemoryInGBs = Math.max(Math.ceil(totalMemoryInGBs), Math.max(totalVcpus, 1));
+      
+      shapeConfigToUse = {
+        memoryInGBs: totalMemoryInGBs,
+        ocpus: totalVcpus
+      };
+    }
     
     // Validate that values are finite numbers
-    if (!isFinite(totalVcpus) || !isFinite(totalMemoryInGBs)) {
-      throw new Error('Invalid resource values: totalVcpus and totalMemoryInGBs must be valid numbers');
+    if (!isFinite(shapeConfigToUse.ocpus) || !isFinite(shapeConfigToUse.memoryInGBs)) {
+      throw new Error('Invalid resource values: ocpus and memoryInGBs must be valid numbers');
     }
 
     // Build container instance configuration
@@ -520,13 +533,13 @@ app.post('/api/oci/container-instances', async (req, res) => {
       availabilityDomain: availabilityDomain,
       shape: shape,
       shapeConfig: {
-        ocpus: totalVcpus,
-        memoryInGBs: totalMemoryInGBs
+        ocpus: shapeConfigToUse.ocpus,
+        memoryInGBs: shapeConfigToUse.memoryInGBs
       },
       containers: containerDetails,
       vnics: [{
         subnetId: subnetId,
-        isPublicIpAssigned: false
+        isPublicIpAssigned: true
       }],
       containerRestartPolicy: containerRestartPolicy || 'NEVER'
     };

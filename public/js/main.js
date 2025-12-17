@@ -353,17 +353,23 @@ async function displayContainerInstancesWithDetails(instances) {
                 if (data.success && data.data) {
                     const instanceDetails = data.data;
                     
-                    // If we have a VNIC ID, fetch VNIC details to get private IP
+                    // If we have a VNIC ID, fetch VNIC details to get private IP and public IP
                     if (instanceDetails.vnics && instanceDetails.vnics.length > 0 && instanceDetails.vnics[0].vnicId) {
                         try {
                             const vnicId = instanceDetails.vnics[0].vnicId;
                             const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
                             const vnicData = await vnicResponse.json();
                             // Try vnic property first, then fallback to data
-                            const privateIp = (vnicData.vnic && vnicData.vnic.privateIp) || (vnicData.data && vnicData.data.privateIp);
-                            if (privateIp) {
+                            const vnic = vnicData.vnic || vnicData.data;
+                            if (vnic) {
                                 // Add private IP to the vnic object
-                                instanceDetails.vnics[0].privateIp = privateIp;
+                                if (vnic.privateIp) {
+                                    instanceDetails.vnics[0].privateIp = vnic.privateIp;
+                                }
+                                // Add public IP to the vnic object if it exists
+                                if (vnic.publicIp) {
+                                    instanceDetails.vnics[0].publicIp = vnic.publicIp;
+                                }
                             }
                         } catch (vnicError) {
                             console.error(`Error fetching VNIC details for ${instanceDetails.vnics[0].vnicId}:`, vnicError);
@@ -381,21 +387,24 @@ async function displayContainerInstancesWithDetails(instances) {
     
     let html = `<p class="text-muted mb-3">Showing last ${instancesWithDetails.length} container instance(s)</p>`;
     html += '<div class="table-responsive"><table class="table table-hover">';
-    html += '<thead><tr><th>Display Name</th><th>State</th><th>Private IP</th><th>Created</th></tr></thead>';
+    html += '<thead><tr><th>Display Name</th><th>State</th><th>Private IP</th><th>Public IP</th><th>Created</th></tr></thead>';
     html += '<tbody>';
     
     instancesWithDetails.forEach(instance => {
-        // Get private IP from vnics[0].privateIp or try alternative paths
+        // Get private IP and public IP from vnics[0]
         let privateIp = 'N/A';
+        let publicIp = 'N/A';
         if (instance.vnics && instance.vnics.length > 0) {
             const vnic = instance.vnics[0];
             privateIp = vnic.privateIp || vnic.privateIpAddress || 'N/A';
+            publicIp = vnic.publicIp || vnic.publicIpAddress || 'N/A';
         }
         
         html += '<tr style="cursor: pointer;" onclick="showContainerInstanceDetails(\'' + instance.id + '\')">';
         html += `<td><strong>${instance.displayName || 'N/A'}</strong></td>`;
         html += `<td><span class="badge bg-${getStateColor(instance.lifecycleState)}">${instance.lifecycleState || 'N/A'}</span></td>`;
         html += `<td>${privateIp}</td>`;
+        html += `<td>${publicIp}</td>`;
         html += `<td>${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</td>`;
         html += '</tr>';
     });
@@ -421,7 +430,7 @@ async function showContainerInstanceDetails(instanceId) {
             console.log('Instance details response:', instanceDetails);
             console.log('Containers in instance:', instanceDetails.containers);
             
-            // If we have a VNIC ID, fetch VNIC details to get private IP and subnet ID
+            // If we have a VNIC ID, fetch VNIC details to get private IP, public IP, and subnet ID
             if (instanceDetails.vnics && instanceDetails.vnics.length > 0 && instanceDetails.vnics[0].vnicId) {
                 try {
                     const vnicId = instanceDetails.vnics[0].vnicId;
@@ -434,6 +443,10 @@ async function showContainerInstanceDetails(instanceId) {
                         if (privateIp) {
                             // Add private IP to the vnic object
                             instanceDetails.vnics[0].privateIp = privateIp;
+                        }
+                        // Add public IP to the vnic object if it exists
+                        if (vnic.publicIp) {
+                            instanceDetails.vnics[0].publicIp = vnic.publicIp;
                         }
                         // Get subnet ID from VNIC
                         if (vnic.subnetId) {
@@ -566,7 +579,9 @@ function displayContainerInstanceDetails(instance) {
     if (instance.vnics && instance.vnics.length > 0) {
         const vnic = instance.vnics[0];
         const privateIp = vnic.privateIp || vnic.privateIpAddress || 'N/A';
+        const publicIp = vnic.publicIp || vnic.publicIpAddress || 'N/A';
         html += `<dt class="col-sm-4">Private IP:</dt><dd class="col-sm-8">${privateIp}</dd>`;
+        html += `<dt class="col-sm-4">Public IP:</dt><dd class="col-sm-8">${publicIp}</dd>`;
     }
     html += '</dl>';
     html += '</div>';
@@ -767,9 +782,10 @@ async function showCreateContainerInstanceModal() {
     const defaultName = config.projectName ? `${config.projectName}-${containerInstancesCount + 1}` : '';
     document.getElementById('ciName').value = defaultName;
     
-    // Set default shape to CI.Standard.E4.Flex
+    // Set default shape config: CI.Standard.E4.Flex (readonly), memory 16GB, ocpus 1
     document.getElementById('ciShape').value = 'CI.Standard.E4.Flex';
-    updateShapeInfo();
+    document.getElementById('ciShapeMemory').value = '16';
+    document.getElementById('ciShapeOcpus').value = '1';
     
     // Load compartment and subnet names
     try {
@@ -1252,6 +1268,8 @@ function showCISummaryModal() {
     const config = getConfiguration();
     const ciName = document.getElementById('ciName').value.trim();
     const ciShape = document.getElementById('ciShape').value;
+    const ciShapeMemory = document.getElementById('ciShapeMemory').value;
+    const ciShapeOcpus = document.getElementById('ciShapeOcpus').value;
     const compartmentName = document.getElementById('ciCompartmentName').value;
     const subnetName = document.getElementById('ciSubnetName').value;
     
@@ -1264,6 +1282,8 @@ function showCISummaryModal() {
     html += '<dl class="row">';
     html += `<dt class="col-sm-4">Name:</dt><dd class="col-sm-8"><strong>${ciName}</strong></dd>`;
     html += `<dt class="col-sm-4">Shape:</dt><dd class="col-sm-8">${ciShape}</dd>`;
+    html += `<dt class="col-sm-4">Shape Memory:</dt><dd class="col-sm-8">${ciShapeMemory} GB</dd>`;
+    html += `<dt class="col-sm-4">Shape OCPUs:</dt><dd class="col-sm-8">${ciShapeOcpus}</dd>`;
     html += `<dt class="col-sm-4">Compartment:</dt><dd class="col-sm-8">${compartmentName}</dd>`;
     html += `<dt class="col-sm-4">Subnet:</dt><dd class="col-sm-8">${subnetName}</dd>`;
     html += '</dl>';
@@ -1383,6 +1403,10 @@ async function confirmCreateContainerInstance() {
         displayName: document.getElementById('ciName').value.trim(),
         compartmentId: config.compartmentId,
         shape: document.getElementById('ciShape').value,
+        shapeConfig: {
+            memoryInGBs: parseFloat(document.getElementById('ciShapeMemory').value),
+            ocpus: parseFloat(document.getElementById('ciShapeOcpus').value)
+        },
         subnetId: config.subnetId,
         containers: cleanedContainers,
         containerRestartPolicy: 'NEVER'

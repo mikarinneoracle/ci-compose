@@ -98,15 +98,38 @@
                                                         <small class="form-text text-muted">Display name for the container instance</small>
                                                     </div>
                                                     <div class="col-md-6 mb-3">
-                                                        <label for="ciShape" class="form-label">Shape <span class="text-danger">*</span></label>
-                                                        <select class="form-select" id="ciShape" required onchange="updateShapeInfo()">
-                                                            <option value="">Select a shape...</option>
-                                                            <option value="CI.Standard.E2.Flex">CI.Standard.E2.Flex (1 OCPU, 8 GB memory)</option>
-                                                            <option value="CI.Standard.E3.Flex">CI.Standard.E3.Flex (2 OCPUs, 16 GB memory)</option>
-                                                            <option value="CI.Standard.E4.Flex" selected>CI.Standard.E4.Flex (4 OCPUs, 32 GB memory)</option>
-                                                            <option value="CI.Standard.E5.Flex">CI.Standard.E5.Flex (8 OCPUs, 64 GB memory)</option>
+                                                        <label for="ciShape" class="form-label">Shape</label>
+                                                        <input type="text" class="form-control" id="ciShape" value="CI.Standard.E4.Flex" readonly>
+                                                        <small class="form-text text-muted">Container instance shape</small>
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="ciShapeMemory" class="form-label">Shape Memory (GB) <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="ciShapeMemory" required>
+                                                            <option value="1">1 GB</option>
+                                                            <option value="2">2 GB</option>
+                                                            <option value="4">4 GB</option>
+                                                            <option value="8">8 GB</option>
+                                                            <option value="16" selected>16 GB</option>
+                                                            <option value="32">32 GB</option>
+                                                            <option value="64">64 GB</option>
                                                         </select>
-                                                        <small class="form-text text-muted" id="shapeInfo">Select a shape to see max resources</small>
+                                                        <small class="form-text text-muted">Total memory for the container instance</small>
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label for="ciShapeOcpus" class="form-label">Shape OCPUs <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="ciShapeOcpus" required>
+                                                            <option value="1" selected>1 OCPU</option>
+                                                            <option value="2">2 OCPU</option>
+                                                            <option value="3">3 OCPU</option>
+                                                            <option value="4">4 OCPU</option>
+                                                            <option value="5">5 OCPU</option>
+                                                            <option value="6">6 OCPU</option>
+                                                            <option value="7">7 OCPU</option>
+                                                            <option value="8">8 OCPU</option>
+                                                        </select>
+                                                        <small class="form-text text-muted">Total OCPUs for the container instance</small>
                                                     </div>
                                                 </div>
                                                 <div class="row">
@@ -353,12 +376,11 @@
                                                 <input type="text" class="form-control" id="editContainerImage" required placeholder="docker.io/library/nginx:latest">
                                                 <small class="form-text text-muted">Container image URL</small>
                                             </div>
-                                            <div class="row">
+                                                <div class="row">
                                                 <div class="col-md-6 mb-3">
                                                     <label for="editContainerMemory" class="form-label">Memory (GB) <span class="text-danger">*</span></label>
                                                     <select class="form-select" id="editContainerMemory" required>
-                                                        <option value="">Select memory...</option>
-                                                        <option value="1">1 GB</option>
+                                                        <option value="1" selected>1 GB</option>
                                                         <option value="2">2 GB</option>
                                                         <option value="4">4 GB</option>
                                                         <option value="8">8 GB</option>
@@ -370,8 +392,7 @@
                                                 <div class="col-md-6 mb-3">
                                                     <label for="editContainerVcpus" class="form-label">vOCPU <span class="text-danger">*</span></label>
                                                     <select class="form-select" id="editContainerVcpus" required>
-                                                        <option value="">Select vOCPU...</option>
-                                                        <option value="1">1 vOCPU</option>
+                                                        <option value="1" selected>1 vOCPU</option>
                                                         <option value="2">2 vOCPU</option>
                                                         <option value="3">3 vOCPU</option>
                                                         <option value="4">4 vOCPU</option>
