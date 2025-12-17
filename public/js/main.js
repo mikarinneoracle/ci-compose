@@ -844,10 +844,12 @@ function displayContainerInstanceDetails(instance) {
     html += '<div class="col-12 mb-4">';
     html += '<div class="d-flex justify-content-between align-items-center mb-3">';
     html += '<h5 class="border-bottom pb-2 mb-0">Containers</h5>';
-    // CRUD buttons only visible in edit mode (controlled by isInEditMode flag)
-    html += `<button class="btn btn-info btn-sm me-2" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
-    html += `<button class="btn btn-secondary btn-sm me-2" id="detailsAddSidecarBtn" onclick="showAddSidecarModalToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Sidecar</button>`;
+    // CRUD buttons only visible in edit mode (controlled by isInEditMode flag) - grouped together
+    html += '<div class="d-flex">';
+    html += `<button class="btn btn-info btn-sm me-1" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
+    html += `<button class="btn btn-secondary btn-sm me-1" id="detailsAddSidecarBtn" onclick="showAddSidecarModalToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Sidecar</button>`;
     html += `<button class="btn btn-warning btn-sm" id="detailsAddPortBtn" onclick="addPortToDetails('${instance.id}')" style="display: none;"><i class="bi bi-plus"></i> Add Port</button>`;
+    html += '</div>';
     html += '</div>';
     
     // Store containers data for CRUD operations (convert to editable format)
@@ -2304,10 +2306,19 @@ function addSidecarToDetails(index) {
     
     refreshDetailsContainersTable(instanceId);
     
+    // Show action buttons for all containers (including the newly added one) if in edit mode
+    if (isInEditMode) {
+        containers.forEach((container, idx) => {
+            const actionsCell = document.getElementById(`containerActions_${idx}`);
+            if (actionsCell) actionsCell.style.display = 'table-cell';
+        });
+    }
+    
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
     modal.hide();
     
     editingDetailsContext = null;
+    // Don't reset isInEditMode - we're still in edit mode
 }
 
 // Volume CRUD functions
