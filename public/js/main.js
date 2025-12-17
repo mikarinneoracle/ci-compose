@@ -704,17 +704,23 @@ function displayContainerInstanceDetails(instance) {
     html += '<dl class="row">';
     html += `<dt class="col-sm-4">Display Name:</dt><dd class="col-sm-8"><strong>${instance.displayName || 'N/A'}</strong></dd>`;
     html += `<dt class="col-sm-4">State:</dt><dd class="col-sm-8">${getStateBadgeHtml(instance.lifecycleState)}</dd>`;
-    html += `<dt class="col-sm-4">Compartment:</dt><dd class="col-sm-8">${instance.compartmentName || 'N/A'}</dd>`;
-    html += `<dt class="col-sm-4">Created:</dt><dd class="col-sm-8">${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</dd>`;
-    html += `<dt class="col-sm-4">Updated:</dt><dd class="col-sm-8">${instance.timeUpdated ? new Date(instance.timeUpdated).toLocaleString() : 'N/A'}</dd>`;
     html += '</dl>';
+    
+    // Compact details section
+    html += '<div class="mt-3 pt-3 border-top">';
+    html += '<dl class="row small mb-0">';
+    html += `<dt class="col-5 text-muted">Compartment:</dt><dd class="col-7">${instance.compartmentName || 'N/A'}</dd>`;
+    html += `<dt class="col-5 text-muted">Created:</dt><dd class="col-7">${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</dd>`;
+    html += `<dt class="col-5 text-muted">Updated:</dt><dd class="col-7">${instance.timeUpdated ? new Date(instance.timeUpdated).toLocaleString() : 'N/A'}</dd>`;
+    html += '</dl>';
+    html += '</div>';
+    
     html += '</div>';
     
     // Network Information
     html += '<div class="col-md-6 mb-4">';
     html += '<h5 class="border-bottom pb-2 mb-3">Network Information</h5>';
     html += '<dl class="row">';
-    html += `<dt class="col-sm-4">Subnet Name:</dt><dd class="col-sm-8">${instance.subnetName || 'N/A'}</dd>`;
     if (instance.vnics && instance.vnics.length > 0) {
         const vnic = instance.vnics[0];
         const privateIp = vnic.privateIp || vnic.privateIpAddress || 'N/A';
@@ -723,9 +729,48 @@ function displayContainerInstanceDetails(instance) {
         html += `<dt class="col-sm-4">Public IP:</dt><dd class="col-sm-8">${publicIp}</dd>`;
     }
     html += '</dl>';
+    
+    // Compact subnet and shape section
+    html += '<div class="mt-3 pt-3 border-top">';
+    html += '<dl class="row small mb-0">';
+    html += `<dt class="col-5 text-muted">Subnet:</dt><dd class="col-7">${instance.subnetName || 'N/A'}</dd>`;
+    html += `<dt class="col-5 text-muted">Shape:</dt><dd class="col-7">${instance.shape || 'N/A'}</dd>`;
+    if (instance.shapeConfig) {
+        html += `<dt class="col-5 text-muted">Memory:</dt><dd class="col-7">${instance.shapeConfig.memoryInGBs || 'N/A'} GB</dd>`;
+        html += `<dt class="col-5 text-muted">OCPUs:</dt><dd class="col-7">${instance.shapeConfig.ocpus || 'N/A'}</dd>`;
+    }
+    html += '</dl>';
     html += '</div>';
     
     html += '</div>';
+    
+    html += '</div>';
+    
+    // Parse freeformTags to extract volumes and port mappings
+    const freeformTags = instance.freeformTags || {};
+    const volumesList = [];
+    const portMap = {}; // containerName -> port
+    
+    // Parse volumes tag (format: "name1:path1,name2:path2")
+    if (freeformTags.volumes) {
+        const volumesStr = freeformTags.volumes;
+        volumesStr.split(',').forEach(volumeStr => {
+            const parts = volumeStr.split(':');
+            if (parts.length >= 2) {
+                const name = parts[0].trim();
+                const path = parts.slice(1).join(':'); // Handle paths that might contain ':'
+                volumesList.push({ name, path });
+            }
+        });
+    }
+    
+    // Parse port mappings (containerName -> port)
+    Object.entries(freeformTags).forEach(([key, value]) => {
+        if (key !== 'volumes' && typeof value === 'string' && /^\d+$/.test(value)) {
+            // If value is a number (port), it's a container name -> port mapping
+            portMap[key] = value;
+        }
+    });
     
     // Containers Information
     html += '<div class="row">';
@@ -734,7 +779,7 @@ function displayContainerInstanceDetails(instance) {
     
     if (instance.containers && instance.containers.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm">';
-        html += '<thead><tr><th>State</th><th>Name</th><th>Image</th><th>Resource Config</th><th>Environment Variables</th></tr></thead>';
+        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Environment Variables</th></tr></thead>';
         html += '<tbody>';
         
         instance.containers.forEach(container => {
@@ -745,7 +790,12 @@ function displayContainerInstanceDetails(instance) {
             html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
             
             // Container name with text-primary class
-            html += `<td><strong class="text-primary">${container.displayName || container.name || 'N/A'}</strong></td>`;
+            const containerName = container.displayName || container.name || 'N/A';
+            html += `<td><strong class="text-primary">${containerName}</strong></td>`;
+            
+            // Port - look up in portMap by container name
+            const port = portMap[containerName] || '-';
+            html += `<td>${port}</td>`;
             
             // Image URL - check multiple possible field names
             const imageName = container.imageUrl || container.image || container.imageName || 'N/A';
@@ -804,38 +854,26 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     html += '</div>';
     
-    // Shape and Resource Information
-    html += '<div class="row mt-4">';
-    html += '<div class="col-md-6 mb-4">';
-    html += '<h5 class="border-bottom pb-2 mb-3">Shape Configuration</h5>';
-    html += '<dl class="row">';
-    html += `<dt class="col-sm-4">Shape:</dt><dd class="col-sm-8">${instance.shape || 'N/A'}</dd>`;
-    html += `<dt class="col-sm-4">Shape Config:</dt><dd class="col-sm-8">`;
-    if (instance.shapeConfig) {
-        html += `Memory: ${instance.shapeConfig.memoryInGBs || 'N/A'} GB<br>`;
-        html += `OCPUs: ${instance.shapeConfig.ocpus || 'N/A'}`;
-    } else {
-        html += 'N/A';
-    }
-    html += `</dd>`;
-    html += '</dl>';
-    html += '</div>';
-    
-    // Tags
-    html += '<div class="col-md-6 mb-4">';
-    html += '<h5 class="border-bottom pb-2 mb-3">Tags</h5>';
-    if (instance.freeformTags && Object.keys(instance.freeformTags).length > 0) {
-        html += '<dl class="row">';
-        Object.entries(instance.freeformTags).forEach(([key, value]) => {
-            html += `<dt class="col-sm-4">${key}:</dt><dd class="col-sm-8">${value}</dd>`;
+    // Volumes Information
+    if (volumesList.length > 0) {
+        html += '<div class="row mt-3">';
+        html += '<div class="col-12 mb-4">';
+        html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
+        html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+        html += '<thead class="table-light"><tr><th>Name</th><th>Path</th></tr></thead>';
+        html += '<tbody>';
+        
+        volumesList.forEach(volume => {
+            html += '<tr>';
+            html += `<td>${volume.name || '-'}</td>`;
+            html += `<td><code>${volume.path || 'N/A'}</code></td>`;
+            html += '</tr>';
         });
-        html += '</dl>';
-    } else {
-        html += '<p class="text-muted">No tags</p>';
+        
+        html += '</tbody></table></div>';
+        html += '</div>';
+        html += '</div>';
     }
-    html += '</div>';
-    
-    html += '</div>';
     
     detailsDiv.innerHTML = html;
 }
