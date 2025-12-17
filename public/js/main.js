@@ -1,6 +1,20 @@
+// Track currently viewed instance in modal
+let currentModalInstanceId = null;
+
+// Track previous container instance states to detect changes
+let previousInstanceStates = new Map(); // Map of instanceId -> lifecycleState
+
 // Check server status on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadPageContent();
+    
+    // Auto-reload container instances every 5 seconds
+    setInterval(async () => {
+        const config = getConfiguration();
+        if (config.compartmentId && config.projectName) {
+            await loadContainerInstances();
+        }
+    }, 5000);
 });
 
 async function loadPageContent() {
@@ -39,7 +53,10 @@ function loadConfiguration() {
     if (config.ociConfigProfile) document.getElementById('ociConfigProfile').value = config.ociConfigProfile;
 }
 
-function saveConfiguration() {
+async function saveConfiguration() {
+    const oldConfig = getConfiguration();
+    const oldProjectName = oldConfig.projectName;
+    
     const config = {
         projectName: document.getElementById('projectName').value.trim(),
         compartmentId: document.getElementById('compartmentId').value.trim(),
@@ -63,6 +80,23 @@ function saveConfiguration() {
     // Save to localStorage
     localStorage.setItem('appConfig', JSON.stringify(config));
     
+    // If projectName (CI name) changed, save current ports/volumes under old name
+    // and load ports/volumes for new name (if any exist)
+    const ciNameChanged = oldProjectName && oldProjectName !== config.projectName;
+    const compartmentChanged = oldConfig.compartmentId !== config.compartmentId;
+    
+    // Clear previous instance states if CI name or compartment changed to force refresh
+    if (ciNameChanged || compartmentChanged) {
+        previousInstanceStates.clear();
+    }
+    
+    if (ciNameChanged) {
+        // Save current ports/volumes under old name before switching
+        savePortsAndVolumesForCIName(oldProjectName);
+        // Load ports/volumes for new CI name
+        loadPortsAndVolumesForCIName(config.projectName);
+    }
+    
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('configModal'));
     modal.hide();
@@ -70,13 +104,57 @@ function saveConfiguration() {
     // Show success message
     showNotification('Configuration saved successfully!', 'success');
     
-    // Reload page content to reflect changes
-    loadPageContent();
+    // Reload page content to reflect changes (this will reload container instances if config is valid)
+    await loadPageContent();
+    
+    // Always reload container instances table if we have valid config
+    if (config.compartmentId && config.projectName) {
+        await loadContainerInstances();
+    }
 }
 
 function getConfiguration() {
     const config = JSON.parse(localStorage.getItem('appConfig') || '{}');
     return config;
+}
+
+// Save ports and volumes for a specific CI name (projectName)
+function savePortsAndVolumesForCIName(ciName) {
+    if (!ciName) return;
+    
+    const key = `ciPortsVolumes_${ciName}`;
+    const data = {
+        ports: portsData,
+        volumes: volumesData
+    };
+    localStorage.setItem(key, JSON.stringify(data));
+}
+
+// Load ports and volumes for a specific CI name (projectName)
+function loadPortsAndVolumesForCIName(ciName) {
+    if (!ciName) {
+        volumesData = [];
+        portsData = [];
+        return;
+    }
+    
+    const key = `ciPortsVolumes_${ciName}`;
+    const saved = localStorage.getItem(key);
+    
+    if (saved) {
+        try {
+            const data = JSON.parse(saved);
+            portsData = data.ports || [];
+            volumesData = data.volumes || [];
+        } catch (error) {
+            console.error('Error loading ports and volumes:', error);
+            volumesData = [];
+            portsData = [];
+        }
+    } else {
+        volumesData = [];
+        portsData = [];
+    }
 }
 
 async function showConfigModal() {
@@ -288,8 +366,6 @@ async function loadContainerInstances() {
     }
     
     try {
-        contentDiv.innerHTML = '<p class="text-muted">Loading container instances...</p>';
-        
         const params = buildQueryString();
         const response = await fetch(`/api/oci/container-instances?${params}`);
         const data = await response.json();
@@ -320,15 +396,57 @@ async function loadContainerInstances() {
                     })
                     .slice(0, 5); // Get last 5 (most recent)
                 
-                // Fetch details for each instance to get vnic information
-                await displayContainerInstancesWithDetails(sortedInstances);
+                // Fetch details to get accurate states, then check if states changed
+                const instancesWithDetails = await Promise.all(
+                    sortedInstances.map(async (instance) => {
+                        try {
+                            const response = await fetch(`/api/oci/container-instances/${instance.id}`);
+                            const data = await response.json();
+                            if (data.success && data.data) {
+                                return data.data;
+                            }
+                        } catch (error) {
+                            console.error(`Error fetching details for instance ${instance.id}:`, error);
+                        }
+                        return instance;
+                    })
+                );
+                
+                // Check if any instance states have changed
+                let hasStateChange = false;
+                const currentStates = new Map();
+                
+                instancesWithDetails.forEach(instance => {
+                    const currentState = instance.lifecycleState || 'UNKNOWN';
+                    currentStates.set(instance.id, currentState);
+                    const previousState = previousInstanceStates.get(instance.id);
+                    if (previousState !== currentState) {
+                        hasStateChange = true;
+                    }
+                });
+                
+                // Only update the display if there's a state change or if this is the first load
+                if (hasStateChange || previousInstanceStates.size === 0) {
+                    // Update previous states
+                    previousInstanceStates = currentStates;
+                    
+                    // Display instances with VNIC details (this function will fetch VNIC info)
+                    await displayContainerInstancesWithDetails(instancesWithDetails);
+                }
+                // If no state change, silently skip the update to avoid unnecessary DOM manipulation
             } else {
                 containerInstancesCount = 0;
-                contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
+                // Only update if content div is empty or shows error
+                if (contentDiv.innerHTML.includes('No container instances found matching CI name') === false) {
+                    contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
+                }
             }
         } else {
             containerInstancesCount = 0;
-            contentDiv.innerHTML = '<p class="text-muted">No container instances found.</p>';
+            // Only update if content div is empty or shows error
+            if (contentDiv.innerHTML.includes('No container instances found.') === false) {
+                contentDiv.innerHTML = '<p class="text-muted">No container instances found.</p>';
+            }
         }
     } catch (error) {
         console.error('Error loading container instances:', error);
@@ -344,44 +462,33 @@ async function displayContainerInstancesWithDetails(instances) {
         return;
     }
     
-    // Fetch details for each instance and get VNIC information
+    // Fetch VNIC details for each instance to get IP addresses
     const instancesWithDetails = await Promise.all(
         instances.map(async (instance) => {
-            try {
-                const response = await fetch(`/api/oci/container-instances/${instance.id}`);
-                const data = await response.json();
-                if (data.success && data.data) {
-                    const instanceDetails = data.data;
-                    
-                    // If we have a VNIC ID, fetch VNIC details to get private IP and public IP
-                    if (instanceDetails.vnics && instanceDetails.vnics.length > 0 && instanceDetails.vnics[0].vnicId) {
-                        try {
-                            const vnicId = instanceDetails.vnics[0].vnicId;
-                            const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
-                            const vnicData = await vnicResponse.json();
-                            // Try vnic property first, then fallback to data
-                            const vnic = vnicData.vnic || vnicData.data;
-                            if (vnic) {
-                                // Add private IP to the vnic object
-                                if (vnic.privateIp) {
-                                    instanceDetails.vnics[0].privateIp = vnic.privateIp;
-                                }
-                                // Add public IP to the vnic object if it exists
-                                if (vnic.publicIp) {
-                                    instanceDetails.vnics[0].publicIp = vnic.publicIp;
-                                }
-                            }
-                        } catch (vnicError) {
-                            console.error(`Error fetching VNIC details for ${instanceDetails.vnics[0].vnicId}:`, vnicError);
+            // If we have a VNIC ID, fetch VNIC details to get private IP and public IP
+            if (instance.vnics && instance.vnics.length > 0 && instance.vnics[0].vnicId) {
+                try {
+                    const vnicId = instance.vnics[0].vnicId;
+                    const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
+                    const vnicData = await vnicResponse.json();
+                    // Try vnic property first, then fallback to data
+                    const vnic = vnicData.vnic || vnicData.data;
+                    if (vnic) {
+                        // Add private IP to the vnic object
+                        if (vnic.privateIp) {
+                            instance.vnics[0].privateIp = vnic.privateIp;
+                        }
+                        // Add public IP to the vnic object if it exists
+                        if (vnic.publicIp) {
+                            instance.vnics[0].publicIp = vnic.publicIp;
                         }
                     }
-                    
-                    return instanceDetails;
+                } catch (vnicError) {
+                    console.error(`Error fetching VNIC details for ${instance.vnics[0].vnicId}:`, vnicError);
                 }
-            } catch (error) {
-                console.error(`Error fetching details for instance ${instance.id}:`, error);
             }
-            return instance; // Fallback to original instance if details fetch fails
+            
+            return instance;
         })
     );
     
@@ -414,11 +521,48 @@ async function displayContainerInstancesWithDetails(instances) {
 }
 
 async function showContainerInstanceDetails(instanceId) {
-    const modal = new bootstrap.Modal(document.getElementById('containerInstanceModal'));
+    const modalElement = document.getElementById('containerInstanceModal');
+    const modal = new bootstrap.Modal(modalElement);
     const detailsDiv = document.getElementById('containerInstanceDetails');
+    
+    // Track which instance is currently being viewed
+    currentModalInstanceId = instanceId;
+    
+    // Clean up any existing interval when modal closes
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        const existingIntervalId = modalElement.getAttribute('data-refresh-interval-id');
+        if (existingIntervalId) {
+            clearInterval(parseInt(existingIntervalId));
+            modalElement.removeAttribute('data-refresh-interval-id');
+        }
+        currentModalInstanceId = null;
+    }, { once: true });
+    
+    // Set up interval to refresh modal content every 5 seconds while modal is open
+    const modalRefreshInterval = setInterval(async () => {
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        // Only refresh if modal is still open and viewing the same instance
+        if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId) {
+            await refreshContainerInstanceModal(instanceId);
+        } else {
+            // Modal closed, clear interval
+            clearInterval(modalRefreshInterval);
+            currentModalInstanceId = null;
+        }
+    }, 5000);
+    
+    // Store interval ID so we can clear it when modal closes
+    modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
     
     modal.show();
     detailsDiv.innerHTML = '<p class="text-muted">Loading container instance details...</p>';
+    
+    await refreshContainerInstanceModal(instanceId);
+}
+
+// Helper function to refresh container instance modal content
+async function refreshContainerInstanceModal(instanceId) {
+    const detailsDiv = document.getElementById('containerInstanceDetails');
     
     try {
         const response = await fetch(`/api/oci/container-instances/${instanceId}`);
@@ -426,9 +570,6 @@ async function showContainerInstanceDetails(instanceId) {
         
         if (data.success && data.data) {
             const instanceDetails = data.data;
-            
-            console.log('Instance details response:', instanceDetails);
-            console.log('Containers in instance:', instanceDetails.containers);
             
             // If we have a VNIC ID, fetch VNIC details to get private IP, public IP, and subnet ID
             if (instanceDetails.vnics && instanceDetails.vnics.length > 0 && instanceDetails.vnics[0].vnicId) {
@@ -491,28 +632,17 @@ async function showContainerInstanceDetails(instanceId) {
                 const firstContainer = instanceDetails.containers[0];
                 const hasFullDetails = firstContainer.imageUrl || (firstContainer.resourceConfig && Object.keys(firstContainer.resourceConfig).length > 0);
                 
-                console.log('First container:', firstContainer);
-                console.log('Has full details?', hasFullDetails);
-                
                 if (!hasFullDetails) {
                     // Need to fetch container details - containers use containerId, not id
-                    console.log('Fetching container details for', instanceDetails.containers.length, 'containers');
                     const containersWithDetails = await Promise.all(
                         instanceDetails.containers.map(async (container) => {
                             const containerId = container.containerId || container.id;
                             if (containerId) {
                                 try {
-                                    console.log(`Fetching details for container ${containerId}...`);
                                     const containerResponse = await fetch(`/api/oci/containers/${containerId}`);
                                     const containerData = await containerResponse.json();
-                                    console.log(`Container details response for ${containerId}:`, containerData);
                                     
                                     if (containerData.success && containerData.data) {
-                                        console.log(`Container details data keys:`, Object.keys(containerData.data));
-                                        console.log(`Container details full data:`, JSON.stringify(containerData.data, null, 2));
-                                        
-                                        // The container details might have a different structure
-                                        // Try to extract imageUrl, resourceConfig, environmentVariables from the response
                                         const containerDetails = containerData.data;
                                         
                                         // Merge the details with the original container to preserve displayName and containerId
@@ -523,24 +653,16 @@ async function showContainerInstanceDetails(instanceId) {
                                             containerId: containerId
                                         };
                                         
-                                        console.log('Merged container:', merged);
                                         return merged;
-                                    } else {
-                                        console.warn(`No data in container response for ${containerId}`);
                                     }
                                 } catch (containerError) {
                                     console.error(`Error fetching container details for ${containerId}:`, containerError);
                                 }
-                            } else {
-                                console.warn('Container has no containerId or id:', container);
                             }
                             return container; // Fallback to original container if fetch fails
                         })
                     );
-                    console.log('All containers with details:', containersWithDetails);
                     instanceDetails.containers = containersWithDetails;
-                } else {
-                    console.log('Containers already have full details');
                 }
             }
             
@@ -705,9 +827,10 @@ function getStateColor(state) {
     if (!state) return 'secondary';
     const stateLower = state.toLowerCase();
     if (stateLower === 'active' || stateLower === 'running') return 'success';
-    if (stateLower === 'creating' || stateLower === 'updating') return 'warning';
+    if (stateLower === 'creating' || stateLower === 'updating' || stateLower === 'inactive') return 'warning';
     if (stateLower === 'stopped' || stateLower === 'stopping') return 'info';
-    if (stateLower === 'failed' || stateLower === 'deleted') return 'danger';
+    if (stateLower === 'failed' || stateLower === 'deleting') return 'danger';
+    if (stateLower === 'deleted') return 'secondary';
     return 'secondary';
 }
 
@@ -771,15 +894,16 @@ const shapeConfigs = {
 };
 
 async function showCreateContainerInstanceModal() {
-    // Reset form, containers, volumes, and ports
+    // Reset form and containers
     containersData = [];
-    volumesData = [];
-    portsData = [];
     document.getElementById('createContainerInstanceForm').reset();
     
-    // Set default CI name: projectName-(count + 1)
+    // Load ports and volumes for the current CI name (projectName) from localStorage
     const config = getConfiguration();
-    const defaultName = config.projectName ? `${config.projectName}-${containerInstancesCount + 1}` : '';
+    loadPortsAndVolumesForCIName(config.projectName);
+    
+    // Set default CI name: projectName (count + 1)
+    const defaultName = config.projectName ? `${config.projectName} ${containerInstancesCount + 1}` : '';
     document.getElementById('ciName').value = defaultName;
     
     // Set default shape config: CI.Standard.E4.Flex (readonly), memory 16GB, ocpus 1
@@ -1116,6 +1240,11 @@ function editVolume(index) {
 function deleteVolume(index) {
     if (confirm('Are you sure you want to delete this volume?')) {
         volumesData.splice(index, 1);
+        
+        // Save volumes to localStorage for current CI name
+        const config = getConfiguration();
+        savePortsAndVolumesForCIName(config.projectName);
+        
         updateVolumesTable();
     }
 }
@@ -1142,6 +1271,10 @@ function saveEditedVolume() {
     } else {
         volumesData[parseInt(index)] = volume;
     }
+    
+    // Save volumes to localStorage for current CI name
+    const config = getConfiguration();
+    savePortsAndVolumesForCIName(config.projectName);
     
     updateVolumesTable();
     
@@ -1194,6 +1327,11 @@ function editPort(index) {
 function deletePort(index) {
     if (confirm('Are you sure you want to delete this port?')) {
         portsData.splice(index, 1);
+        
+        // Save ports to localStorage for current CI name
+        const config = getConfiguration();
+        savePortsAndVolumesForCIName(config.projectName);
+        
         updatePortsTable();
     }
 }
@@ -1220,6 +1358,10 @@ function saveEditedPort() {
     } else {
         portsData[parseInt(index)] = port;
     }
+    
+    // Save ports to localStorage for current CI name
+    const config = getConfiguration();
+    savePortsAndVolumesForCIName(config.projectName);
     
     updatePortsTable();
     
@@ -1314,12 +1456,39 @@ function showCISummaryModal() {
         }
         
         html += `<tr>`;
-        html += `<td>${container.displayName || 'N/A'}</td>`;
+        html += `<td><strong>${container.displayName || 'N/A'}</strong></td>`;
         html += `<td><code>${container.imageUrl || 'N/A'}</code></td>`;
         html += `<td>${memory}</td>`;
         html += `<td>${vcpus}</td>`;
         html += `<td>${portDisplay}</td>`;
         html += `</tr>`;
+        
+        // Show environment variables, command, and arguments if not empty
+        let hasAdditionalInfo = false;
+        let additionalInfoHtml = '';
+        
+        // Environment Variables
+        if (container.environmentVariables && typeof container.environmentVariables === 'object' && Object.keys(container.environmentVariables).length > 0) {
+            hasAdditionalInfo = true;
+            const envEntries = Object.entries(container.environmentVariables).map(([key, value]) => `${key}=${value}`);
+            additionalInfoHtml += `<tr><td colspan="5" class="small text-muted"><strong>Environment Variables:</strong> ${envEntries.join(', ')}</td></tr>`;
+        }
+        
+        // Arguments
+        if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+            hasAdditionalInfo = true;
+            additionalInfoHtml += `<tr><td colspan="5" class="small text-muted"><strong>Arguments:</strong> ${container.arguments.join(', ')}</td></tr>`;
+        }
+        
+        // Command
+        if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+            hasAdditionalInfo = true;
+            additionalInfoHtml += `<tr><td colspan="5" class="small text-muted"><strong>Command:</strong> ${container.command.join(', ')}</td></tr>`;
+        }
+        
+        if (hasAdditionalInfo) {
+            html += additionalInfoHtml;
+        }
     });
     
     html += '</tbody></table></div>';
