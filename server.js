@@ -401,6 +401,201 @@ app.get('/api/oci/container-instances', async (req, res) => {
   }
 });
 
+// Container Instances - Create Container Instance
+app.post('/api/oci/container-instances', async (req, res) => {
+  try {
+    console.log('=== Container Instance Creation Request Received ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
+    const {
+      displayName,
+      compartmentId,
+      shape,
+      subnetId,
+      containers,
+      volumes,
+      containerRestartPolicy,
+      ingressIps
+    } = req.body;
+
+    if (!displayName || !compartmentId || !shape || !subnetId || !containers || containers.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Missing required fields: displayName, compartmentId, shape, subnetId, and at least one container are required' 
+      });
+    }
+
+    // Get availability domain - required for container instances
+    // Extract tenancy ID from config file
+    const configPath = process.env.OCI_CONFIG_FILE || '~/.oci/config';
+    const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const ociConfig = readOCIConfig(configPath, profile);
+    const tenancyId = ociConfig?.tenancy || req.body.tenancyId;
+    
+    if (!tenancyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tenancy ID is required to get availability domain. Please ensure OCI config file is properly configured.'
+      });
+    }
+    
+    const listAvailabilityDomainsRequest = {
+      compartmentId: tenancyId
+    };
+    const adResponse = await identityClient.listAvailabilityDomains(listAvailabilityDomainsRequest);
+    if (!adResponse.items || adResponse.items.length === 0) {
+      throw new Error('No availability domains found for tenancy');
+    }
+    // Use the first availability domain
+    const availabilityDomain = adResponse.items[0].name;
+    console.log('Using availability domain:', availabilityDomain);
+
+    // Build containers array - ensure all fields are properly formatted
+    const containerDetails = containers.map(container => {
+      // Container resourceConfig uses vcpusLimit and memoryLimitInGBs (not vcpus and memoryInGBs)
+      // Ensure values are valid numbers (not NaN, Infinity, etc.)
+      let memoryLimitInGBs = parseFloat(container.resourceConfig?.memoryInGBs || container.resourceConfig?.memoryLimitInGBs) || 1;
+      let vcpusLimit = parseFloat(container.resourceConfig?.vcpus || container.resourceConfig?.vcpusLimit) || 1;
+      
+      // Validate and ensure minimum values
+      if (!isFinite(memoryLimitInGBs) || memoryLimitInGBs <= 0) memoryLimitInGBs = 1;
+      if (!isFinite(vcpusLimit) || vcpusLimit <= 0) vcpusLimit = 1;
+      
+      const containerDetail = {
+        displayName: container.displayName,
+        imageUrl: container.imageUrl,
+        isResourcePrincipalDisabled: false,
+        resourceConfig: {
+          memoryLimitInGBs: memoryLimitInGBs,
+          vcpusLimit: vcpusLimit
+        }
+      };
+
+      // Only include environmentVariables if they exist and have values
+      if (container.environmentVariables && typeof container.environmentVariables === 'object' && Object.keys(container.environmentVariables).length > 0) {
+        containerDetail.environmentVariables = container.environmentVariables;
+      }
+
+      // Only include optional fields if they have values and are arrays
+      if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+        containerDetail.arguments = container.arguments;
+      }
+      if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+        containerDetail.command = container.command;
+      }
+      if (container.volumeMounts && Array.isArray(container.volumeMounts) && container.volumeMounts.length > 0) {
+        containerDetail.volumeMounts = container.volumeMounts;
+      }
+
+      return containerDetail;
+    });
+
+    // Calculate total resources needed from all containers for shapeConfig
+    // For flex shapes, shapeConfig is required
+    let totalMemoryInGBs = 0;
+    let totalVcpus = 0;
+    containerDetails.forEach(container => {
+      if (container.resourceConfig) {
+        totalMemoryInGBs += container.resourceConfig.memoryLimitInGBs || 0;
+        totalVcpus += container.resourceConfig.vcpusLimit || 0;
+      }
+    });
+    
+    // Ensure minimum values - CI.Standard.E4.Flex requires at least 1 OCPU and minimum memory
+    // Minimum memory depends on OCPUs: at least 1GB per OCPU
+    // Ensure values are valid integers/floats
+    totalVcpus = Math.max(Math.ceil(totalVcpus), 1);
+    totalMemoryInGBs = Math.max(Math.ceil(totalMemoryInGBs), Math.max(totalVcpus, 1)); // At least 1GB per OCPU
+    
+    // Validate that values are finite numbers
+    if (!isFinite(totalVcpus) || !isFinite(totalMemoryInGBs)) {
+      throw new Error('Invalid resource values: totalVcpus and totalMemoryInGBs must be valid numbers');
+    }
+
+    // Build container instance configuration
+    // Note: OCI SDK accepts plain objects, but ensure all required fields are present
+    const containerInstanceDetails = {
+      displayName: displayName,
+      compartmentId: compartmentId,
+      availabilityDomain: availabilityDomain,
+      shape: shape,
+      shapeConfig: {
+        ocpus: totalVcpus,
+        memoryInGBs: totalMemoryInGBs
+      },
+      containers: containerDetails,
+      vnics: [{
+        subnetId: subnetId,
+        isPublicIpAssigned: false
+      }],
+      containerRestartPolicy: containerRestartPolicy || 'NEVER'
+    };
+
+    // Add volumes if provided
+    if (volumes && volumes.length > 0) {
+      containerInstanceDetails.volumes = volumes.map((volume, index) => {
+        const volumeName = volume.name || `volume-${index}`;
+        return {
+          name: volumeName,
+          volumeType: volume.volumeType || 'EMPTYDIR',
+          backingStore: volume.backingStore || 'EPHEMERAL_STORAGE'
+        };
+      });
+      
+      // Validate volumeMounts - ensure volumeName references exist in volumes array
+      // Frontend should already set volumeMounts correctly, but we validate here
+      const volumeNames = volumes.map((v, idx) => v.name || `volume-${idx}`);
+      containerDetails.forEach((container) => {
+        if (container.volumeMounts && container.volumeMounts.length > 0) {
+          // Just ensure volumeMounts structure is correct - volumeName should match a volume in the volumes array
+          container.volumeMounts = container.volumeMounts.map((mount) => {
+            // Validate that mountPath and volumeName are present
+            if (!mount.mountPath || !mount.volumeName) {
+              throw new Error(`Invalid volumeMount: mountPath and volumeName are required`);
+            }
+            // Check if volumeName exists in volumes (optional validation)
+            if (!volumeNames.includes(mount.volumeName)) {
+              console.warn(`Warning: volumeName ${mount.volumeName} not found in volumes array`);
+            }
+            return {
+              mountPath: mount.mountPath,
+              volumeName: mount.volumeName
+            };
+          });
+        }
+      });
+    }
+
+    // Note: ingressIps are assigned by OCI after creation, not during creation
+    // Ports should be specified in the container configuration if needed
+    // We skip ingressIps in the creation request
+
+    const createContainerInstanceRequest = {
+      createContainerInstanceDetails: containerInstanceDetails
+    };
+
+    console.log('Creating container instance with request:', JSON.stringify(createContainerInstanceRequest, null, 2));
+    console.log('Container details count:', containerDetails.length);
+    containerDetails.forEach((cd, idx) => {
+      console.log(`Container ${idx}:`, JSON.stringify(cd, null, 2));
+    });
+
+    const response = await containerInstancesClient.createContainerInstance(createContainerInstanceRequest);
+    
+    res.json({
+      success: true,
+      data: response.containerInstance
+    });
+  } catch (error) {
+    console.error('Error creating container instance:', error);
+    console.error('Error details:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Container Instances - Get Container Instance Details
 app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
   try {

@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadPageContent() {
     const config = getConfiguration();
     
-    // Display project name
+    // Display CI name
     displayProjectName(config.projectName);
     
     // Load container instances if we have required config
@@ -14,7 +14,7 @@ async function loadPageContent() {
         await loadContainerInstances();
     } else {
         document.getElementById('containerInstancesContent').innerHTML = 
-            '<p class="text-muted">Please configure compartment and project name to view container instances.</p>';
+            '<p class="text-muted">Please configure compartment and CI name to view container instances.</p>';
     }
 }
 
@@ -23,7 +23,7 @@ function displayProjectName(projectName) {
     if (projectName) {
         projectNameDisplay.textContent = projectName;
     } else {
-        projectNameDisplay.textContent = 'Project Name (Not Set)';
+        projectNameDisplay.textContent = 'CI Name (Not Set)';
         projectNameDisplay.classList.add('text-muted');
     }
 }
@@ -283,7 +283,7 @@ async function loadContainerInstances() {
     }
     
     if (!config.projectName) {
-        contentDiv.innerHTML = '<p class="text-muted">Project name is required. Please configure it first.</p>';
+        contentDiv.innerHTML = '<p class="text-muted">CI name is required. Please configure it first.</p>';
         return;
     }
     
@@ -295,12 +295,12 @@ async function loadContainerInstances() {
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
-            // Filter container instances that match the project name
+            // Filter container instances that match the CI name
             const projectName = config.projectName.toLowerCase();
             const matchingInstances = data.data.filter(instance => {
-                // Check if displayName contains the project name
+                // Check if displayName contains the CI name
                 const displayName = (instance.displayName || '').toLowerCase();
-                // Also check freeformTags for project name if available
+                // Also check freeformTags for CI name if available
                 const tags = instance.freeformTags || {};
                 const tagValues = Object.values(tags).join(' ').toLowerCase();
                 
@@ -324,7 +324,7 @@ async function loadContainerInstances() {
                 await displayContainerInstancesWithDetails(sortedInstances);
             } else {
                 containerInstancesCount = 0;
-                contentDiv.innerHTML = `<p class="text-muted">No container instances found matching project name "${config.projectName}".</p>`;
+                contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
             }
         } else {
             containerInstancesCount = 0;
@@ -819,11 +819,32 @@ function updateShapeInfo() {
     }
 }
 
+// Update port dropdown in container edit modal
+function updateContainerPortDropdown() {
+    const portSelect = document.getElementById('editContainerPort');
+    if (!portSelect) return;
+    
+    // Clear existing options except "No port"
+    portSelect.innerHTML = '<option value="">No port</option>';
+    
+    // Add options for each port
+    portsData.forEach((port, index) => {
+        const option = document.createElement('option');
+        option.value = index.toString();
+        const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+        option.textContent = displayText;
+        portSelect.appendChild(option);
+    });
+}
+
 // Container CRUD functions
 function addContainerToTable() {
     // Reset edit form
     document.getElementById('editContainerForm').reset();
     document.getElementById('editContainerIndex').value = '';
+    
+    // Update port dropdown
+    updateContainerPortDropdown();
     
     // Reset tabs to first tab
     const envTab = document.getElementById('env-tab');
@@ -853,6 +874,16 @@ function editContainer(index) {
     document.getElementById('editContainerImage').value = container.imageUrl || '';
     document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '';
     document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '';
+    
+    // Update port dropdown
+    updateContainerPortDropdown();
+    
+    // Set selected port if container has one
+    if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+        document.getElementById('editContainerPort').value = container.portIndex.toString();
+    } else {
+        document.getElementById('editContainerPort').value = '';
+    }
     
     // Convert env vars object to comma-separated KEY=VALUE string
     if (container.environmentVariables && typeof container.environmentVariables === 'object') {
@@ -919,6 +950,12 @@ function saveEditedContainer() {
         }
     };
     
+    // Store selected port index
+    const portIndex = document.getElementById('editContainerPort').value;
+    if (portIndex && portIndex !== '') {
+        container.portIndex = parseInt(portIndex);
+    }
+    
     // Parse environment variables (comma-separated KEY=VALUE pairs)
     const envVarsStr = document.getElementById('editContainerEnvVars').value.trim();
     if (envVarsStr) {
@@ -969,19 +1006,31 @@ function updateContainersTable() {
     const tbody = document.getElementById('containersTableBody');
     
     if (containersData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td></tr>';
         return;
     }
     
     tbody.innerHTML = containersData.map((container, index) => {
         const memory = container.resourceConfig?.memoryInGBs || 'N/A';
         const vcpus = container.resourceConfig?.vcpus || 'N/A';
+        
+        // Get port display text
+        let portDisplay = '-';
+        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const portIndex = parseInt(container.portIndex);
+            if (portsData[portIndex]) {
+                const port = portsData[portIndex];
+                portDisplay = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+            }
+        }
+        
         return `
             <tr>
                 <td>${container.displayName || 'N/A'}</td>
                 <td><code>${container.imageUrl || 'N/A'}</code></td>
                 <td>${memory}</td>
                 <td>${vcpus}</td>
+                <td>${portDisplay}</td>
                 <td>
                     <button class="btn btn-info btn-sm me-1" onclick="editContainer(${index})">Edit</button>
                     <button class="btn btn-danger btn-sm" onclick="deleteContainer(${index})">Delete</button>
@@ -1182,10 +1231,13 @@ function updatePortsTable() {
             </tr>
         `;
     }).join('');
+    
+    // Update port dropdown in container edit modal if it's open
+    updateContainerPortDropdown();
 }
 
-// Create container instance
-async function createContainerInstance() {
+// Show CI summary modal
+function showCISummaryModal() {
     const form = document.getElementById('createContainerInstanceForm');
     if (!form.checkValidity()) {
         form.reportValidity();
@@ -1198,40 +1250,170 @@ async function createContainerInstance() {
     }
     
     const config = getConfiguration();
+    const ciName = document.getElementById('ciName').value.trim();
+    const ciShape = document.getElementById('ciShape').value;
+    const compartmentName = document.getElementById('ciCompartmentName').value;
+    const subnetName = document.getElementById('ciSubnetName').value;
+    
+    // Build summary HTML
+    let html = '<div class="row mb-4">';
+    
+    // Basic Information
+    html += '<div class="col-md-6">';
+    html += '<h5 class="border-bottom pb-2 mb-3">Basic Information</h5>';
+    html += '<dl class="row">';
+    html += `<dt class="col-sm-4">Name:</dt><dd class="col-sm-8"><strong>${ciName}</strong></dd>`;
+    html += `<dt class="col-sm-4">Shape:</dt><dd class="col-sm-8">${ciShape}</dd>`;
+    html += `<dt class="col-sm-4">Compartment:</dt><dd class="col-sm-8">${compartmentName}</dd>`;
+    html += `<dt class="col-sm-4">Subnet:</dt><dd class="col-sm-8">${subnetName}</dd>`;
+    html += '</dl>';
+    html += '</div>';
+    
+    html += '</div>';
+    
+    // Containers with Ports
+    html += '<div class="row mb-4">';
+    html += '<div class="col-12">';
+    html += '<h5 class="border-bottom pb-2 mb-3">Containers</h5>';
+    html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+    html += '<thead class="table-light"><tr><th>Name</th><th>Image</th><th>Memory (GB)</th><th>VCPUs</th><th>Port</th></tr></thead>';
+    html += '<tbody>';
+    
+    containersData.forEach(container => {
+        const memory = container.resourceConfig?.memoryInGBs || 'N/A';
+        const vcpus = container.resourceConfig?.vcpus || 'N/A';
+        
+        // Get port display text
+        let portDisplay = '-';
+        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const portIndex = parseInt(container.portIndex);
+            if (portsData[portIndex]) {
+                const port = portsData[portIndex];
+                portDisplay = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+            }
+        }
+        
+        html += `<tr>`;
+        html += `<td>${container.displayName || 'N/A'}</td>`;
+        html += `<td><code>${container.imageUrl || 'N/A'}</code></td>`;
+        html += `<td>${memory}</td>`;
+        html += `<td>${vcpus}</td>`;
+        html += `<td>${portDisplay}</td>`;
+        html += `</tr>`;
+    });
+    
+    html += '</tbody></table></div>';
+    html += '</div>';
+    html += '</div>';
+    
+    // Volumes
+    if (volumesData.length > 0) {
+        html += '<div class="row mb-4">';
+        html += '<div class="col-12">';
+        html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
+        html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+        html += '<thead class="table-light"><tr><th>Name</th><th>Path</th></tr></thead>';
+        html += '<tbody>';
+        
+        volumesData.forEach(volume => {
+            html += `<tr>`;
+            html += `<td>${volume.name || '-'}</td>`;
+            html += `<td><code>${volume.path || 'N/A'}</code></td>`;
+            html += `</tr>`;
+        });
+        
+        html += '</tbody></table></div>';
+        html += '</div>';
+        html += '</div>';
+    } else {
+        html += '<div class="row mb-4">';
+        html += '<div class="col-12">';
+        html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
+        html += '<p class="text-muted">No volumes configured</p>';
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    document.getElementById('ciSummaryContent').innerHTML = html;
+    
+    // Show summary modal
+    const summaryModal = new bootstrap.Modal(document.getElementById('ciSummaryModal'));
+    summaryModal.show();
+}
+
+// Create container instance (called from summary modal)
+async function confirmCreateContainerInstance() {
+    const config = getConfiguration();
+    
+    // Clean containers data - remove frontend-only fields like portIndex
+    const cleanedContainers = containersData.map(container => {
+        // Ensure resourceConfig values are numbers
+        const memoryInGBs = parseFloat(container.resourceConfig?.memoryInGBs) || 1;
+        const vcpus = parseFloat(container.resourceConfig?.vcpus) || 1;
+        
+        const cleaned = {
+            displayName: container.displayName,
+            imageUrl: container.imageUrl,
+            resourceConfig: {
+                memoryInGBs: memoryInGBs,
+                vcpus: vcpus
+            }
+        };
+        
+        // Only include environmentVariables if they exist and have values
+        if (container.environmentVariables && typeof container.environmentVariables === 'object' && Object.keys(container.environmentVariables).length > 0) {
+            cleaned.environmentVariables = container.environmentVariables;
+        }
+        
+        // Only include optional fields if they have values
+        if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+            cleaned.arguments = container.arguments;
+        }
+        if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+            cleaned.command = container.command;
+        }
+        if (container.volumeMounts && Array.isArray(container.volumeMounts) && container.volumeMounts.length > 0) {
+            cleaned.volumeMounts = container.volumeMounts;
+        }
+        
+        return cleaned;
+    });
     
     const payload = {
         displayName: document.getElementById('ciName').value.trim(),
         compartmentId: config.compartmentId,
         shape: document.getElementById('ciShape').value,
         subnetId: config.subnetId,
-        containers: containersData,
+        containers: cleanedContainers,
         containerRestartPolicy: 'NEVER'
     };
     
     // Add volumes if any
     if (volumesData.length > 0) {
-        payload.volumes = volumesData.map(v => ({
-            name: v.name,
-            volumeType: 'EMPTYDIR',
-            backingStore: 'EPHEMERAL_STORAGE'
-        }));
+        payload.volumes = volumesData.map((v, idx) => {
+            // Ensure every volume has a name
+            const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+            return {
+                name: volumeName,
+                volumeType: 'EMPTYDIR',
+                backingStore: 'EPHEMERAL_STORAGE'
+            };
+        });
         
-        // Map volumes to containers (simplified - attach all volumes to first container)
-        if (payload.containers.length > 0) {
-            payload.containers[0].volumeMounts = volumesData.map((v, idx) => ({
-                mountPath: v.path,
-                volumeName: v.name || `volume-${idx}`
-            }));
-        }
+        // Map volumes to all containers - attach all volumes to each container
+        cleanedContainers.forEach(container => {
+            container.volumeMounts = volumesData.map((v, idx) => {
+                const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+                return {
+                    mountPath: v.path,
+                    volumeName: volumeName
+                };
+            });
+        });
     }
     
-    // Add ports as ingress IPs if any
-    if (portsData.length > 0) {
-        payload.ingressIps = portsData.map(p => ({
-            name: p.name || `port-${p.port}`,
-            port: p.port
-        }));
-    }
+    // Note: Ports/ingress IPs are assigned by OCI after container instance creation
+    // They cannot be specified during creation - OCI assigns them automatically
     
     try {
         const response = await fetch('/api/oci/container-instances', {
@@ -1245,11 +1427,14 @@ async function createContainerInstance() {
         const data = await response.json();
         
         if (data.success) {
-            alert('Container instance created successfully!');
+            // Close both modals
+            const summaryModal = bootstrap.Modal.getInstance(document.getElementById('ciSummaryModal'));
+            summaryModal.hide();
             
-            // Close modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('createContainerInstanceModal'));
-            modal.hide();
+            const createModal = bootstrap.Modal.getInstance(document.getElementById('createContainerInstanceModal'));
+            createModal.hide();
+            
+            alert('Container instance created successfully!');
             
             // Reload container instances
             await loadContainerInstances();
