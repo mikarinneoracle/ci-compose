@@ -404,14 +404,14 @@ async function loadContainerInstances() {
                 // Store the count of matching instances for default CI name
                 containerInstancesCount = matchingInstances.length;
                 
-                // Sort by creation date (most recent first) and limit to last 5
+                // Sort by creation date (most recent first) and limit to last 10
                 const sortedInstances = matchingInstances
                     .sort((a, b) => {
                         const dateA = a.timeCreated ? new Date(a.timeCreated).getTime() : 0;
                         const dateB = b.timeCreated ? new Date(b.timeCreated).getTime() : 0;
                         return dateB - dateA; // Descending order (newest first)
                     })
-                    .slice(0, 5); // Get last 5 (most recent)
+                    .slice(0, 10); // Get last 10 (most recent)
                 
                 // Fetch details to get accurate states, then check if states changed
                 const instancesWithDetails = await Promise.all(
