@@ -670,6 +670,30 @@ app.delete('/api/oci/container-instances/:instanceId', async (req, res) => {
   }
 });
 
+// Container Instances - Restart Container Instance
+app.post('/api/oci/container-instances/:instanceId/restart', async (req, res) => {
+  try {
+    const instanceId = req.params.instanceId;
+
+    const restartContainerInstanceRequest = {
+      containerInstanceId: instanceId
+    };
+
+    const response = await containerInstancesClient.restartContainerInstance(restartContainerInstanceRequest);
+    
+    res.json({
+      success: true,
+      message: 'Container instance restart initiated'
+    });
+  } catch (error) {
+    console.error('Error restarting container instance:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Container Instances - Get Container Details
 app.get('/api/oci/containers/:containerId', async (req, res) => {
   try {

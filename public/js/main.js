@@ -308,15 +308,21 @@ async function loadSubnets() {
     }
 }
 
-function showNotification(message, type = 'info') {
+function showNotification(message, type = 'info', duration = null) {
     let alertClass;
     if (type === 'success') {
         alertClass = 'alert-success';
     } else if (type === 'error') {
         alertClass = 'alert-danger';
+    } else if (type === 'warning') {
+        alertClass = 'alert-warning';
     } else {
         alertClass = 'alert-info';
     }
+    
+    // Default durations: warnings stay longer (15s), others default to 3s
+    const defaultDuration = type === 'warning' ? 15000 : 3000;
+    const timeoutDuration = duration !== null ? duration : defaultDuration;
     
     const notification = document.createElement('div');
     notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
@@ -327,9 +333,18 @@ function showNotification(message, type = 'info') {
     `;
     document.body.appendChild(notification);
     
+    // Store reference to warning notifications so they can be dismissed when exiting edit mode
+    if (type === 'warning') {
+        warningNotificationElement = notification;
+    }
+    
     setTimeout(() => {
         notification.remove();
-    }, 3000);
+        // Clear reference if it was the warning notification
+        if (notification === warningNotificationElement) {
+            warningNotificationElement = null;
+        }
+    }, timeoutDuration);
 }
 
 // Check server health
@@ -555,6 +570,12 @@ async function showContainerInstanceDetails(instanceId) {
         currentModalInstanceId = null;
         exitEditMode(); // Exit edit mode and reset flags when modal closes
         editingDetailsContext = null;
+        
+        // Dismiss warning notification if it exists
+        if (warningNotificationElement) {
+            warningNotificationElement.remove();
+            warningNotificationElement = null;
+        }
     }, { once: true });
     
     // Set up interval to refresh modal content every 5 seconds while modal is open
@@ -699,6 +720,8 @@ async function refreshContainerInstanceModal(instanceId) {
 let currentEditingInstance = null;
 // Track if we're in edit mode to prevent auto-refresh
 let isInEditMode = false;
+// Store reference to warning notification so it can be dismissed
+let warningNotificationElement = null;
 
 function displayContainerInstanceDetails(instance) {
     const detailsDiv = document.getElementById('containerInstanceDetails');
@@ -944,16 +967,32 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     html += '</div>';
     
-    // Edit and Save Changes buttons
+    // Edit, Save, Cancel, Restart, Delete, and Close buttons
     const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
     const editDisabledAttr = canEdit ? '' : 'disabled';
+    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const restartDisabledAttr = canRestart ? '' : 'disabled';
+    const canDelete = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const deleteDisabledAttr = canDelete ? '' : 'disabled';
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
-    html += `<button class="btn btn-secondary btn-lg me-2" id="detailsEditBtn" onclick="enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
+    html += `<button class="btn btn-secondary btn-sm me-2" id="detailsEditBtn" onclick="enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
     html += '<i class="bi bi-pencil"></i> Edit';
     html += '</button>';
-    html += `<button class="btn btn-primary btn-lg" id="detailsSaveBtn" onclick="saveCIChanges('${containerInstanceId}')" style="display: none;">`;
-    html += '<i class="bi bi-save"></i> Save Changes (Delete & Recreate)';
+    html += `<button class="btn btn-info btn-sm me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
+    html += '<i class="bi bi-arrow-clockwise"></i> Restart Only';
+    html += '</button>';
+    html += `<button class="btn btn-danger btn-sm me-2" id="detailsDeleteBtn" onclick="deleteContainerInstance('${containerInstanceId}')" ${deleteDisabledAttr}>`;
+    html += '<i class="bi bi-trash"></i> Delete';
+    html += '</button>';
+    html += `<button class="btn btn-secondary btn-sm me-2" id="detailsCloseBtn" onclick="closeDetailsModal()" style="display: inline-block;">`;
+    html += 'Close';
+    html += '</button>';
+    html += `<button class="btn btn-primary btn-sm me-2" id="detailsSaveBtn" onclick="saveCIChanges('${containerInstanceId}')" style="display: none;">`;
+    html += '<i class="bi bi-save"></i> Save';
+    html += '</button>';
+    html += `<button class="btn btn-warning btn-sm me-2" id="detailsCancelBtn" onclick="exitEditMode()" style="display: none;">`;
+    html += '<i class="bi bi-x-circle"></i> Cancel';
     html += '</button>';
     html += '</div>';
     html += '</div>';
@@ -967,6 +1006,9 @@ let editingDetailsContext = null; // Store { type: 'details', instanceId: '...' 
 // Enter edit mode - show CRUD buttons
 function enterEditMode(instanceId) {
     isInEditMode = true;
+    
+    // Show warning about delete-create
+    showNotification('Warning: Saving changes will delete the current container instance and create a new one with the same name.', 'warning');
     
     // Show Add buttons
     const addContainerBtn = document.getElementById('detailsAddContainerBtn');
@@ -989,12 +1031,24 @@ function enterEditMode(instanceId) {
         if (actionsCell) actionsCell.style.display = 'table-cell';
     });
     
-    // Show Save button, hide Edit button
+    // Show Save, Cancel buttons; hide Edit, Restart, Delete, and Close buttons
     const editBtn = document.getElementById('detailsEditBtn');
     if (editBtn) editBtn.style.display = 'none';
     
+    const closeBtn = document.getElementById('detailsCloseBtn');
+    if (closeBtn) closeBtn.style.display = 'none';
+    
+    const restartBtn = document.getElementById('detailsRestartBtn');
+    if (restartBtn) restartBtn.style.display = 'none';
+    
+    const deleteBtn = document.getElementById('detailsDeleteBtn');
+    if (deleteBtn) deleteBtn.style.display = 'none';
+    
     const saveBtn = document.getElementById('detailsSaveBtn');
     if (saveBtn) saveBtn.style.display = 'inline-block';
+    
+    const cancelBtn = document.getElementById('detailsCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
 }
 
 function addContainerToDetails() {
@@ -1149,14 +1203,12 @@ function deleteContainerInDetails(index, instanceId) {
     const container = containers[index];
     if (!container) return;
     
-    if (confirm(`Delete container "${container.displayName}"? The changes will be saved when you click "Save Changes".`)) {
-        // Remove from local array and refresh display
-        containers.splice(index, 1);
-        window[`detailsContainers_${instanceId}`] = containers;
-        
-        // Refresh the display by re-rendering the containers table
-        refreshDetailsContainersTable(instanceId);
-    }
+    // Remove from local array and refresh display
+    containers.splice(index, 1);
+    window[`detailsContainers_${instanceId}`] = containers;
+    
+    // Refresh the display by re-rendering the containers table
+    refreshDetailsContainersTable(instanceId);
 }
 
 function refreshDetailsContainersTable(instanceId) {
@@ -1268,14 +1320,12 @@ function deleteVolumeInDetails(index, instanceId) {
     const volume = volumes[index];
     if (!volume) return;
     
-    if (confirm(`Delete volume "${volume.name || volume.path}"? The changes will be saved when you click "Save Changes".`)) {
-        // Remove from local array and refresh display
-        volumes.splice(index, 1);
-        window[`detailsVolumes_${instanceId}`] = volumes;
-        
-        // Refresh the display by re-rendering the volumes table
-        refreshDetailsVolumesTable(instanceId);
-    }
+    // Remove from local array and refresh display
+    volumes.splice(index, 1);
+    window[`detailsVolumes_${instanceId}`] = volumes;
+    
+    // Refresh the display by re-rendering the volumes table
+    refreshDetailsVolumesTable(instanceId);
 }
 
 function refreshDetailsVolumesTable(instanceId) {
@@ -1313,11 +1363,7 @@ function refreshDetailsVolumesTable(instanceId) {
 // Save CI changes by deleting old CI and creating new one with same name
 async function saveCIChanges(instanceId) {
     if (!currentEditingInstance || currentEditingInstance.id !== instanceId) {
-        alert('Error: Instance data not available');
-        return;
-    }
-    
-    if (!confirm(`This will delete the current container instance "${currentEditingInstance.displayName}" and create a new one with the same name using the updated configuration. Continue?`)) {
+        showNotification('Error: Instance data not available', 'error');
         return;
     }
     
@@ -1328,7 +1374,7 @@ async function saveCIChanges(instanceId) {
         const ports = window[`detailsPorts_${instanceId}`] || [];
         
         if (containers.length === 0) {
-            alert('Error: At least one container is required');
+            showNotification('Error: At least one container is required', 'error');
             return;
         }
         
@@ -1457,6 +1503,12 @@ async function saveCIChanges(instanceId) {
 function exitEditMode() {
     isInEditMode = false;
     
+    // Dismiss warning notification if it exists
+    if (warningNotificationElement) {
+        warningNotificationElement.remove();
+        warningNotificationElement = null;
+    }
+    
     // Hide Add buttons
     const addContainerBtn = document.getElementById('detailsAddContainerBtn');
     if (addContainerBtn) addContainerBtn.style.display = 'none';
@@ -1472,12 +1524,98 @@ function exitEditMode() {
     const volumeActions = document.querySelectorAll('[id^="volumeActions_"]');
     volumeActions.forEach(el => el.style.display = 'none');
     
-    // Show Edit button, hide Save button
+    // Show Edit, Restart, Delete, and Close buttons; hide Save and Cancel buttons
     const editBtn = document.getElementById('detailsEditBtn');
     if (editBtn) editBtn.style.display = 'inline-block';
     
+    const restartBtn = document.getElementById('detailsRestartBtn');
+    if (restartBtn) restartBtn.style.display = 'inline-block';
+    
+    const deleteBtn = document.getElementById('detailsDeleteBtn');
+    if (deleteBtn) deleteBtn.style.display = 'inline-block';
+    
+    const closeBtn = document.getElementById('detailsCloseBtn');
+    if (closeBtn) closeBtn.style.display = 'inline-block';
+    
     const saveBtn = document.getElementById('detailsSaveBtn');
     if (saveBtn) saveBtn.style.display = 'none';
+    
+    const cancelBtn = document.getElementById('detailsCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    
+    // Reload the modal content to get fresh data
+    if (currentEditingInstance && currentEditingInstance.id) {
+        refreshContainerInstanceModal(currentEditingInstance.id);
+    }
+}
+
+// Close details modal
+function closeDetailsModal() {
+    const modalElement = document.getElementById('containerInstanceModal');
+    if (modalElement) {
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+}
+
+// Restart container instance
+async function restartContainerInstance(instanceId) {
+    try {
+        showNotification('Restarting container instance...', 'info');
+        
+        const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Container instance restart initiated successfully!', 'success');
+            // Reload container instances to reflect the new state
+            await loadContainerInstances();
+        } else {
+            throw new Error(data.error || 'Failed to restart container instance');
+        }
+    } catch (error) {
+        console.error('Error restarting container instance:', error);
+        showNotification(`Error restarting container instance: ${error.message}`, 'error');
+    }
+}
+
+// Delete container instance
+async function deleteContainerInstance(instanceId) {
+    try {
+        showNotification('Deleting container instance...', 'info');
+        
+        const response = await fetch(`/api/oci/container-instances/${instanceId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Container instance deletion initiated successfully!', 'success');
+            
+            // Close the details modal
+            const modalElement = document.getElementById('containerInstanceModal');
+            if (modalElement) {
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) {
+                    modal.hide();
+                }
+            }
+            
+            // Reload container instances
+            await loadContainerInstances();
+        } else {
+            throw new Error(data.error || 'Failed to delete container instance');
+        }
+    } catch (error) {
+        console.error('Error deleting container instance:', error);
+        showNotification(`Error deleting container instance: ${error.message}`, 'error');
+    }
 }
 
 function getStateColor(state) {
