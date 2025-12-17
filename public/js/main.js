@@ -118,6 +118,12 @@ function getConfiguration() {
     return config;
 }
 
+// Container Instance Creation Functions - declare arrays early so they're accessible to save/load functions
+let containersData = []; // Array to store container data for creation
+let volumesData = []; // Array to store volume data for creation
+let portsData = []; // Array to store port data for creation
+let containerInstancesCount = 0; // Count of container instances found on front page
+
 // Save ports and volumes for a specific CI name (projectName)
 function savePortsAndVolumesForCIName(ciName) {
     if (!ciName) return;
@@ -128,6 +134,7 @@ function savePortsAndVolumesForCIName(ciName) {
         volumes: volumesData
     };
     localStorage.setItem(key, JSON.stringify(data));
+    console.log(`Saved ${portsData.length} ports and ${volumesData.length} volumes for CI name: ${ciName}`);
 }
 
 // Load ports and volumes for a specific CI name (projectName)
@@ -146,12 +153,14 @@ function loadPortsAndVolumesForCIName(ciName) {
             const data = JSON.parse(saved);
             portsData = data.ports || [];
             volumesData = data.volumes || [];
+            console.log(`Loaded ${portsData.length} ports and ${volumesData.length} volumes for CI name: ${ciName}`);
         } catch (error) {
             console.error('Error loading ports and volumes:', error);
             volumesData = [];
             portsData = [];
         }
     } else {
+        console.log(`No saved ports/volumes found for CI name: ${ciName}`);
         volumesData = [];
         portsData = [];
     }
@@ -834,11 +843,6 @@ function getStateColor(state) {
     return 'secondary';
 }
 
-// Container Instance Creation Functions
-let containersData = []; // Array to store container data for creation
-let volumesData = []; // Array to store volume data for creation
-let portsData = []; // Array to store port data for creation
-let containerInstancesCount = 0; // Count of container instances found on front page
 
 // Predefined sidecars
 const sidecars = [
