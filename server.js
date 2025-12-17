@@ -416,7 +416,8 @@ app.post('/api/oci/container-instances', async (req, res) => {
       containers,
       volumes,
       containerRestartPolicy,
-      ingressIps
+      ingressIps,
+      freeformTags
     } = req.body;
 
     if (!displayName || !compartmentId || !shape || !subnetId || !containers || containers.length === 0) {
@@ -452,7 +453,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
     console.log('Using availability domain:', availabilityDomain);
 
     // Build containers array - ensure all fields are properly formatted
-    const containerDetails = containers.map(container => {
+    const containerDetails = containers.map((container, idx) => {
       // Container resourceConfig uses vcpusLimit and memoryLimitInGBs (not vcpus and memoryInGBs)
       // Ensure values are valid numbers (not NaN, Infinity, etc.)
       let memoryLimitInGBs = parseFloat(container.resourceConfig?.memoryInGBs || container.resourceConfig?.memoryLimitInGBs) || 1;
@@ -486,6 +487,11 @@ app.post('/api/oci/container-instances', async (req, res) => {
       }
       if (container.volumeMounts && Array.isArray(container.volumeMounts) && container.volumeMounts.length > 0) {
         containerDetail.volumeMounts = container.volumeMounts;
+      }
+      
+      // Add freeformTags to container if provided (e.g., port information)
+      if (container.freeformTags && typeof container.freeformTags === 'object' && Object.keys(container.freeformTags).length > 0) {
+        containerDetail.freeformTags = container.freeformTags;
       }
 
       return containerDetail;
@@ -543,6 +549,11 @@ app.post('/api/oci/container-instances', async (req, res) => {
       }],
       containerRestartPolicy: containerRestartPolicy || 'NEVER'
     };
+    
+    // Add freeformTags to container instance if provided
+    if (freeformTags && typeof freeformTags === 'object' && Object.keys(freeformTags).length > 0) {
+      containerInstanceDetails.freeformTags = freeformTags;
+    }
 
     // Add volumes if provided
     if (volumes && volumes.length > 0) {

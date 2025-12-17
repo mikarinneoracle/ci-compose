@@ -1538,8 +1538,31 @@ function showCISummaryModal() {
 async function confirmCreateContainerInstance() {
     const config = getConfiguration();
     
+    // Build base freeformTags for CI instance (volumes and ports)
+    // Note: OCI requires all containers to have the same tags as the instance
+    const baseFreeformTags = {};
+    
+    // Add volumes tag
+    if (volumesData.length > 0) {
+        const volumesTag = volumesData.map((v, idx) => {
+            const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+            return `${volumeName}:${v.path}`;
+        }).join(',');
+        baseFreeformTags.volumes = volumesTag;
+    }
+    
+    // Collect ports per container and add to tags as containerName=port pairs
+    containersData.forEach((container, idx) => {
+        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '' && portsData[container.portIndex]) {
+            const port = portsData[container.portIndex];
+            const containerName = container.displayName || `container-${idx}`;
+            // Use container name as tag key, port number as value
+            baseFreeformTags[containerName] = port.port.toString();
+        }
+    });
+    
     // Clean containers data - remove frontend-only fields like portIndex
-    const cleanedContainers = containersData.map(container => {
+    const cleanedContainers = containersData.map((container, containerIdx) => {
         // Ensure resourceConfig values are numbers
         const memoryInGBs = parseFloat(container.resourceConfig?.memoryInGBs) || 1;
         const vcpus = parseFloat(container.resourceConfig?.vcpus) || 1;
@@ -1552,6 +1575,12 @@ async function confirmCreateContainerInstance() {
                 vcpus: vcpus
             }
         };
+        
+        // OCI requires all containers to have the same freeformTags as the instance
+        // So we add the same base tags (volumes and ports) to all containers
+        if (Object.keys(baseFreeformTags).length > 0) {
+            cleaned.freeformTags = { ...baseFreeformTags };
+        }
         
         // Only include environmentVariables if they exist and have values
         if (container.environmentVariables && typeof container.environmentVariables === 'object' && Object.keys(container.environmentVariables).length > 0) {
@@ -1584,6 +1613,12 @@ async function confirmCreateContainerInstance() {
         containers: cleanedContainers,
         containerRestartPolicy: 'NEVER'
     };
+    
+    // Add freeformTags to CI instance (must match container tags per OCI requirement)
+    // Use the same base tags that containers have (volumes), but collect all unique port info
+    if (Object.keys(baseFreeformTags).length > 0) {
+        payload.freeformTags = baseFreeformTags;
+    }
     
     // Add volumes if any
     if (volumesData.length > 0) {
