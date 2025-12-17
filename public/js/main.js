@@ -309,7 +309,15 @@ async function loadSubnets() {
 }
 
 function showNotification(message, type = 'info') {
-    const alertClass = type === 'success' ? 'alert-success' : 'alert-info';
+    let alertClass;
+    if (type === 'success') {
+        alertClass = 'alert-success';
+    } else if (type === 'error') {
+        alertClass = 'alert-danger';
+    } else {
+        alertClass = 'alert-info';
+    }
+    
     const notification = document.createElement('div');
     notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
     notification.style.zIndex = '9999';
@@ -1682,16 +1690,18 @@ async function confirmCreateContainerInstance() {
             const createModal = bootstrap.Modal.getInstance(document.getElementById('createContainerInstanceModal'));
             createModal.hide();
             
-            alert('Container instance created successfully!');
+            // Show success notification
+            showNotification('Container instance created successfully!', 'success');
             
             // Reload container instances
             await loadContainerInstances();
         } else {
-            alert(`Error creating container instance: ${data.error || 'Unknown error'}`);
+            // Show error notification
+            showNotification(`Error creating container instance: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
         console.error('Error creating container instance:', error);
-        alert(`Error creating container instance: ${error.message}`);
+        showNotification(`Error creating container instance: ${error.message}`, 'error');
     }
 }
 
