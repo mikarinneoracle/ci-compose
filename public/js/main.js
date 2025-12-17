@@ -705,33 +705,45 @@ let containerInstancesCount = 0; // Count of container instances found on front 
 // Predefined sidecars
 const sidecars = [
     {
+        id: '1',
         name: 'OsReader',
-        image: 'iad.ocir.io/oracle/oci-reader/os-reader:latest',
-        mem: '0.5',
-        ocpu: '0.5',
-        envs: {
-            'OCI_OS_BUCKET': '',
-            'OCI_OS_PREFIX': ''
-        }
+        image: 'mikarinneoracle/ci-sidecar-os:0.1.0',
+        port: '',
+        volumes: [{ name: 'data' }],
+        envs: [
+            { var: 'data_path', value: '/data' },
+            { var: 'os_bucket', value: '***put here your OS bucket name****' },
+            { var: 'reload_delay', value: '30000' }
+        ],
+        mem: '1',
+        ocpu: '1'
     },
     {
+        id: '2',
         name: 'VaultReader',
-        image: 'iad.ocir.io/oracle/oci-reader/vault-reader:latest',
-        mem: '0.5',
-        ocpu: '0.5',
-        envs: {
-            'OCI_VAULT_ID': '',
-            'OCI_VAULT_SECRET_ID': ''
-        }
+        image: 'mikarinneoracle/ci-sidecar-vault:0.1.0',
+        port: '',
+        volumes: [{ name: 'db-config' }],
+        envs: [
+            { var: 'secrets_file', value: '/secrets/connection.txt' },
+            { var: 'secret_ocid', value: '***put here secrets OCID***' }
+        ],
+        mem: '1',
+        ocpu: '1'
     },
     {
+        id: '3',
         name: 'LogWriter',
-        image: 'iad.ocir.io/oracle/oci-reader/log-writer:latest',
-        mem: '0.5',
-        ocpu: '0.5',
-        envs: {
-            'OCI_LOG_ID': ''
-        }
+        image: 'mikarinneoracle/ci-sidecar-log:0.1.0',
+        port: '',
+        volumes: [{ name: 'logs' }],
+        envs: [
+            { var: 'log_file', value: '/var/log/app.log' },
+            { var: 'log_ocid', value: '***put here log OCID***' },
+            { var: 'log_header', value: '***logs header***' }
+        ],
+        mem: '1',
+        ocpu: '1'
     }
 ];
 
@@ -774,8 +786,8 @@ async function showCreateContainerInstanceModal() {
         if (config.subnetId) {
             const subnetResponse = await fetch(`/api/oci/networking/subnets?subnetId=${config.subnetId}`);
             const subnetData = await subnetResponse.json();
-            if (subnetData.success && subnetData.data && subnetData.data.length > 0) {
-                document.getElementById('ciSubnetName').value = subnetData.data[0].displayName || config.subnetId;
+            if (subnetData.success && subnetData.data) {
+                document.getElementById('ciSubnetName').value = subnetData.data.displayName || subnetData.data.name || config.subnetId;
             } else {
                 document.getElementById('ciSubnetName').value = config.subnetId;
             }
@@ -989,6 +1001,16 @@ function addSidecar(index) {
     const sidecar = sidecars[index];
     if (!sidecar) return;
     
+    // Convert envs array to object format
+    const environmentVariables = {};
+    if (Array.isArray(sidecar.envs)) {
+        sidecar.envs.forEach(env => {
+            if (env.var && env.value !== undefined) {
+                environmentVariables[env.var] = env.value;
+            }
+        });
+    }
+    
     const container = {
         displayName: sidecar.name,
         imageUrl: sidecar.image,
@@ -996,7 +1018,7 @@ function addSidecar(index) {
             memoryInGBs: parseFloat(sidecar.mem),
             vcpus: parseFloat(sidecar.ocpu)
         },
-        environmentVariables: { ...sidecar.envs }
+        environmentVariables: environmentVariables
     };
     
     containersData.push(container);
