@@ -953,8 +953,8 @@ function displayContainerInstanceDetails(instance) {
             
             // Actions column - only show CRUD buttons in edit mode
             html += `<td id="containerActions_${idx}" style="display: none;">`;
-            html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
-            html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
+            html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-pencil"></i></button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-trash"></i></button>`;
             html += `</td>`;
             
             html += '</tr>';
@@ -1046,8 +1046,8 @@ function displayContainerInstanceDetails(instance) {
             html += `<td><code>${volume.path || 'N/A'}</code></td>`;
             // Actions column - only show CRUD buttons in edit mode
             html += `<td id="volumeActions_${idx}" style="display: none;">`;
-            html += `<button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
-            html += `<button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
+            html += `<button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-pencil"></i></button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-trash"></i></button>`;
             html += `</td>`;
             html += '</tr>';
         });
@@ -1071,19 +1071,19 @@ function displayContainerInstanceDetails(instance) {
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
     html += `<button class="btn btn-secondary btn-sm me-2" id="detailsEditBtn" onclick="enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
-    html += '<i class="bi bi-pencil"></i> Edit';
+    html += '<i class="bi bi-pencil"></i>';
     html += '</button>';
     html += `<button class="btn btn-info btn-sm me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
     html += '<i class="bi bi-arrow-clockwise"></i> Restart Only';
     html += '</button>';
     html += `<button class="btn btn-danger btn-sm me-2" id="detailsDeleteBtn" onclick="deleteContainerInstance('${containerInstanceId}')" ${deleteDisabledAttr}>`;
-    html += '<i class="bi bi-trash"></i> Delete';
+    html += '<i class="bi bi-trash"></i>';
     html += '</button>';
     html += `<button class="btn btn-secondary btn-sm me-2" id="detailsCloseBtn" onclick="closeDetailsModal()" style="display: inline-block;">`;
     html += 'Close';
     html += '</button>';
     html += `<button class="btn btn-primary btn-sm me-2" id="detailsSaveBtn" onclick="saveCIChanges('${containerInstanceId}')" style="display: none;">`;
-    html += '<i class="bi bi-save"></i> Save';
+    html += '<i class="bi bi-save"></i>';
     html += '</button>';
     html += `<button class="btn btn-warning btn-sm me-2" id="detailsCancelBtn" onclick="exitEditMode()" style="display: none;">`;
     html += '<i class="bi bi-x-circle"></i> Cancel';
@@ -1411,8 +1411,8 @@ function refreshDetailsContainersTable(instanceId) {
         // Actions column - visibility controlled by edit mode
         const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
         html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay};">`;
-        html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
-        html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
+        html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')"><i class="bi bi-pencil"></i></button>`;
+        html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')"><i class="bi bi-trash"></i></button>`;
         html += `</td>`;
         html += '</tr>';
         return html;
@@ -1547,8 +1547,8 @@ function refreshDetailsVolumesTable(instanceId) {
                 <td>${volume.name || '-'}</td>
                 <td><code>${volume.path || 'N/A'}</code></td>
                 <td id="volumeActions_${idx}" style="display: ${actionsDisplay};">
-                    <button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${instanceId}')">Edit</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${instanceId}')">Delete</button>
+                    <button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${instanceId}')"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${instanceId}')"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2238,8 +2238,8 @@ function updateContainersTable() {
                 <td>${vcpus}</td>
                 <td>${portDisplay}</td>
                 <td>
-                    <button class="btn btn-info btn-sm me-1" onclick="editContainer(${index})">Edit</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteContainer(${index})">Delete</button>
+                    <button class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2480,8 +2480,8 @@ function updateVolumesTable() {
                 <td>${volume.name || '-'}</td>
                 <td><code>${volume.path || 'N/A'}</code></td>
                 <td>
-                    <button class="btn btn-success btn-sm me-1" onclick="editVolume(${index})">Edit</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteVolume(${index})">Delete</button>
+                    <button class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2603,8 +2603,8 @@ function updatePortsTable() {
                 <td>${port.name || '-'}</td>
                 <td>${port.port || 'N/A'}</td>
                 <td>
-                    <button class="btn btn-warning btn-sm me-1" onclick="editPort(${index})">Edit</button>
-                    <button class="btn btn-danger btn-sm" onclick="deletePort(${index})">Delete</button>
+                    <button class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
