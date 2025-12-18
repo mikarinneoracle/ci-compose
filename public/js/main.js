@@ -1197,6 +1197,7 @@ function displayContainerInstanceDetails(instance) {
         const portNum = portMap[containerName] || null;
         return {
             index: idx,
+            containerId: container.containerId || container.id, // Preserve containerId for logs
             displayName: containerName,
             imageUrl: container.imageUrl || container.image || container.imageName || 'N/A',
             resourceConfig: {
@@ -1216,10 +1217,10 @@ function displayContainerInstanceDetails(instance) {
     const containerInstanceId = instance.id;
     
     if (detailsContainersData.length > 0) {
-        html += '<div class="table-responsive"><table class="table table-sm">';
+        html += '<table class="table table-sm" style="width: 100%; table-layout: auto;">';
         // Actions column header - only show in edit mode
-        const actionsHeader = isInEditMode ? '<th>Actions</th>' : '';
-        html += `<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th>${actionsHeader}</tr></thead>`;
+        const actionsHeader = isInEditMode ? '<th style="width: auto; white-space: nowrap; text-align: right;">Actions</th>' : '';
+        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}</tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1255,15 +1256,14 @@ function displayContainerInstanceDetails(instance) {
             html += `</td>`;
             
             // Actions column - only show CRUD buttons in edit mode
-            html += `<td id="containerActions_${idx}" style="display: none;">`;
+            html += `<td id="containerActions_${idx}" style="display: none; white-space: nowrap; text-align: right;">`;
             html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
             html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
-            
             html += '</tr>';
         });
         
-        html += '</tbody></table></div>';
+        html += '</tbody></table>';
     } else {
         html += '<p class="text-muted">No containers found.</p>';
         html += '<tbody id="detailsContainersTableBody"></tbody>';
@@ -1437,12 +1437,8 @@ function enterEditMode(instanceId) {
     // Initialize and display volumes table
     refreshDetailsVolumesTable(instanceId);
     
-    // Show Edit/Delete buttons for containers
-    const containers = window[`detailsContainers_${instanceId}`] || [];
-    containers.forEach((container, idx) => {
-        const actionsCell = document.getElementById(`containerActions_${idx}`);
-        if (actionsCell) actionsCell.style.display = 'table-cell';
-    });
+    // Refresh containers table to hide log column and show action buttons
+    refreshDetailsContainersTable(instanceId);
     
     // Show Edit/Delete buttons for volumes
     const volumes = window[`detailsVolumes_${instanceId}`] || [];
@@ -1738,7 +1734,8 @@ function refreshDetailsContainersTable(instanceId) {
         : true; // Default to true if we can't determine state
     
     if (containers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No containers</td></tr>';
+        // 5 base columns + 1 conditional column (Actions in edit mode)
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No containers</td></tr>';
         return;
     }
     
@@ -1747,9 +1744,17 @@ function refreshDetailsContainersTable(instanceId) {
     if (table) {
         const thead = table.querySelector('thead tr');
         if (thead) {
-            const actionsHeader = thead.querySelector('th:last-child');
-            if (actionsHeader) {
-                actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
+            const headers = thead.querySelectorAll('th');
+            // Actions header is last (if it exists)
+            if (headers.length > 5) {
+                const actionsHeader = headers[headers.length - 1]; // Last
+                if (actionsHeader) {
+                    actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
+                    // Ensure border is maintained when visible
+                    if (isInEditMode) {
+                        actionsHeader.style.borderBottom = '1px solid #dee2e6';
+                    }
+                }
             }
         }
     }
@@ -1776,7 +1781,7 @@ function refreshDetailsContainersTable(instanceId) {
         
         // Actions column - visibility controlled by edit mode
         const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
-        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay};">`;
+        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay}; white-space: nowrap; text-align: right;">`;
         html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
         html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
         html += `</td>`;
@@ -2176,6 +2181,11 @@ function exitEditMode() {
     // Hide all volume action buttons
     const volumeActions = document.querySelectorAll('[id^="volumeActions_"]');
     volumeActions.forEach(el => el.style.display = 'none');
+    
+    // Refresh containers table to show log column and hide action buttons
+    if (currentEditingInstance && currentEditingInstance.id) {
+        refreshDetailsContainersTable(currentEditingInstance.id);
+    }
     
     // Show Edit, Restart, Delete, and Close buttons; hide Save and Cancel buttons
     const editBtn = document.getElementById('detailsEditBtn');
