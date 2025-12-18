@@ -821,45 +821,53 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         throw new Error(`Missing log group ID. Please set it in configuration.`);
       }
       
-      // Build search query - prefer with compartment ID, but try without if we don't have it
+      // Build search query according to Oracle documentation:
+      // Format: search "<compartment_OCID>/<log_group_OCID>/<log_OCID>" for specific log
+      // Reference: https://docs.oracle.com/en-us/iaas/Content/Logging/Concepts/using_the_api_searchlogs.htm
       let searchQuery;
-      if (compartmentId) {
-        // Use the exact format that works in the test endpoint
+      if (compartmentId && logGroupIdToUse && logOcid) {
+        // Use the documented format for searching a specific log
+        searchQuery = `search "${compartmentId}/${logGroupIdToUse}/${logOcid}" | sort by datetime desc`;
+        console.log('Using specific log search format (compartment/loggroup/log)');
+      } else if (compartmentId && logGroupIdToUse) {
+        // Fallback: search log group and filter by log OCID
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}" | sort by datetime desc`;
-      } else {
-        // Fallback: try searching with just log group ID (may not work, but worth trying)
+        console.log('Using log group search format (compartment/loggroup), will filter by log OCID');
+      } else if (logGroupIdToUse) {
+        // Last resort: try with just log group ID
         console.warn('No compartment ID available, trying search with just log group ID');
         searchQuery = `search "${logGroupIdToUse}" | sort by datetime desc`;
+      } else {
+        throw new Error('Missing required information: need at least log group ID');
       }
       
-      console.log('Using search query:', searchQuery);
+      console.log('Search query:', searchQuery);
       console.log('Compartment ID:', compartmentId);
-      console.log('Log Group ID:', log.logGroupId);
+      console.log('Log Group ID:', logGroupIdToUse);
+      console.log('Log OCID:', logOcid);
       
-      // SearchLogsDetails is a plain object, not a class
+      // SearchLogsDetails according to Oracle documentation
+      // Reference: https://docs.oracle.com/en-us/iaas/Content/Logging/Concepts/using_the_api_searchlogs.htm
       const searchLogsDetails = {
         timeStart: timeStart,
         timeEnd: timeEnd,
-        searchQuery: searchQuery
+        searchQuery: searchQuery,
+        isReturnFieldInfo: false // Optional, as shown in docs
       };
 
-      // searchLogs takes a request object with searchLogsDetails, limit, and page
-      // The logGroupId should be included in the search query
+      // SearchLogsRequest structure from documentation
       const searchLogsRequest = {
         searchLogsDetails: searchLogsDetails,
-        limit: tail,
-        page: undefined // Optional pagination
+        limit: tail
+        // page is optional, omitting it
       };
       
-      console.log('Search logs - logGroupId:', logGroupIdToUse);
-      console.log('Search logs - logOcid:', logOcid);
-      console.log('Search logs - compartmentId:', compartmentId);
-      console.log('Search logs - query:', searchQuery);
-      console.log('Search logs - request structure:', JSON.stringify({
+      console.log('Calling searchLogs with request:', JSON.stringify({
         searchLogsDetails: {
           timeStart: timeStart.toISOString(),
           timeEnd: timeEnd.toISOString(),
-          searchQuery: searchQuery
+          searchQuery: searchQuery,
+          isReturnFieldInfo: false
         },
         limit: tail
       }, null, 2));
@@ -870,21 +878,27 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       const logEntries = searchResponse.searchResponse?.results || [];
       let logContent = '';
       
-      // Filter entries to only include logs from the specific log OCID
-      const filteredEntries = logEntries.filter(entry => {
-        // Check if the entry belongs to the requested log
-        const entryLogId = entry.data?.logContent?.oracle?.logid || 
-                          entry.logContent?.oracle?.logid ||
-                          entry.oracle?.logid;
-        return entryLogId === logOcid;
-      });
+      // If we searched for a specific log (with log OCID in query), all results should be from that log
+      // Otherwise, filter entries to only include logs from the specific log OCID
+      let entriesToProcess = logEntries;
+      if (!searchQuery.includes(`/${logOcid}"`)) {
+        // We searched the log group, so filter by log OCID
+        console.log('Filtering results by log OCID:', logOcid);
+        entriesToProcess = logEntries.filter(entry => {
+          const entryLogId = entry.data?.logContent?.oracle?.logid || 
+                            entry.logContent?.oracle?.logid ||
+                            entry.oracle?.logid;
+          return entryLogId === logOcid;
+        });
+        console.log(`Filtered ${logEntries.length} entries to ${entriesToProcess.length} entries for log ${logOcid}`);
+      }
       
-      if (filteredEntries.length > 0) {
-        logContent = filteredEntries.map(entry => {
+      if (entriesToProcess.length > 0) {
+        logContent = entriesToProcess.map(entry => {
           // Extract the actual log message/content
           const logData = entry.data?.logContent || entry.logContent || entry;
           
-          // Try to get the message/data field
+          // Try to get the message/data field (based on actual response structure)
           if (logData.data?.message) {
             return logData.data.message;
           } else if (logData.data?.data?.message) {
@@ -905,46 +919,8 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
           }
         }).join('\n');
       } else {
-        // Try alternative query format - search by log group only (all logs in the group)
-        let altSearchQuery;
-        if (compartmentId && log.logGroupId) {
-          altSearchQuery = `search "${compartmentId}/${log.logGroupId}" | sort by datetime desc`;
-        } else if (log.logGroupId) {
-          altSearchQuery = `search "${log.logGroupId}" | sort by datetime desc`;
-        } else {
-          altSearchQuery = `search * | sort by datetime desc`;
-        }
-        const altSearchLogsDetails = {
-          timeStart: timeStart,
-          timeEnd: timeEnd,
-          searchQuery: altSearchQuery
-        };
-        
-        const altSearchLogsRequest = {
-          searchLogsDetails: altSearchLogsDetails,
-          limit: tail,
-          page: undefined
-        };
-        const altSearchResponse = await logSearchClient.searchLogs(altSearchLogsRequest);
-        const altLogEntries = altSearchResponse.searchResponse?.results || [];
-        
-        if (altLogEntries.length > 0) {
-          logContent = altLogEntries.map(entry => {
-            if (entry.data) {
-              return typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data);
-            } else if (entry.message) {
-              return entry.message;
-            } else if (entry.content) {
-              return entry.content;
-            } else if (entry.logContent) {
-              return entry.logContent;
-            } else {
-              return JSON.stringify(entry);
-            }
-          }).join('\n');
-        } else {
-          logContent = 'No log entries found for the specified time range.';
-        }
+        logContent = 'No log entries found for the specified time range.';
+        console.log('No log entries found in search results');
       }
 
       res.json({
