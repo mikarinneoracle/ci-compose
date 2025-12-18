@@ -741,56 +741,45 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
     const tail = parseInt(req.query.tail) || 500; // Default to last 500 lines
     const logGroupIdFromQuery = req.query.logGroupId; // Optional: allow log group ID from query param
     
-    // Try to get log group ID from config (if provided in request body or headers)
-    // For now, we'll use query param or get it from the log object
-
-    // First, get the log to find the log group OCID
-    // According to OCI SDK, getLog might need logId as path parameter
-    let log;
-    try {
-      // Try with request object first
-      const getLogRequest = {
-        logId: logOcid
-      };
-      const logResponse = await loggingManagementClient.getLog(getLogRequest);
-      log = logResponse.log;
-    } catch (getLogError) {
-      console.error('Error in getLog call:');
-      console.error('Error message:', getLogError.message);
-      console.error('Error code:', getLogError.code);
-      console.error('Error stack:', getLogError.stack);
-      
-      // Try alternative: pass logId as path parameter
+    // getLog requires logGroupId as a path parameter
+    // If we have logGroupId from config, use it to get the log details
+    // Otherwise, skip getLog and go straight to searchLogs
+    let log = null;
+    let logGroupIdToUse = logGroupIdFromQuery;
+    let compartmentId = null;
+    
+    if (logGroupIdToUse) {
+      // We have logGroupId from config, so we can call getLog properly
       try {
-        const logResponse = await loggingManagementClient.getLog(logOcid);
+        // getLog requires both logGroupId and logId as path parameters
+        // Format: getLog(logGroupId, logId) or getLog({ logGroupId, logId })
+        const getLogRequest = {
+          logGroupId: logGroupIdToUse,
+          logId: logOcid
+        };
+        const logResponse = await loggingManagementClient.getLog(getLogRequest);
         log = logResponse.log;
-      } catch (getLogError2) {
-        console.error('Both getLog methods failed:', getLogError2.message);
-        return res.status(500).json({
-          success: false,
-          error: `Failed to get log details: ${getLogError.message}`,
-          details: {
-            logOcid: logOcid,
-            error: getLogError.message
+        if (log) {
+          compartmentId = log.compartmentId;
+          // Use logGroupId from log object if it's different (shouldn't be, but just in case)
+          if (!logGroupIdToUse && log.logGroupId) {
+            logGroupIdToUse = log.logGroupId;
           }
-        });
+        }
+      } catch (getLogError) {
+        console.error('Error in getLog call:');
+        console.error('Error message:', getLogError.message);
+        console.error('Error code:', getLogError.code);
+        console.error('Error stack:', getLogError.stack);
+        // Continue without log object - we'll use searchLogs directly
       }
     }
     
-    if (!log) {
-      return res.status(404).json({
-        success: false,
-        error: 'Log not found'
-      });
-    }
-
-    // Use log group ID from query param (config) if provided, otherwise from log object
-    const logGroupIdToUse = logGroupIdFromQuery || log.logGroupId;
-    
+    // If we don't have logGroupId, we can't proceed
     if (!logGroupIdToUse) {
       return res.status(400).json({
         success: false,
-        error: 'Log group ID not found. Please set it in configuration or ensure the log has a log group ID.'
+        error: 'Log group ID is required. Please set it in configuration.'
       });
     }
 
