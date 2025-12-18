@@ -916,6 +916,11 @@ async function showContainerInstanceDetails(instanceId) {
 
 // Helper function to refresh container instance modal content
 async function refreshContainerInstanceModal(instanceId) {
+    // Don't refresh if we're in edit mode to prevent resetting the page
+    if (isInEditMode) {
+        return;
+    }
+    
     const detailsDiv = document.getElementById('containerInstanceDetails');
     
     try {
@@ -1020,7 +1025,10 @@ async function refreshContainerInstanceModal(instanceId) {
                 }
             }
             
-            displayContainerInstanceDetails(instanceDetails);
+            // Double-check we're not in edit mode before refreshing (async operations might have completed after we entered edit mode)
+            if (!isInEditMode) {
+                displayContainerInstanceDetails(instanceDetails);
+            }
         } else {
             detailsDiv.innerHTML = '<div class="alert alert-danger">Error loading container instance details.</div>';
         }
@@ -1038,6 +1046,11 @@ let isInEditMode = false;
 let warningNotificationElement = null;
 
 function displayContainerInstanceDetails(instance) {
+    // Don't rebuild the modal if we're in edit mode - this would reset all user changes
+    if (isInEditMode) {
+        return;
+    }
+    
     const detailsDiv = document.getElementById('containerInstanceDetails');
     
     // Store the original instance data for later use in save operation
@@ -1367,7 +1380,7 @@ function displayContainerInstanceDetails(instance) {
     const deleteDisabledAttr = canDelete ? '' : 'disabled';
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
-    html += `<button class="btn btn-warning me-2" id="detailsEditBtn" onclick="enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
+    html += `<button class="btn btn-warning me-2" id="detailsEditBtn" onclick="isInEditMode = true; enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
     html += '<i class="bi bi-pencil"></i> Edit';
     html += '</button>';
     html += `<button class="btn btn-info me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
@@ -1398,8 +1411,18 @@ let editingDetailsContext = null; // Store { type: 'details', instanceId: '...' 
 function enterEditMode(instanceId) {
     isInEditMode = true;
     
-    // Show warning about delete-create
-    showNotification('Warning: Saving changes will delete the current container instance and create a new one with the same name.', 'warning');
+    // Clear the modal refresh interval to prevent any auto-reload during edit mode
+    const modalElement = document.getElementById('containerInstanceModal');
+    if (modalElement) {
+        const existingIntervalId = modalElement.getAttribute('data-refresh-interval-id');
+        if (existingIntervalId) {
+            clearInterval(parseInt(existingIntervalId));
+            modalElement.removeAttribute('data-refresh-interval-id');
+        }
+    }
+    
+    // Show warning about delete-create (5 second duration)
+    showNotification('Warning: Saving changes will delete the current container instance and create a new one with the same name.', 'warning', 5000);
     
     // Show Add buttons
     const addContainerBtn = document.getElementById('detailsAddContainerBtn');
@@ -1689,11 +1712,17 @@ function deleteContainerInDetails(index, instanceId) {
     refreshDetailsContainersTable(instanceId);
     
     // Ensure buttons are still visible after refresh if in edit mode
+    // Use setTimeout to ensure the table has been fully rendered
     if (isInEditMode) {
-        containers.forEach((container, idx) => {
-            const actionsCell = document.getElementById(`containerActions_${idx}`);
-            if (actionsCell) actionsCell.style.display = 'table-cell';
-        });
+        setTimeout(() => {
+            const updatedContainers = window[`detailsContainers_${instanceId}`] || [];
+            updatedContainers.forEach((container, idx) => {
+                const actionsCell = document.getElementById(`containerActions_${idx}`);
+                if (actionsCell) {
+                    actionsCell.style.display = 'table-cell';
+                }
+            });
+        }, 50);
     }
 }
 
@@ -1969,6 +1998,11 @@ async function saveCIChanges(instanceId) {
         return;
     }
     
+    // Confirm with user that delete/create will happen
+    if (!confirm('Warning: This will delete the current container instance and create a new one with the same name. All changes will be saved. Continue?')) {
+        return;
+    }
+    
     try {
         // Get updated containers and volumes
         const containers = window[`detailsContainers_${instanceId}`] || [];
@@ -2181,11 +2215,32 @@ function exitEditMode() {
         subnetSelect.style.display = 'none';
     }
     
-    // Reload the modal content to get fresh data
-    // Wait a bit to ensure state has updated on the server
-    if (currentEditingInstance && currentEditingInstance.id) {
+    // Restart the modal refresh interval if modal is still open
+    const modalElement = document.getElementById('containerInstanceModal');
+    if (modalElement && modalElement.classList.contains('show') && currentEditingInstance && currentEditingInstance.id) {
+        const instanceId = currentEditingInstance.id;
+        currentModalInstanceId = instanceId;
+        
+        // Set up interval to refresh modal content every 5 seconds while modal is open
+        const modalRefreshInterval = setInterval(async () => {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            // Only refresh if modal is still open, viewing the same instance, and not in edit mode
+            if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
+                await refreshContainerInstanceModal(instanceId);
+            } else {
+                // Modal closed, clear interval
+                clearInterval(modalRefreshInterval);
+                currentModalInstanceId = null;
+            }
+        }, 5000);
+        
+        // Store interval ID so we can clear it when modal closes
+        modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
+        
+        // Reload the modal content to get fresh data
+        // Wait a bit to ensure state has updated on the server
         setTimeout(async () => {
-            await refreshContainerInstanceModal(currentEditingInstance.id);
+            await refreshContainerInstanceModal(instanceId);
         }, 1000);
     }
 }
@@ -2217,9 +2272,9 @@ async function restartContainerInstance(instanceId) {
             // Reload container instances to reflect the new state
             await loadContainerInstances();
             
-            // Refresh modal if it's still open and showing this instance
+            // Refresh modal if it's still open and showing this instance, and not in edit mode
             const modalElement = document.getElementById('containerInstanceModal');
-            if (modalElement && modalElement.classList.contains('show') && currentModalInstanceId === instanceId) {
+            if (modalElement && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
                 // Wait a bit for the state to update on the server, then refresh
                 setTimeout(async () => {
                     await refreshContainerInstanceModal(instanceId);
@@ -2674,11 +2729,17 @@ function saveEditedContainer() {
         editingDetailsContext = null;
         // Don't reset isInEditMode - we're still in edit mode after saving a container
         // Ensure buttons are still visible after refresh
+        // Use setTimeout to ensure the table has been fully rendered
         if (isInEditMode) {
-            containers.forEach((container, idx) => {
-                const actionsCell = document.getElementById(`containerActions_${idx}`);
-                if (actionsCell) actionsCell.style.display = 'table-cell';
-            });
+            setTimeout(() => {
+                const updatedContainers = window[`detailsContainers_${instanceId}`] || [];
+                updatedContainers.forEach((container, idx) => {
+                    const actionsCell = document.getElementById(`containerActions_${idx}`);
+                    if (actionsCell) {
+                        actionsCell.style.display = 'table-cell';
+                    }
+                });
+            }, 50);
         }
     } else {
         // Normal creation flow
@@ -2828,11 +2889,17 @@ function addSidecarToDetails(index) {
     refreshDetailsContainersTable(instanceId);
     
     // Show action buttons for all containers (including the newly added one) if in edit mode
+    // Use setTimeout to ensure the table has been fully rendered
     if (isInEditMode) {
-        containers.forEach((container, idx) => {
-            const actionsCell = document.getElementById(`containerActions_${idx}`);
-            if (actionsCell) actionsCell.style.display = 'table-cell';
-        });
+        setTimeout(() => {
+            const updatedContainers = window[`detailsContainers_${instanceId}`] || [];
+            updatedContainers.forEach((container, idx) => {
+                const actionsCell = document.getElementById(`containerActions_${idx}`);
+                if (actionsCell) {
+                    actionsCell.style.display = 'table-cell';
+                }
+            });
+        }, 50);
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
