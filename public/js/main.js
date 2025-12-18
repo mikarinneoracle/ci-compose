@@ -882,22 +882,73 @@ async function displayContainerInstancesWithDetails(instances) {
         return;
     }
     
-    // Skip fetching VNIC details on initial load to avoid rate limiting
-    // IP addresses will be shown from list response if available, otherwise "N/A"
-    // This significantly reduces API calls on page load
-    const instancesWithDetails = instancesToDisplay.map(instance => {
-        // Use IPs from list response if available, otherwise show N/A
-        if (instance.vnics && instance.vnics.length > 0) {
-            const vnic = instance.vnics[0];
-            if (!vnic.privateIp) {
-                vnic.privateIp = vnic.privateIpAddress || 'N/A';
+    // Fetch instance details first to get vnicId, then fetch VNIC details for IPs
+    // Throttle to avoid rate limiting: process 2 at a time with 300ms delay
+    const instancesWithDetails = await throttleApiCalls(
+        instancesToDisplay,
+        2, // batch size (smaller to reduce load)
+        300, // delay between batches in ms
+        async (instance) => {
+            // First, fetch instance details to get vnicId if not in list response
+            let vnicId = null;
+            if (instance.vnics && instance.vnics.length > 0) {
+                vnicId = instance.vnics[0].vnicId || instance.vnics[0].id;
             }
-            if (!vnic.publicIp) {
-                vnic.publicIp = vnic.publicIpAddress || 'N/A';
+            
+            // If vnicId not in list response, fetch instance details
+            if (!vnicId && instance.id) {
+                try {
+                    const instanceResponse = await fetch(`/api/oci/container-instances/${instance.id}`);
+                    const instanceData = await instanceResponse.json();
+                    if (instanceData.success && instanceData.data && instanceData.data.vnics && instanceData.data.vnics.length > 0) {
+                        vnicId = instanceData.data.vnics[0].vnicId || instanceData.data.vnics[0].id;
+                        // Update instance with vnics from detail response
+                        if (!instance.vnics) {
+                            instance.vnics = instanceData.data.vnics;
+                        } else if (instanceData.data.vnics[0].vnicId) {
+                            instance.vnics[0].vnicId = instanceData.data.vnics[0].vnicId;
+                        }
+                        // Also get containers from detail response if not in list
+                        if (!instance.containers && instanceData.data.containers) {
+                            instance.containers = instanceData.data.containers;
+                        }
+                    }
+                } catch (instanceError) {
+                    console.error(`Error fetching instance details for ${instance.id}:`, instanceError);
+                }
             }
+            
+            // Now fetch VNIC details to get IPs
+            if (vnicId) {
+                try {
+                    const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
+                    const vnicData = await vnicResponse.json();
+                    const vnic = vnicData.vnic || vnicData.data;
+                    if (vnic) {
+                        // Initialize vnics array if needed
+                        if (!instance.vnics || instance.vnics.length === 0) {
+                            instance.vnics = [{}];
+                        }
+                        // Add private IP
+                        if (vnic.privateIp) {
+                            instance.vnics[0].privateIp = vnic.privateIp;
+                        } else if (vnic.privateIpAddress) {
+                            instance.vnics[0].privateIp = vnic.privateIpAddress;
+                        }
+                        // Add public IP
+                        if (vnic.publicIp) {
+                            instance.vnics[0].publicIp = vnic.publicIp;
+                        } else if (vnic.publicIpAddress) {
+                            instance.vnics[0].publicIp = vnic.publicIpAddress;
+                        }
+                    }
+                } catch (vnicError) {
+                    console.error(`Error fetching VNIC details for ${vnicId}:`, vnicError);
+                }
+            }
+            return instance;
         }
-        return instance;
-    });
+    );
     
     let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${instances.length} container instance(s)`;
     if (!showDeletedCIs && instances.length > instancesWithDetails.length) {
@@ -905,11 +956,11 @@ async function displayContainerInstancesWithDetails(instances) {
     }
     html += `</p>`;
     html += '<div class="table-responsive"><table class="table table-hover">';
-    html += '<thead><tr><th>Display Name</th><th>State</th><th>Private IP</th><th>Public IP</th><th>Created</th></tr></thead>';
+    html += '<thead><tr><th>State</th><th>Display Name</th><th>IP Address</th><th>Containers</th><th>Created</th></tr></thead>';
     html += '<tbody>';
     
     instancesWithDetails.forEach(instance => {
-        // Get private IP and public IP from vnics[0]
+        // Get private and public IP from vnics[0] - should be populated from VNIC detail fetch above
         let privateIp = 'N/A';
         let publicIp = 'N/A';
         if (instance.vnics && instance.vnics.length > 0) {
@@ -918,11 +969,53 @@ async function displayContainerInstancesWithDetails(instances) {
             publicIp = vnic.publicIp || vnic.publicIpAddress || 'N/A';
         }
         
+        // Format IP display: show both private and public if available
+        let ipDisplay = privateIp;
+        if (publicIp !== 'N/A' && publicIp) {
+            ipDisplay = `${privateIp} / ${publicIp}`;
+        }
+        
+        // Show all containers - first try from instance.containers, then fall back to tags
+        const freeformTags = instance.freeformTags || {};
+        const containers = instance.containers || [];
+        const containersList = [];
+        
+        // First, try to get containers from instance.containers array
+        if (containers.length > 0) {
+            // Containers are in the response, show all and append port from tags if available
+            containers.forEach(container => {
+                const containerName = container.displayName || container.name || 'N/A';
+                // Look for port in freeformTags using container name as key
+                const port = freeformTags[containerName];
+                if (port && /^\d+$/.test(port)) {
+                    containersList.push(`${containerName}:${port}`);
+                } else {
+                    // If no port found in tags, just show container name
+                    containersList.push(containerName);
+                }
+            });
+        }
+        
+        // Also parse containers from tags (in case containers array is empty or missing)
+        // This ensures we show all containers even if list response doesn't include them
+        Object.entries(freeformTags).forEach(([key, value]) => {
+            // Skip 'volumes' tag, only process container name -> port mappings
+            if (key !== 'volumes' && typeof value === 'string' && /^\d+$/.test(value)) {
+                // Only add if not already in list (avoid duplicates)
+                const containerWithPort = `${key}:${value}`;
+                if (!containersList.includes(containerWithPort) && !containersList.some(c => c.startsWith(key + ':'))) {
+                    containersList.push(containerWithPort);
+                }
+            }
+        });
+        
+        const containersDisplay = containersList.length > 0 ? containersList.join(', ') : 'N/A';
+        
         html += '<tr style="cursor: pointer;" onclick="showContainerInstanceDetails(\'' + instance.id + '\')">';
-        html += `<td><strong>${instance.displayName || 'N/A'}</strong></td>`;
         html += `<td>${getStateBadgeHtml(instance.lifecycleState)}</td>`;
-        html += `<td>${privateIp}</td>`;
-        html += `<td>${publicIp}</td>`;
+        html += `<td><strong>${instance.displayName || 'N/A'}</strong></td>`;
+        html += `<td>${ipDisplay}</td>`;
+        html += `<td><small>${escapeHtml(containersDisplay)}</small></td>`;
         html += `<td>${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</td>`;
         html += '</tr>';
     });
