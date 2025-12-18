@@ -472,7 +472,7 @@ async function loadLogGroups() {
         const data = await response.json();
         
         if (data.success && data.data) {
-            logGroupSelect.innerHTML = '<option value="">-- Select Log Group --</option>';
+            logGroupSelect.innerHTML = '<option value="">Select a default log group...</option>';
             data.data.forEach(logGroup => {
                 const option = document.createElement('option');
                 option.value = logGroup.id;
