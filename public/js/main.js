@@ -489,6 +489,57 @@ async function loadSubnets() {
     }
 }
 
+// Load subnets for CI create/edit modals
+async function loadSubnetsForCI(compartmentId) {
+    const subnetSelect = document.getElementById('ciSubnetId');
+    
+    if (!subnetSelect) {
+        return;
+    }
+    
+    if (!compartmentId) {
+        subnetSelect.innerHTML = '<option value="">Select a compartment first...</option>';
+        return;
+    }
+    
+    try {
+        subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
+        
+        const params = new URLSearchParams();
+        params.append('compartmentId', compartmentId);
+        
+        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+            // Clear existing options
+            subnetSelect.innerHTML = '<option value="">Select a subnet...</option>';
+            
+            // Add subnets to dropdown
+            data.data.forEach(subnet => {
+                const option = document.createElement('option');
+                option.value = subnet.id;
+                option.textContent = subnet.displayName || subnet.id;
+                if (subnet.cidrBlock) {
+                    option.textContent += ` (${subnet.cidrBlock})`;
+                }
+                subnetSelect.appendChild(option);
+            });
+            
+            // Preselect default subnet from config
+            const config = getConfiguration();
+            if (config.subnetId) {
+                subnetSelect.value = config.subnetId;
+            }
+        } else {
+            subnetSelect.innerHTML = '<option value="">No subnets found</option>';
+        }
+    } catch (error) {
+        console.error('Could not load subnets:', error);
+        subnetSelect.innerHTML = '<option value="">Error loading subnets</option>';
+    }
+}
+
 // Load subnets for CI details edit mode
 async function loadSubnetsForDetails(compartmentId, currentSubnetId) {
     const subnetSelect = document.getElementById('detailsSubnetId');
@@ -1304,11 +1355,11 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     
     // Edit, Save, Cancel, Restart, Delete, and Close buttons
-    const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const editDisabledAttr = canEdit ? '' : 'disabled';
-    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const restartDisabledAttr = canRestart ? '' : 'disabled';
-    const canDelete = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING';
+    const canDelete = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const deleteDisabledAttr = canDelete ? '' : 'disabled';
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
@@ -2290,7 +2341,7 @@ async function showCreateContainerInstanceModal() {
     document.getElementById('ciShapeMemory').value = '16';
     document.getElementById('ciShapeOcpus').value = '1';
     
-    // Load compartment and subnet names
+    // Load compartment name
     try {
         if (config.compartmentId) {
             const compResponse = await fetch(`/api/oci/compartments/${config.compartmentId}`);
@@ -2301,19 +2352,12 @@ async function showCreateContainerInstanceModal() {
                 document.getElementById('ciCompartmentName').value = config.compartmentId;
             }
         }
-        
-        if (config.subnetId) {
-            const subnetResponse = await fetch(`/api/oci/networking/subnets?subnetId=${config.subnetId}`);
-            const subnetData = await subnetResponse.json();
-            if (subnetData.success && subnetData.data) {
-                document.getElementById('ciSubnetName').value = subnetData.data.displayName || subnetData.data.name || config.subnetId;
-            } else {
-                document.getElementById('ciSubnetName').value = config.subnetId;
-            }
-        }
     } catch (error) {
-        console.error('Error loading compartment/subnet names:', error);
+        console.error('Error loading compartment name:', error);
     }
+    
+    // Load subnets dropdown
+    await loadSubnetsForCI(config.compartmentId);
     
     // Update tables
     updateContainersTable();
@@ -3143,7 +3187,15 @@ function showCISummaryModal() {
     const ciShapeMemory = document.getElementById('ciShapeMemory').value;
     const ciShapeOcpus = document.getElementById('ciShapeOcpus').value;
     const compartmentName = document.getElementById('ciCompartmentName').value;
-    const subnetName = document.getElementById('ciSubnetName').value;
+    const subnetId = document.getElementById('ciSubnetId').value;
+    if (!subnetId) {
+        showNotification('Please select a subnet', 'error');
+        return;
+    }
+    
+    // Get subnet name for display
+    const subnetSelect = document.getElementById('ciSubnetId');
+    const subnetName = subnetSelect.options[subnetSelect.selectedIndex].text;
     
     // Build summary HTML
     let html = '<div class="row mb-4">';
@@ -3335,7 +3387,7 @@ async function confirmCreateContainerInstance() {
             memoryInGBs: parseFloat(document.getElementById('ciShapeMemory').value),
             ocpus: parseFloat(document.getElementById('ciShapeOcpus').value)
         },
-        subnetId: config.subnetId,
+        subnetId: document.getElementById('ciSubnetId').value,
         containers: cleanedContainers,
         containerRestartPolicy: 'NEVER'
     };
