@@ -794,28 +794,30 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       const timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
       const timeEnd = new Date();
       
-      // Get compartment ID - try from log first
-      let compartmentId = log.compartmentId;
-      
-      // Skip getLogGroup call entirely - it's causing "Missing required path parameter" error
-      // Instead, use compartment ID from log object if available
-      // If not available, try searching without compartment ID (may work with just log group ID)
+      // Compartment ID should already be set from log object if we got it
+      // If not, we'll try searching without it
       
       // Build search query according to Oracle documentation:
       // Format: search "<compartment_OCID>/<log_group_OCID>/<log_OCID>" for specific log
       // Reference: https://docs.oracle.com/en-us/iaas/Content/Logging/Concepts/using_the_api_searchlogs.htm
       let searchQuery;
       if (compartmentId && logGroupIdToUse && logOcid) {
-        // Use the documented format for searching a specific log
+        // Best case: Use the documented format for searching a specific log
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}/${logOcid}" | sort by datetime desc`;
       } else if (compartmentId && logGroupIdToUse) {
         // Fallback: search log group and filter by log OCID
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}" | sort by datetime desc`;
       } else if (logGroupIdToUse) {
-        // Last resort: try with just log group ID
+        // Fallback: try with just log group ID
         searchQuery = `search "${logGroupIdToUse}" | sort by datetime desc`;
+      } else if (compartmentId && logOcid) {
+        // Try searching with compartment and log OCID (no log group)
+        searchQuery = `search "${compartmentId}" | where oracle.logid = "${logOcid}" | sort by datetime desc`;
+      } else if (logOcid) {
+        // Last resort: try searching all logs and filter by log OCID
+        searchQuery = `search * | where oracle.logid = "${logOcid}" | sort by datetime desc`;
       } else {
-        throw new Error('Missing required information: need at least log group ID');
+        throw new Error('Missing required information: need log OCID at minimum');
       }
       
       // SearchLogsDetails according to Oracle documentation
