@@ -9,6 +9,8 @@ const identity = require('oci-identity');
 const core = require('oci-core');
 const objectstorage = require('oci-objectstorage');
 const containerinstances = require('oci-containerinstances');
+const logging = require('oci-logging');
+const loggingsearch = require('oci-loggingsearch');
 const common = require('oci-common');
 
 const app = express();
@@ -41,6 +43,14 @@ const containerInstancesClient = new containerinstances.ContainerInstanceClient(
 });
 
 const virtualNetworkClient = new core.VirtualNetworkClient({
+  authenticationDetailsProvider: provider
+});
+
+const loggingManagementClient = new logging.LoggingManagementClient({
+  authenticationDetailsProvider: provider
+});
+
+const logSearchClient = new loggingsearch.LogSearchClient({
   authenticationDetailsProvider: provider
 });
 
@@ -735,6 +745,334 @@ app.get('/api/oci/containers/:containerId', async (req, res) => {
   } catch (error) {
     console.error('Error getting container details:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Logging Service - Get Log Content by Log OCID
+// Note: OCI Logging Management API doesn't have a direct method to retrieve log content
+// We'll use the Unified Logging Search API via REST call
+app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
+  try {
+    const logOcid = req.params.logOcid;
+    const tail = parseInt(req.query.tail) || 500; // Default to last 500 lines
+    const logGroupIdFromQuery = req.query.logGroupId; // Optional: allow log group ID from query param
+    
+    // Try to get log group ID from config (if provided in request body or headers)
+    // For now, we'll use query param or get it from the log object
+
+    // First, get the log to find the log group OCID
+    const getLogRequest = {
+      logId: logOcid
+    };
+
+    const logResponse = await loggingManagementClient.getLog(getLogRequest);
+    const log = logResponse.log;
+    
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        error: 'Log not found'
+      });
+    }
+
+    console.log('Log object details:');
+    console.log('  - ID:', log.id);
+    console.log('  - Display Name:', log.displayName);
+    console.log('  - Log Group ID:', log.logGroupId);
+    console.log('  - Compartment ID:', log.compartmentId);
+
+    // Use log group ID from query param (config) if provided, otherwise from log object
+    const logGroupIdToUse = logGroupIdFromQuery || log.logGroupId;
+    
+    if (!logGroupIdToUse) {
+      return res.status(400).json({
+        success: false,
+        error: 'Log group ID not found. Please set it in configuration or ensure the log has a log group ID.'
+      });
+    }
+    
+    console.log('Using log group ID:', logGroupIdToUse);
+
+    // Use LogSearchClient to retrieve log content
+    try {
+      // Create search query for the specific log
+      const timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+      const timeEnd = new Date();
+      
+      // Get compartment ID - try from log first
+      let compartmentId = log.compartmentId;
+      
+      console.log('Initial compartment ID from log:', compartmentId);
+      console.log('Log group ID to use:', logGroupIdToUse);
+      
+      // Skip getLogGroup call entirely - it's causing "Missing required path parameter" error
+      // Instead, use compartment ID from log object if available
+      // If not available, try searching without compartment ID (may work with just log group ID)
+      if (!compartmentId) {
+        console.warn('No compartment ID in log object. Will try search with just log group ID.');
+        console.warn('Note: This may not work, but avoids the getLogGroup error.');
+      } else {
+        console.log('Using compartment ID from log object (skipping getLogGroup call)');
+      }
+      
+      // Build search query - use the exact same format as the test endpoint that works
+      // The test endpoint uses: search "<compartment>/<loggroup>"
+      if (!logGroupIdToUse) {
+        throw new Error(`Missing log group ID. Please set it in configuration.`);
+      }
+      
+      // Build search query - prefer with compartment ID, but try without if we don't have it
+      let searchQuery;
+      if (compartmentId) {
+        // Use the exact format that works in the test endpoint
+        searchQuery = `search "${compartmentId}/${logGroupIdToUse}" | sort by datetime desc`;
+      } else {
+        // Fallback: try searching with just log group ID (may not work, but worth trying)
+        console.warn('No compartment ID available, trying search with just log group ID');
+        searchQuery = `search "${logGroupIdToUse}" | sort by datetime desc`;
+      }
+      
+      console.log('Using search query:', searchQuery);
+      console.log('Compartment ID:', compartmentId);
+      console.log('Log Group ID:', log.logGroupId);
+      
+      // SearchLogsDetails is a plain object, not a class
+      const searchLogsDetails = {
+        timeStart: timeStart,
+        timeEnd: timeEnd,
+        searchQuery: searchQuery
+      };
+
+      // searchLogs takes a request object with searchLogsDetails, limit, and page
+      // The logGroupId should be included in the search query
+      const searchLogsRequest = {
+        searchLogsDetails: searchLogsDetails,
+        limit: tail,
+        page: undefined // Optional pagination
+      };
+      
+      console.log('Search logs - logGroupId:', logGroupIdToUse);
+      console.log('Search logs - logOcid:', logOcid);
+      console.log('Search logs - compartmentId:', compartmentId);
+      console.log('Search logs - query:', searchQuery);
+      console.log('Search logs - request structure:', JSON.stringify({
+        searchLogsDetails: {
+          timeStart: timeStart.toISOString(),
+          timeEnd: timeEnd.toISOString(),
+          searchQuery: searchQuery
+        },
+        limit: tail
+      }, null, 2));
+      
+      const searchResponse = await logSearchClient.searchLogs(searchLogsRequest);
+      
+      // Extract log entries from response
+      const logEntries = searchResponse.searchResponse?.results || [];
+      let logContent = '';
+      
+      // Filter entries to only include logs from the specific log OCID
+      const filteredEntries = logEntries.filter(entry => {
+        // Check if the entry belongs to the requested log
+        const entryLogId = entry.data?.logContent?.oracle?.logid || 
+                          entry.logContent?.oracle?.logid ||
+                          entry.oracle?.logid;
+        return entryLogId === logOcid;
+      });
+      
+      if (filteredEntries.length > 0) {
+        logContent = filteredEntries.map(entry => {
+          // Extract the actual log message/content
+          const logData = entry.data?.logContent || entry.logContent || entry;
+          
+          // Try to get the message/data field
+          if (logData.data?.message) {
+            return logData.data.message;
+          } else if (logData.data?.data?.message) {
+            return logData.data.data.message;
+          } else if (logData.message) {
+            return logData.message;
+          } else if (typeof logData.data === 'string') {
+            return logData.data;
+          } else if (entry.data?.message) {
+            return entry.data.message;
+          } else if (entry.message) {
+            return entry.message;
+          } else if (entry.content) {
+            return entry.content;
+          } else {
+            // Return formatted JSON for complex structures
+            return JSON.stringify(logData, null, 2);
+          }
+        }).join('\n');
+      } else {
+        // Try alternative query format - search by log group only (all logs in the group)
+        let altSearchQuery;
+        if (compartmentId && log.logGroupId) {
+          altSearchQuery = `search "${compartmentId}/${log.logGroupId}" | sort by datetime desc`;
+        } else if (log.logGroupId) {
+          altSearchQuery = `search "${log.logGroupId}" | sort by datetime desc`;
+        } else {
+          altSearchQuery = `search * | sort by datetime desc`;
+        }
+        const altSearchLogsDetails = {
+          timeStart: timeStart,
+          timeEnd: timeEnd,
+          searchQuery: altSearchQuery
+        };
+        
+        const altSearchLogsRequest = {
+          searchLogsDetails: altSearchLogsDetails,
+          limit: tail,
+          page: undefined
+        };
+        const altSearchResponse = await logSearchClient.searchLogs(altSearchLogsRequest);
+        const altLogEntries = altSearchResponse.searchResponse?.results || [];
+        
+        if (altLogEntries.length > 0) {
+          logContent = altLogEntries.map(entry => {
+            if (entry.data) {
+              return typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data);
+            } else if (entry.message) {
+              return entry.message;
+            } else if (entry.content) {
+              return entry.content;
+            } else if (entry.logContent) {
+              return entry.logContent;
+            } else {
+              return JSON.stringify(entry);
+            }
+          }).join('\n');
+        } else {
+          logContent = 'No log entries found for the specified time range.';
+        }
+      }
+
+      res.json({
+        success: true,
+        data: logContent || 'No log entries found'
+      });
+    } catch (searchError) {
+      console.error('Error searching logs:', searchError);
+      console.error('Error message:', searchError.message);
+      console.error('Error stack:', searchError.stack);
+      console.error('Log OCID:', logOcid);
+      console.error('Log Group ID:', log.logGroupId);
+      console.error('Compartment ID:', compartmentId);
+      
+      // Return error in the format the frontend expects
+      res.status(500).json({
+        success: false,
+        error: searchError.message || 'Error retrieving log content',
+        details: {
+          logOcid: logOcid,
+          logGroupId: log.logGroupId,
+          compartmentId: compartmentId
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error getting log content:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Logging Service - Test Search Logs by Log Group ID (for testing)
+app.get('/api/oci/logging/test-search/:logGroupId', async (req, res) => {
+  try {
+    const logGroupId = req.params.logGroupId;
+    const tail = parseInt(req.query.tail) || 100; // Default to last 100 lines
+    
+    // Use LogSearchClient to retrieve log content
+    try {
+      // Create search query to get all logs from the log group
+      const timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+      const timeEnd = new Date();
+      
+      // First, get the log group to find the compartment ID
+      const getLogGroupRequest = {
+        logGroupId: logGroupId
+      };
+      
+      let compartmentId = null;
+      try {
+        const logGroupResponse = await loggingManagementClient.getLogGroup(getLogGroupRequest);
+        compartmentId = logGroupResponse.logGroup?.compartmentId;
+        console.log('Log group compartment ID:', compartmentId);
+      } catch (err) {
+        console.log('Could not get log group details:', err.message);
+      }
+      
+      // Build search query - OCI GSL syntax
+      // Format: search "<compartment_OCID>/<log_group_OCID>" for all logs in a log group
+      // Or: search "<compartment_OCID>/<log_group_OCID>/<log_OCID>" for specific log
+      // Use double quotes, not single quotes
+      let searchQuery;
+      if (compartmentId) {
+        // Search all logs in the log group: search "<compartment>/<loggroup>"
+        searchQuery = `search "${compartmentId}/${logGroupId}" | sort by datetime desc`;
+      } else {
+        // Fallback: try with just log group (may not work)
+        searchQuery = `search "${logGroupId}" | sort by datetime desc`;
+      }
+      
+      // SearchLogsDetails is a plain object
+      const searchLogsDetails = {
+        timeStart: timeStart,
+        timeEnd: timeEnd,
+        searchQuery: searchQuery
+      };
+
+      const searchLogsRequest = {
+        searchLogsDetails: searchLogsDetails,
+        limit: tail,
+        page: undefined
+      };
+
+      console.log('Test search logs - logGroupId:', logGroupId);
+      console.log('Test search logs - request:', JSON.stringify(searchLogsRequest, null, 2));
+      
+      const searchResponse = await logSearchClient.searchLogs(searchLogsRequest);
+      
+      console.log('Test search response:', JSON.stringify(searchResponse, null, 2));
+      
+      // Extract log entries from response
+      const logEntries = searchResponse.searchResponse?.results || [];
+      let logContent = '';
+      
+      if (logEntries.length > 0) {
+        logContent = logEntries.map((entry, index) => {
+          return `Entry ${index + 1}:\n${JSON.stringify(entry, null, 2)}`;
+        }).join('\n\n');
+      } else {
+        logContent = 'No log entries found for the specified time range.';
+      }
+
+      res.json({
+        success: true,
+        logGroupId: logGroupId,
+        entryCount: logEntries.length,
+        data: logContent,
+        rawResponse: searchResponse
+      });
+    } catch (searchError) {
+      console.error('Error searching logs:', searchError);
+      res.status(500).json({
+        success: false,
+        error: searchError.message,
+        stack: searchError.stack,
+        logGroupId: logGroupId
+      });
+    }
+  } catch (error) {
+    console.error('Error in test search:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
   }
 });
 

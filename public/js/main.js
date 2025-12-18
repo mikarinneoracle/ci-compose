@@ -198,6 +198,7 @@ function loadConfiguration() {
     if (config.region) document.getElementById('region').value = config.region;
     if (config.ociConfigFile) document.getElementById('ociConfigFile').value = config.ociConfigFile;
     if (config.ociConfigProfile) document.getElementById('ociConfigProfile').value = config.ociConfigProfile;
+    if (config.logGroupId) document.getElementById('logGroupId').value = config.logGroupId;
 }
 
 async function saveConfiguration() {
@@ -210,7 +211,8 @@ async function saveConfiguration() {
         subnetId: document.getElementById('subnetId').value.trim(),
         region: document.getElementById('region').value.trim(),
         ociConfigFile: document.getElementById('ociConfigFile').value.trim() || '~/.oci/config',
-        ociConfigProfile: document.getElementById('ociConfigProfile').value.trim() || 'DEFAULT'
+        ociConfigProfile: document.getElementById('ociConfigProfile').value.trim() || 'DEFAULT',
+        logGroupId: document.getElementById('logGroupId').value.trim()
     };
     
     // Validate required fields
@@ -1219,8 +1221,10 @@ function displayContainerInstanceDetails(instance) {
     if (detailsContainersData.length > 0) {
         html += '<table class="table table-sm" style="width: 100%; table-layout: auto;">';
         // Actions column header - only show in edit mode
+        // Log column header - only show in non-edit mode
         const actionsHeader = isInEditMode ? '<th style="width: auto; white-space: nowrap; text-align: right;">Actions</th>' : '';
-        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}</tr></thead>`;
+        const logHeader = !isInEditMode ? '<th style="border-bottom: 1px solid #dee2e6;">Logs</th>' : '';
+        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}${logHeader}</tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1260,6 +1264,21 @@ function displayContainerInstanceDetails(instance) {
             html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
             html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
+            
+            // Log column - only show in non-edit mode and if container has log_ocid env var
+            if (!isInEditMode) {
+                const logOcid = envVars.log_ocid;
+                if (logOcid) {
+                    html += `<td>`;
+                    html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
+                    html += `<i class="bi bi-file-text"></i> Log`;
+                    html += `</button>`;
+                    html += `</td>`;
+                } else {
+                    html += `<td>-</td>`;
+                }
+            }
+            
             html += '</tr>';
         });
         
@@ -1739,20 +1758,29 @@ function refreshDetailsContainersTable(instanceId) {
         return;
     }
     
-    // Show/hide Actions column header
+    // Show/hide Actions and Log column headers
     const table = tbody.closest('table');
     if (table) {
         const thead = table.querySelector('thead tr');
         if (thead) {
             const headers = thead.querySelectorAll('th');
-            // Actions header is last (if it exists)
+            // Actions header is second to last (before Log if it exists)
+            // Log header is last (if it exists)
             if (headers.length > 5) {
-                const actionsHeader = headers[headers.length - 1]; // Last
+                const actionsHeader = headers[headers.length - 2]; // Second to last
+                const logHeader = headers[headers.length - 1]; // Last
                 if (actionsHeader) {
                     actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
                     // Ensure border is maintained when visible
                     if (isInEditMode) {
                         actionsHeader.style.borderBottom = '1px solid #dee2e6';
+                    }
+                }
+                if (logHeader) {
+                    logHeader.style.display = !isInEditMode ? 'table-cell' : 'none';
+                    // Ensure border is maintained when visible
+                    if (!isInEditMode) {
+                        logHeader.style.borderBottom = '1px solid #dee2e6';
                     }
                 }
             }
@@ -3593,6 +3621,74 @@ async function fetchData() {
             </div>
         `;
         console.error('Error:', error);
+    }
+}
+
+// Show container logs modal using log OCID
+async function showContainerLogs(logOcid, containerName) {
+    const modalElement = document.getElementById('containerLogsModal');
+    const modal = new bootstrap.Modal(modalElement);
+    const logsContent = document.getElementById('containerLogsContent');
+    const modalTitle = document.getElementById('containerLogsModalTitle');
+    
+    // Set modal title
+    modalTitle.textContent = `Logs: ${containerName}`;
+    
+    // Show loading state
+    logsContent.innerHTML = '<p class="text-muted">Loading logs...</p>';
+    
+    modal.show();
+    
+    try {
+        // Get log group ID from config if available
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        params.append('tail', '500');
+        if (config.logGroupId) {
+            params.append('logGroupId', config.logGroupId);
+        }
+        
+        const response = await fetch(`/api/oci/logging/logs/${encodeURIComponent(logOcid)}?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            const logs = data.data;
+            let logsHtml = '<pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">';
+            
+            // Handle different log formats
+            if (logs.content) {
+                // If logs have a content property
+                logsHtml += escapeHtml(logs.content);
+            } else if (Array.isArray(logs)) {
+                // If logs is an array
+                logs.forEach(log => {
+                    if (typeof log === 'string') {
+                        logsHtml += escapeHtml(log) + '\n';
+                    } else if (log.content) {
+                        logsHtml += escapeHtml(log.content) + '\n';
+                    } else if (log.message) {
+                        logsHtml += escapeHtml(log.message) + '\n';
+                    } else if (log.data) {
+                        logsHtml += escapeHtml(log.data) + '\n';
+                    }
+                });
+            } else if (typeof logs === 'string') {
+                logsHtml += escapeHtml(logs);
+            } else if (logs.data) {
+                // If logs have a data property
+                logsHtml += escapeHtml(logs.data);
+            } else {
+                logsHtml += escapeHtml(JSON.stringify(logs, null, 2));
+            }
+            
+            logsHtml += '</pre>';
+            logsContent.innerHTML = logsHtml;
+        } else {
+            logsContent.innerHTML = `<div class="alert alert-warning">No logs available or error: ${data.error || 'Unknown error'}</div>`;
+        }
+    } catch (error) {
+        console.error('Error fetching container logs:', error);
+        logsContent.innerHTML = `<div class="alert alert-danger">Error loading logs: ${error.message}</div>`;
     }
 }
 

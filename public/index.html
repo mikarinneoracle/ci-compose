@@ -582,6 +582,11 @@
                                                 </div>
                                                 <small class="form-text text-muted">OCI Subnet</small>
                                             </div>
+                                            <div class="mb-3">
+                                                <label for="logGroupId" class="form-label">Log Group ID</label>
+                                                <input type="text" class="form-control" id="logGroupId" placeholder="ocid1.loggroup.oc1.eu-frankfurt-1...">
+                                                <small class="form-text text-muted">OCI Log Group ID for container logs (optional)</small>
+                                            </div>
                                             <div class="alert alert-info">
                                                 <strong>Note:</strong> These settings are stored in your browser's local storage and are used for API requests.
                                             </div>
@@ -595,6 +600,26 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Container Logs Modal -->
+    <div class="modal fade" id="containerLogsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title" id="containerLogsModalTitle">Container Logs</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="containerLogsContent" style="max-height: 500px; overflow-y: auto;">
+                        <p class="text-muted">Loading logs...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
