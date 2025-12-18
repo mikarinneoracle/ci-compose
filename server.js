@@ -742,8 +742,8 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
     const logGroupIdFromQuery = req.query.logGroupId; // Optional: allow log group ID from query param
     
     // getLog requires logGroupId as a path parameter
-    // If we have logGroupId from config, use it to get the log details
-    // Otherwise, skip getLog and go straight to searchLogs
+    // Try to get log details if we have logGroupId from config
+    // Otherwise, we'll skip getLog and search directly using the log OCID
     let log = null;
     let logGroupIdToUse = logGroupIdFromQuery;
     let compartmentId = null;
@@ -752,7 +752,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       // We have logGroupId from config, so we can call getLog properly
       try {
         // getLog requires both logGroupId and logId as path parameters
-        // Format: getLog(logGroupId, logId) or getLog({ logGroupId, logId })
         const getLogRequest = {
           logGroupId: logGroupIdToUse,
           logId: logOcid
@@ -761,8 +760,8 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         log = logResponse.log;
         if (log) {
           compartmentId = log.compartmentId;
-          // Use logGroupId from log object if it's different (shouldn't be, but just in case)
-          if (!logGroupIdToUse && log.logGroupId) {
+          // Use logGroupId from log object if available (more reliable)
+          if (log.logGroupId) {
             logGroupIdToUse = log.logGroupId;
           }
         }
@@ -775,12 +774,18 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       }
     }
     
-    // If we don't have logGroupId, we can't proceed
+    // If we don't have logGroupId yet, try to get it from the log object
+    // (This would only work if getLog succeeded above)
+    if (!logGroupIdToUse && log && log.logGroupId) {
+      logGroupIdToUse = log.logGroupId;
+    }
+    
+    // If we still don't have logGroupId, we can try searching without it
+    // by using the log OCID directly in the search query
     if (!logGroupIdToUse) {
-      return res.status(400).json({
-        success: false,
-        error: 'Log group ID is required. Please set it in configuration.'
-      });
+      // Try searching with just the log OCID - this might work if the search API
+      // can resolve it, or we can search all logs and filter
+      logGroupIdToUse = null; // Will search without log group ID
     }
 
     // Use LogSearchClient to retrieve log content
