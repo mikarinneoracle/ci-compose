@@ -414,8 +414,6 @@ app.get('/api/oci/container-instances', async (req, res) => {
 // Container Instances - Create Container Instance
 app.post('/api/oci/container-instances', async (req, res) => {
   try {
-    console.log('=== Container Instance Creation Request Received ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     const {
       displayName,
@@ -460,7 +458,6 @@ app.post('/api/oci/container-instances', async (req, res) => {
     }
     // Use the first availability domain
     const availabilityDomain = adResponse.items[0].name;
-    console.log('Using availability domain:', availabilityDomain);
 
     // Build containers array - ensure all fields are properly formatted
     const containerDetails = containers.map((container, idx) => {
@@ -553,12 +550,9 @@ app.post('/api/oci/container-instances', async (req, res) => {
       // If prohibitPublicIpOnVnic is true, the subnet is private and we cannot assign a public IP
       if (subnet.prohibitPublicIpOnVnic === true) {
         isPublicIpAssigned = false;
-        console.log(`Subnet ${subnetId} is private (prohibitPublicIpOnVnic=true), setting isPublicIpAssigned=false`);
       } else {
-        console.log(`Subnet ${subnetId} allows public IPs, setting isPublicIpAssigned=true`);
       }
     } catch (subnetError) {
-      console.warn(`Could not fetch subnet details for ${subnetId}, defaulting to isPublicIpAssigned=true:`, subnetError.message);
       // Default to true if we can't check (backward compatibility)
       isPublicIpAssigned = true;
     }
@@ -611,7 +605,6 @@ app.post('/api/oci/container-instances', async (req, res) => {
             }
             // Check if volumeName exists in volumes (optional validation)
             if (!volumeNames.includes(mount.volumeName)) {
-              console.warn(`Warning: volumeName ${mount.volumeName} not found in volumes array`);
             }
             return {
               mountPath: mount.mountPath,
@@ -630,10 +623,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
       createContainerInstanceDetails: containerInstanceDetails
     };
 
-    console.log('Creating container instance with request:', JSON.stringify(createContainerInstanceRequest, null, 2));
-    console.log('Container details count:', containerDetails.length);
     containerDetails.forEach((cd, idx) => {
-      console.log(`Container ${idx}:`, JSON.stringify(cd, null, 2));
     });
 
     const response = await containerInstancesClient.createContainerInstance(createContainerInstanceRequest);
@@ -662,11 +652,7 @@ app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
     };
 
     const response = await containerInstancesClient.getContainerInstance(getContainerInstanceRequest);
-    console.log('Container instance response:', JSON.stringify(response.containerInstance, null, 2));
-    console.log('Containers in response:', response.containerInstance.containers);
     if (response.containerInstance.containers && response.containerInstance.containers.length > 0) {
-      console.log('First container keys:', Object.keys(response.containerInstance.containers[0]));
-      console.log('First container:', JSON.stringify(response.containerInstance.containers[0], null, 2));
     }
     res.json({
       success: true,
@@ -736,8 +722,6 @@ app.get('/api/oci/containers/:containerId', async (req, res) => {
     };
 
     const response = await containerInstancesClient.getContainer(getContainerRequest);
-    console.log('Container details response:', JSON.stringify(response, null, 2));
-    console.log('Container object:', response.container);
     res.json({
       success: true,
       data: response.container
@@ -973,9 +957,7 @@ app.get('/api/oci/logging/test-search/:logGroupId', async (req, res) => {
       try {
         const logGroupResponse = await loggingManagementClient.getLogGroup(getLogGroupRequest);
         compartmentId = logGroupResponse.logGroup?.compartmentId;
-        console.log('Log group compartment ID:', compartmentId);
       } catch (err) {
-        console.log('Could not get log group details:', err.message);
       }
       
       // Build search query - OCI GSL syntax
@@ -1004,12 +986,7 @@ app.get('/api/oci/logging/test-search/:logGroupId', async (req, res) => {
         page: undefined
       };
 
-      console.log('Test search logs - logGroupId:', logGroupId);
-      console.log('Test search logs - request:', JSON.stringify(searchLogsRequest, null, 2));
-      
       const searchResponse = await logSearchClient.searchLogs(searchLogsRequest);
-      
-      console.log('Test search response:', JSON.stringify(searchResponse, null, 2));
       
       // Extract log entries from response
       const logEntries = searchResponse.searchResponse?.results || [];
@@ -1192,5 +1169,4 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
 });
