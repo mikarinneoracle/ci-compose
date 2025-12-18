@@ -768,7 +768,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       const getLogRequest = {
         logId: logOcid
       };
-      console.log('Calling getLog with request:', JSON.stringify(getLogRequest));
       const logResponse = await loggingManagementClient.getLog(getLogRequest);
       log = logResponse.log;
     } catch (getLogError) {
@@ -779,7 +778,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       
       // Try alternative: pass logId as path parameter
       try {
-        console.log('Trying getLog with logId as path parameter:', logOcid);
         const logResponse = await loggingManagementClient.getLog(logOcid);
         log = logResponse.log;
       } catch (getLogError2) {
@@ -802,12 +800,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       });
     }
 
-    console.log('Log object details:');
-    console.log('  - ID:', log.id);
-    console.log('  - Display Name:', log.displayName);
-    console.log('  - Log Group ID:', log.logGroupId);
-    console.log('  - Compartment ID:', log.compartmentId);
-
     // Use log group ID from query param (config) if provided, otherwise from log object
     const logGroupIdToUse = logGroupIdFromQuery || log.logGroupId;
     
@@ -817,8 +809,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         error: 'Log group ID not found. Please set it in configuration or ensure the log has a log group ID.'
       });
     }
-    
-    console.log('Using log group ID:', logGroupIdToUse);
 
     // Use LogSearchClient to retrieve log content
     try {
@@ -829,24 +819,9 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       // Get compartment ID - try from log first
       let compartmentId = log.compartmentId;
       
-      console.log('Initial compartment ID from log:', compartmentId);
-      console.log('Log group ID to use:', logGroupIdToUse);
-      
       // Skip getLogGroup call entirely - it's causing "Missing required path parameter" error
       // Instead, use compartment ID from log object if available
       // If not available, try searching without compartment ID (may work with just log group ID)
-      if (!compartmentId) {
-        console.warn('No compartment ID in log object. Will try search with just log group ID.');
-        console.warn('Note: This may not work, but avoids the getLogGroup error.');
-      } else {
-        console.log('Using compartment ID from log object (skipping getLogGroup call)');
-      }
-      
-      // Build search query - use the exact same format as the test endpoint that works
-      // The test endpoint uses: search "<compartment>/<loggroup>"
-      if (!logGroupIdToUse) {
-        throw new Error(`Missing log group ID. Please set it in configuration.`);
-      }
       
       // Build search query according to Oracle documentation:
       // Format: search "<compartment_OCID>/<log_group_OCID>/<log_OCID>" for specific log
@@ -855,23 +830,15 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       if (compartmentId && logGroupIdToUse && logOcid) {
         // Use the documented format for searching a specific log
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}/${logOcid}" | sort by datetime desc`;
-        console.log('Using specific log search format (compartment/loggroup/log)');
       } else if (compartmentId && logGroupIdToUse) {
         // Fallback: search log group and filter by log OCID
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}" | sort by datetime desc`;
-        console.log('Using log group search format (compartment/loggroup), will filter by log OCID');
       } else if (logGroupIdToUse) {
         // Last resort: try with just log group ID
-        console.warn('No compartment ID available, trying search with just log group ID');
         searchQuery = `search "${logGroupIdToUse}" | sort by datetime desc`;
       } else {
         throw new Error('Missing required information: need at least log group ID');
       }
-      
-      console.log('Search query:', searchQuery);
-      console.log('Compartment ID:', compartmentId);
-      console.log('Log Group ID:', logGroupIdToUse);
-      console.log('Log OCID:', logOcid);
       
       // SearchLogsDetails according to Oracle documentation
       // Reference: https://docs.oracle.com/en-us/iaas/Content/Logging/Concepts/using_the_api_searchlogs.htm
@@ -889,16 +856,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         // page is optional, omitting it
       };
       
-      console.log('Calling searchLogs with request:', JSON.stringify({
-        searchLogsDetails: {
-          timeStart: timeStart.toISOString(),
-          timeEnd: timeEnd.toISOString(),
-          searchQuery: searchQuery,
-          isReturnFieldInfo: false
-        },
-        limit: tail
-      }, null, 2));
-      
       const searchResponse = await logSearchClient.searchLogs(searchLogsRequest);
       
       // Extract log entries from response
@@ -910,14 +867,12 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       let entriesToProcess = logEntries;
       if (!searchQuery.includes(`/${logOcid}"`)) {
         // We searched the log group, so filter by log OCID
-        console.log('Filtering results by log OCID:', logOcid);
         entriesToProcess = logEntries.filter(entry => {
           const entryLogId = entry.data?.logContent?.oracle?.logid || 
                             entry.logContent?.oracle?.logid ||
                             entry.oracle?.logid;
           return entryLogId === logOcid;
         });
-        console.log(`Filtered ${logEntries.length} entries to ${entriesToProcess.length} entries for log ${logOcid}`);
       }
       
       if (entriesToProcess.length > 0) {
@@ -947,7 +902,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         }).join('\n');
       } else {
         logContent = 'No log entries found for the specified time range.';
-        console.log('No log entries found in search results');
       }
 
       res.json({
@@ -982,10 +936,18 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error getting log content:', error);
+    console.error('=== ERROR in outer catch block (getLog or other) ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error stack:', error.stack);
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    
     res.status(500).json({ 
       success: false,
-      error: error.message 
+      error: error.message || 'Unknown error',
+      errorName: error.name,
+      errorCode: error.code
     });
   }
 });
