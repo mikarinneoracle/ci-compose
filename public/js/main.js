@@ -3693,7 +3693,7 @@ async function showContainerLogs(logOcid, containerName) {
         // Get log group ID from config if available
         const config = getConfiguration();
         const params = new URLSearchParams();
-        params.append('tail', '500');
+        params.append('tail', '20');
         if (config.logGroupId) {
             params.append('logGroupId', config.logGroupId);
         }

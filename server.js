@@ -761,7 +761,7 @@ app.get('/api/oci/containers/:containerId', async (req, res) => {
 app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
   try {
     const logOcid = req.params.logOcid;
-    const tail = parseInt(req.query.tail) || 500; // Default to last 500 lines
+    const tail = parseInt(req.query.tail) || 20; // Default to last 20 lines
     const logGroupIdFromQuery = req.query.logGroupId; // Optional: allow log group ID from query param
     
     // getLog requires logGroupId as a path parameter
