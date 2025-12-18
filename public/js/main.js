@@ -1480,21 +1480,23 @@ function deleteVolumeInDetails(index, instanceId) {
     const volume = volumes[index];
     if (!volume) return;
     
-    // Remove from local array and refresh display
-    volumes.splice(index, 1);
-    window[`detailsVolumes_${instanceId}`] = volumes;
-    
-    // Save volumes to localStorage using CI name from configuration
-    const config = getConfiguration();
-    if (config.projectName) {
-        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
-        volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
-        portsData = existingData.ports || [];
-        savePortsAndVolumesForCIName(config.projectName);
+    if (confirm('Are you sure you want to delete this volume?')) {
+        // Remove from local array and refresh display
+        volumes.splice(index, 1);
+        window[`detailsVolumes_${instanceId}`] = volumes;
+        
+        // Save volumes to localStorage using CI name from configuration
+        const config = getConfiguration();
+        if (config.projectName) {
+            const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+            volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
+            portsData = existingData.ports || [];
+            savePortsAndVolumesForCIName(config.projectName);
+        }
+        
+        // Refresh the display by re-rendering the volumes table
+        refreshDetailsVolumesTable(instanceId);
     }
-    
-    // Refresh the display by re-rendering the volumes table
-    refreshDetailsVolumesTable(instanceId);
 }
 
 // Port CRUD functions for Details Modal
@@ -1787,6 +1789,10 @@ async function restartContainerInstance(instanceId) {
 
 // Delete container instance
 async function deleteContainerInstance(instanceId) {
+    if (!confirm('Are you sure you want to delete this container instance?')) {
+        return;
+    }
+    
     try {
         showNotification('Deleting container instance...', 'info');
         
@@ -2480,8 +2486,8 @@ function updateVolumesTable() {
                 <td>${volume.name || '-'}</td>
                 <td><code>${volume.path || 'N/A'}</code></td>
                 <td>
-                    <button class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
+                    <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2603,8 +2609,8 @@ function updatePortsTable() {
                 <td>${port.name || '-'}</td>
                 <td>${port.port || 'N/A'}</td>
                 <td>
-                    <button class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>
+                    <button type="button" class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2623,7 +2629,7 @@ function showCISummaryModal() {
     }
     
     if (containersData.length === 0) {
-        alert('Please add at least one container before creating the container instance.');
+        showNotification('Please add at least one container before creating the container instance.', 'error');
         return;
     }
     
