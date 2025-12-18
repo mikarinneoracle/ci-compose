@@ -2983,24 +2983,13 @@ function updateVolumesTable() {
     const createTbody = document.getElementById('createVolumesTableBody');
     if (createTbody) {
         if (volumesData.length === 0) {
-            createTbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+            createTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
         } else {
             createTbody.innerHTML = volumesData.map((volume, index) => {
-                const path = volume.path || 'N/A';
-                const escapedPath = escapeHtml(path);
-                // If name is empty, show path instead; otherwise show name
-                const displayText = volume.name && volume.name.trim() ? volume.name : path;
-                
                 return `
                     <tr>
-                        <td>
-                            <span 
-                                data-bs-toggle="tooltip" 
-                                data-bs-placement="top" 
-                                data-bs-title="${escapedPath}"
-                                style="cursor: help;"
-                            >${escapeHtml(displayText)}</span>
-                        </td>
+                        <td>${escapeHtml(volume.name || '-')}</td>
+                        <td><code>${escapeHtml(volume.path || 'N/A')}</code></td>
                         <td>
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
@@ -3008,10 +2997,6 @@ function updateVolumesTable() {
                     </tr>
                 `;
             }).join('');
-            
-            // Initialize Bootstrap tooltips for the volume paths
-            const createTooltipTriggerList = createTbody.querySelectorAll('[data-bs-toggle="tooltip"]');
-            const createTooltipList = [...createTooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
         }
     }
 }
