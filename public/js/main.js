@@ -1834,6 +1834,13 @@ function deleteVolumeInDetails(index, instanceId) {
             volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
             portsData = existingData.ports || [];
             savePortsAndVolumesForCIName(config.projectName);
+            
+            // Reload from localStorage to ensure consistency
+            loadPortsAndVolumesForCIName(config.projectName);
+            
+            // Update index page tables
+            updatePortsTable();
+            updateVolumesTable();
         }
         
         // Refresh the display by re-rendering the volumes table
@@ -2933,6 +2940,13 @@ function saveEditedVolume() {
             volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
             portsData = existingData.ports || [];
             savePortsAndVolumesForCIName(config.projectName);
+            
+            // Reload from localStorage to ensure consistency
+            loadPortsAndVolumesForCIName(config.projectName);
+            
+            // Update index page tables
+            updatePortsTable();
+            updateVolumesTable();
         }
         
         editingDetailsContext = null;
@@ -3117,6 +3131,13 @@ function saveEditedPort() {
                 return portObj;
             });
             savePortsAndVolumesForCIName(config.projectName);
+            
+            // Reload from localStorage to ensure consistency
+            loadPortsAndVolumesForCIName(config.projectName);
+            
+            // Update index page tables
+            updatePortsTable();
+            updateVolumesTable();
         }
         
         // Update port dropdown in container edit modal if it's open
