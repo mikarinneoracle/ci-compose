@@ -561,7 +561,7 @@
                                             <div class="mb-3">
                                                 <label for="compartmentId" class="form-label">Compartment <span class="text-danger">*</span></label>
                                                 <div class="input-group">
-                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets()">
+                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets(); loadLogGroups();">
                                                         <option value="">Loading compartments...</option>
                                                     </select>
                                                     <button class="btn btn-outline-secondary" type="button" onclick="loadCompartments()">
@@ -583,9 +583,11 @@
                                                 <small class="form-text text-muted">OCI Subnet</small>
                                             </div>
                                             <div class="mb-3">
-                                                <label for="logGroupId" class="form-label">Log Group ID</label>
-                                                <input type="text" class="form-control" id="logGroupId" placeholder="ocid1.loggroup.oc1.eu-frankfurt-1...">
-                                                <small class="form-text text-muted">OCI Log Group ID for container logs (optional)</small>
+                                                <label for="logGroupId" class="form-label">Default Log Group</label>
+                                                <select class="form-select" id="logGroupId">
+                                                    <option value="">Loading log groups...</option>
+                                                </select>
+                                                <small class="form-text text-muted">OCI Log Group for container logs</small>
                                             </div>
                                             <div class="alert alert-info">
                                                 <strong>Note:</strong> These settings are stored in your browser's local storage and are used for API requests.

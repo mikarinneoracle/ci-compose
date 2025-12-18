@@ -411,6 +411,29 @@ app.get('/api/oci/container-instances', async (req, res) => {
   }
 });
 
+// Logging - List Log Groups
+app.get('/api/oci/logging/log-groups', async (req, res) => {
+  try {
+    const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
+    if (!compartmentId) {
+      return res.status(400).json({ error: 'compartmentId is required' });
+    }
+
+    const listLogGroupsRequest = {
+      compartmentId: compartmentId
+    };
+
+    const response = await loggingManagementClient.listLogGroups(listLogGroupsRequest);
+    res.json({
+      success: true,
+      data: response.items || []
+    });
+  } catch (error) {
+    console.error('Error listing log groups:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Container Instances - Create Container Instance
 app.post('/api/oci/container-instances', async (req, res) => {
   try {
@@ -789,6 +812,8 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
     }
 
     // Use LogSearchClient to retrieve log content
+    // Initialize searchQuery early to avoid undefined errors
+    let searchQuery = '';
     try {
       // Create search query for the specific log
       const timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
@@ -800,7 +825,6 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
       // Build search query according to Oracle documentation:
       // Format: search "<compartment_OCID>/<log_group_OCID>/<log_OCID>" for specific log
       // Reference: https://docs.oracle.com/en-us/iaas/Content/Logging/Concepts/using_the_api_searchlogs.htm
-      let searchQuery;
       if (compartmentId && logGroupIdToUse && logOcid) {
         // Best case: Use the documented format for searching a specific log
         searchQuery = `search "${compartmentId}/${logGroupIdToUse}/${logOcid}" | sort by datetime desc`;

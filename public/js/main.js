@@ -198,7 +198,10 @@ function loadConfiguration() {
     if (config.region) document.getElementById('region').value = config.region;
     if (config.ociConfigFile) document.getElementById('ociConfigFile').value = config.ociConfigFile;
     if (config.ociConfigProfile) document.getElementById('ociConfigProfile').value = config.ociConfigProfile;
-    if (config.logGroupId) document.getElementById('logGroupId').value = config.logGroupId;
+    if (config.logGroupId) {
+        const logGroupSelect = document.getElementById('logGroupId');
+        logGroupSelect.value = config.logGroupId;
+    }
 }
 
 async function saveConfiguration() {
@@ -212,7 +215,7 @@ async function saveConfiguration() {
         region: document.getElementById('region').value.trim(),
         ociConfigFile: document.getElementById('ociConfigFile').value.trim() || '~/.oci/config',
         ociConfigProfile: document.getElementById('ociConfigProfile').value.trim() || 'DEFAULT',
-        logGroupId: document.getElementById('logGroupId').value.trim()
+        logGroupId: document.getElementById('logGroupId').value.trim() || ''
     };
     
     // Validate required fields
@@ -432,6 +435,7 @@ async function loadCompartments() {
                 // Load subnets after compartment is selected
                 if (savedConfig.compartmentId) {
                     loadSubnets();
+                    loadLogGroups();
                 }
             }
         } else {
@@ -441,6 +445,52 @@ async function loadCompartments() {
         console.error('Could not load compartments:', error);
         const compartmentSelect = document.getElementById('compartmentId');
         compartmentSelect.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+    }
+}
+
+async function loadLogGroups() {
+    const compartmentId = document.getElementById('compartmentId').value;
+    const logGroupSelect = document.getElementById('logGroupId');
+    
+    if (!logGroupSelect) {
+        return;
+    }
+    
+    if (!compartmentId) {
+        logGroupSelect.innerHTML = '<option value="">Select a compartment first...</option>';
+        return;
+    }
+    
+    try {
+        logGroupSelect.innerHTML = '<option value="">Loading log groups...</option>';
+        
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        params.append('compartmentId', compartmentId);
+        
+        const response = await fetch(`/api/oci/logging/log-groups?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            logGroupSelect.innerHTML = '<option value="">-- Select Log Group --</option>';
+            data.data.forEach(logGroup => {
+                const option = document.createElement('option');
+                option.value = logGroup.id;
+                option.textContent = logGroup.displayName || logGroup.id;
+                logGroupSelect.appendChild(option);
+            });
+            
+            // Restore saved value if exists
+            const savedConfig = JSON.parse(localStorage.getItem('appConfig') || '{}');
+            if (savedConfig.logGroupId) {
+                logGroupSelect.value = savedConfig.logGroupId;
+            }
+        } else {
+            logGroupSelect.innerHTML = '<option value="">No log groups found</option>';
+        }
+    } catch (error) {
+        console.error('Could not load log groups:', error);
+        logGroupSelect.innerHTML = '<option value="">Error loading log groups</option>';
     }
 }
 
