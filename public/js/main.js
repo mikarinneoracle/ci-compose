@@ -1204,7 +1204,9 @@ function displayContainerInstanceDetails(instance) {
     
     if (detailsContainersData.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm">';
-        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Actions</th></tr></thead>';
+        // Actions column header - only show in edit mode
+        const actionsHeader = isInEditMode ? '<th>Actions</th>' : '';
+        html += `<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th>${actionsHeader}</tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1330,7 +1332,9 @@ function displayContainerInstanceDetails(instance) {
     
     if (detailsVolumesData.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
-        html += '<thead class="table-light"><tr><th>Name</th><th>Path</th><th>Actions</th></tr></thead>';
+        // Actions column header - only show in edit mode
+        const actionsHeader = isInEditMode ? '<th>Actions</th>' : '';
+        html += `<thead class="table-light"><tr><th>Name</th><th>Path</th>${actionsHeader}</tr></thead>`;
         html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '">';
         
         detailsVolumesData.forEach((volume, idx) => {
@@ -1709,6 +1713,18 @@ function refreshDetailsContainersTable(instanceId) {
         return;
     }
     
+    // Show/hide Actions column header
+    const table = tbody.closest('table');
+    if (table) {
+        const thead = table.querySelector('thead tr');
+        if (thead) {
+            const actionsHeader = thead.querySelector('th:last-child');
+            if (actionsHeader) {
+                actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
+            }
+        }
+    }
+    
     tbody.innerHTML = containers.map((container, idx) => {
         const containerName = container.displayName;
         
@@ -1882,7 +1898,7 @@ function refreshDetailsVolumesTable(instanceId) {
             <div class="table-responsive">
                 <table class="table table-sm table-bordered">
                     <thead class="table-light">
-                        <tr><th>Name</th><th>Path</th><th>Actions</th></tr>
+                        <tr><th>Name</th><th>Path</th><th id="volumesActionsHeader" style="display: none;">Actions</th></tr>
                     </thead>
                     <tbody id="detailsVolumesTableBody_${instanceId}"></tbody>
                 </table>
@@ -1918,6 +1934,13 @@ function refreshDetailsVolumesTable(instanceId) {
     
     // Actions column visibility controlled by edit mode
     const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
+    
+    // Show/hide Actions column header
+    const actionsHeader = document.getElementById('volumesActionsHeader');
+    if (actionsHeader) {
+        actionsHeader.style.display = actionsDisplay;
+    }
+    
     tbody.innerHTML = volumes.map((volume, idx) => {
         return `
             <tr>
