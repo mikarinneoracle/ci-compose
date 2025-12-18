@@ -120,3 +120,26 @@ body.modal-open #editPortModal.modal {
     z-index: 1060 !important;
 }
 
+/* Container logs modal positioned at rightmost edge */
+.modal-dialog-right {
+    position: fixed;
+    right: 0;
+    top: 0;
+    margin: 0;
+    max-width: 50%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-dialog-right .modal-content {
+    height: 100%;
+    border-radius: 0;
+    border-left: 1px solid #dee2e6;
+}
+
+.modal-dialog-right .modal-body {
+    flex: 1;
+    overflow-y: auto;
+}
+
