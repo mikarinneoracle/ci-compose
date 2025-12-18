@@ -489,6 +489,57 @@ async function loadSubnets() {
     }
 }
 
+// Load subnets for CI details edit mode
+async function loadSubnetsForDetails(compartmentId, currentSubnetId) {
+    const subnetSelect = document.getElementById('detailsSubnetId');
+    
+    if (!subnetSelect) {
+        return;
+    }
+    
+    if (!compartmentId) {
+        subnetSelect.innerHTML = '<option value="">Select a compartment first...</option>';
+        return;
+    }
+    
+    try {
+        subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
+        
+        const params = new URLSearchParams();
+        params.append('compartmentId', compartmentId);
+        
+        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+            // Clear existing options
+            subnetSelect.innerHTML = '<option value="">Select a subnet...</option>';
+            
+            // Add subnets to dropdown
+            data.data.forEach(subnet => {
+                const option = document.createElement('option');
+                option.value = subnet.id;
+                option.textContent = subnet.displayName || subnet.id;
+                if (subnet.cidrBlock) {
+                    option.textContent += ` (${subnet.cidrBlock})`;
+                }
+                subnetSelect.appendChild(option);
+            });
+            
+            // Preselect current subnet (the one used when CI was created)
+            // Only use default from config if currentSubnetId is not available
+            if (currentSubnetId) {
+                subnetSelect.value = currentSubnetId;
+            }
+        } else {
+            subnetSelect.innerHTML = '<option value="">No subnets found</option>';
+        }
+    } catch (error) {
+        console.error('Could not load subnets:', error);
+        subnetSelect.innerHTML = '<option value="">Error loading subnets</option>';
+    }
+}
+
 function showNotification(message, type = 'info', duration = null) {
     let alertClass;
     if (type === 'success') {
@@ -987,7 +1038,12 @@ function displayContainerInstanceDetails(instance) {
     // Compact subnet and shape section
     html += '<div class="mt-3 pt-3 border-top">';
     html += '<dl class="row small mb-0">';
-    html += `<dt class="col-5 text-muted">Subnet:</dt><dd class="col-7">${instance.subnetName || 'N/A'}</dd>`;
+    html += `<dt class="col-5 text-muted">Subnet:</dt>`;
+    html += `<dd class="col-7">`;
+    html += `<span id="detailsSubnetDisplay">${instance.subnetName || 'N/A'}</span>`;
+    html += `<select class="form-select form-select-sm" id="detailsSubnetId" style="display: none;">`;
+    html += `<option value="">Loading subnets...</option>`;
+    html += `</select></dd>`;
     html += `<dt class="col-5 text-muted">Shape:</dt><dd class="col-7">${instance.shape || 'N/A'}</dd>`;
     if (instance.shapeConfig) {
         const memoryValue = instance.shapeConfig.memoryInGBs || '16';
@@ -1346,6 +1402,19 @@ function enterEditMode(instanceId) {
     const ocpusSelect = document.getElementById('detailsShapeOcpus');
     if (ocpusDisplay) ocpusDisplay.style.display = 'none';
     if (ocpusSelect) ocpusSelect.style.display = 'block';
+    
+    // Load and show subnet dropdown
+    const subnetDisplay = document.getElementById('detailsSubnetDisplay');
+    const subnetSelect = document.getElementById('detailsSubnetId');
+    if (subnetDisplay && subnetSelect) {
+        subnetDisplay.style.display = 'none';
+        subnetSelect.style.display = 'inline-block';
+        // Load subnets for the compartment
+        const config = getConfiguration();
+        if (config.compartmentId && currentEditingInstance) {
+            loadSubnetsForDetails(config.compartmentId, currentEditingInstance.subnetId);
+        }
+    }
 }
 
 function addContainerToDetails() {
@@ -1904,7 +1973,10 @@ async function saveCIChanges(instanceId) {
             compartmentId: currentEditingInstance.compartmentId,
             shape: currentEditingInstance.shape,
             shapeConfig: shapeConfig,
-            subnetId: currentEditingInstance.subnetId,
+            subnetId: (() => {
+                const subnetSelect = document.getElementById('detailsSubnetId');
+                return subnetSelect && subnetSelect.value ? subnetSelect.value : currentEditingInstance.subnetId;
+            })(),
             containers: cleanedContainers,
             containerRestartPolicy: currentEditingInstance.containerRestartPolicy || 'NEVER',
             volumes: volumesPayload,
@@ -2019,6 +2091,14 @@ function exitEditMode() {
     const ocpusSelect = document.getElementById('detailsShapeOcpus');
     if (ocpusDisplay) ocpusDisplay.style.display = 'inline';
     if (ocpusSelect) ocpusSelect.style.display = 'none';
+    
+    // Hide subnet dropdown and show display
+    const subnetDisplay = document.getElementById('detailsSubnetDisplay');
+    const subnetSelect = document.getElementById('detailsSubnetId');
+    if (subnetDisplay && subnetSelect) {
+        subnetDisplay.style.display = 'inline';
+        subnetSelect.style.display = 'none';
+    }
     
     // Reload the modal content to get fresh data
     // Wait a bit to ensure state has updated on the server
@@ -2810,49 +2890,86 @@ function saveEditedVolume() {
 }
 
 function updateVolumesTable() {
+    // Update index page volumes table
     const tbody = document.getElementById('volumesTableBody');
-    
-    if (volumesData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
-        return;
+    if (tbody) {
+        if (volumesData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+        } else {
+            // Dispose of existing tooltips before updating
+            const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+            existingTooltips.forEach(el => {
+                const tooltipInstance = bootstrap.Tooltip.getInstance(el);
+                if (tooltipInstance) {
+                    tooltipInstance.dispose();
+                }
+            });
+            
+            tbody.innerHTML = volumesData.map((volume, index) => {
+                const path = volume.path || 'N/A';
+                const escapedPath = escapeHtml(path);
+                // If name is empty, show path instead; otherwise show name
+                const displayText = volume.name && volume.name.trim() ? volume.name : path;
+                
+                return `
+                    <tr>
+                        <td>
+                            <span 
+                                data-bs-toggle="tooltip" 
+                                data-bs-placement="top" 
+                                data-bs-title="${escapedPath}"
+                                style="cursor: help;"
+                            >${escapeHtml(displayText)}</span>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Initialize Bootstrap tooltips for the volume paths
+            const tooltipTriggerList = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+            const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        }
     }
     
-    // Dispose of existing tooltips before updating
-    const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
-    existingTooltips.forEach(el => {
-        const tooltipInstance = bootstrap.Tooltip.getInstance(el);
-        if (tooltipInstance) {
-            tooltipInstance.dispose();
+    // Update create modal volumes table
+    const createTbody = document.getElementById('createVolumesTableBody');
+    if (createTbody) {
+        if (volumesData.length === 0) {
+            createTbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+        } else {
+            createTbody.innerHTML = volumesData.map((volume, index) => {
+                const path = volume.path || 'N/A';
+                const escapedPath = escapeHtml(path);
+                // If name is empty, show path instead; otherwise show name
+                const displayText = volume.name && volume.name.trim() ? volume.name : path;
+                
+                return `
+                    <tr>
+                        <td>
+                            <span 
+                                data-bs-toggle="tooltip" 
+                                data-bs-placement="top" 
+                                data-bs-title="${escapedPath}"
+                                style="cursor: help;"
+                            >${escapeHtml(displayText)}</span>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Initialize Bootstrap tooltips for the volume paths
+            const createTooltipTriggerList = createTbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+            const createTooltipList = [...createTooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
         }
-    });
-    
-    tbody.innerHTML = volumesData.map((volume, index) => {
-        const path = volume.path || 'N/A';
-        const escapedPath = escapeHtml(path);
-        // If name is empty, show path instead; otherwise show name
-        const displayText = volume.name && volume.name.trim() ? volume.name : path;
-        
-        return `
-            <tr>
-                <td>
-                    <span 
-                        data-bs-toggle="tooltip" 
-                        data-bs-placement="top" 
-                        data-bs-title="${escapedPath}"
-                        style="cursor: help;"
-                    >${escapeHtml(displayText)}</span>
-                </td>
-                <td>
-                    <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-    
-    // Initialize Bootstrap tooltips for the volume paths
-    const tooltipTriggerList = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
-    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+    }
 }
 
 // Port CRUD functions

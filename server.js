@@ -531,6 +531,28 @@ app.post('/api/oci/container-instances', async (req, res) => {
       throw new Error('Invalid resource values: ocpus and memoryInGBs must be valid numbers');
     }
 
+    // Check if subnet is private (prohibits public IP assignment)
+    let isPublicIpAssigned = true; // Default to true for public subnets
+    try {
+      const getSubnetRequest = {
+        subnetId: subnetId
+      };
+      const subnetResponse = await virtualNetworkClient.getSubnet(getSubnetRequest);
+      const subnet = subnetResponse.subnet;
+      
+      // If prohibitPublicIpOnVnic is true, the subnet is private and we cannot assign a public IP
+      if (subnet.prohibitPublicIpOnVnic === true) {
+        isPublicIpAssigned = false;
+        console.log(`Subnet ${subnetId} is private (prohibitPublicIpOnVnic=true), setting isPublicIpAssigned=false`);
+      } else {
+        console.log(`Subnet ${subnetId} allows public IPs, setting isPublicIpAssigned=true`);
+      }
+    } catch (subnetError) {
+      console.warn(`Could not fetch subnet details for ${subnetId}, defaulting to isPublicIpAssigned=true:`, subnetError.message);
+      // Default to true if we can't check (backward compatibility)
+      isPublicIpAssigned = true;
+    }
+
     // Build container instance configuration
     // Note: OCI SDK accepts plain objects, but ensure all required fields are present
     const containerInstanceDetails = {
@@ -545,7 +567,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
       containers: containerDetails,
       vnics: [{
         subnetId: subnetId,
-        isPublicIpAssigned: true
+        isPublicIpAssigned: isPublicIpAssigned
       }],
       containerRestartPolicy: containerRestartPolicy || 'NEVER'
     };
