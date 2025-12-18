@@ -761,12 +761,39 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
     // For now, we'll use query param or get it from the log object
 
     // First, get the log to find the log group OCID
-    const getLogRequest = {
-      logId: logOcid
-    };
-
-    const logResponse = await loggingManagementClient.getLog(getLogRequest);
-    const log = logResponse.log;
+    // According to OCI SDK, getLog might need logId as path parameter
+    let log;
+    try {
+      // Try with request object first
+      const getLogRequest = {
+        logId: logOcid
+      };
+      console.log('Calling getLog with request:', JSON.stringify(getLogRequest));
+      const logResponse = await loggingManagementClient.getLog(getLogRequest);
+      log = logResponse.log;
+    } catch (getLogError) {
+      console.error('Error in getLog call:');
+      console.error('Error message:', getLogError.message);
+      console.error('Error code:', getLogError.code);
+      console.error('Error stack:', getLogError.stack);
+      
+      // Try alternative: pass logId as path parameter
+      try {
+        console.log('Trying getLog with logId as path parameter:', logOcid);
+        const logResponse = await loggingManagementClient.getLog(logOcid);
+        log = logResponse.log;
+      } catch (getLogError2) {
+        console.error('Both getLog methods failed:', getLogError2.message);
+        return res.status(500).json({
+          success: false,
+          error: `Failed to get log details: ${getLogError.message}`,
+          details: {
+            logOcid: logOcid,
+            error: getLogError.message
+          }
+        });
+      }
+    }
     
     if (!log) {
       return res.status(404).json({
@@ -928,21 +955,29 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
         data: logContent || 'No log entries found'
       });
     } catch (searchError) {
-      console.error('Error searching logs:', searchError);
+      console.error('=== ERROR in searchLogs try block ===');
+      console.error('Error name:', searchError.name);
       console.error('Error message:', searchError.message);
+      console.error('Error code:', searchError.code);
       console.error('Error stack:', searchError.stack);
-      console.error('Log OCID:', logOcid);
-      console.error('Log Group ID:', log.logGroupId);
-      console.error('Compartment ID:', compartmentId);
+      console.error('Full error object:', JSON.stringify(searchError, Object.getOwnPropertyNames(searchError)));
+      console.error('Context:');
+      console.error('  - Log OCID:', logOcid);
+      console.error('  - Log Group ID:', logGroupIdToUse);
+      console.error('  - Compartment ID:', compartmentId);
+      console.error('  - Search Query:', searchQuery);
       
       // Return error in the format the frontend expects
       res.status(500).json({
         success: false,
         error: searchError.message || 'Error retrieving log content',
+        errorName: searchError.name,
+        errorCode: searchError.code,
         details: {
           logOcid: logOcid,
-          logGroupId: log.logGroupId,
-          compartmentId: compartmentId
+          logGroupId: logGroupIdToUse,
+          compartmentId: compartmentId,
+          searchQuery: searchQuery
         }
       });
     }
