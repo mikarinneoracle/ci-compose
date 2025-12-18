@@ -7,6 +7,27 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Helper function to throttle API calls - process in batches with delays
+async function throttleApiCalls(items, batchSize, delayMs, asyncFn) {
+    const results = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(asyncFn));
+        results.push(...batchResults);
+        
+        // Add delay between batches (except for the last batch)
+        if (i + batchSize < items.length) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+    return results;
+}
+
+// Helper function to add delay between API calls
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // Initialize hover tooltips for container rows
 function initializeContainerTooltips() {
     // Remove existing tooltip if any
@@ -144,17 +165,35 @@ let currentModalInstanceId = null;
 // Track previous container instance states to detect changes
 let previousInstanceStates = new Map(); // Map of instanceId -> lifecycleState
 
+// Store main page auto-reload interval ID
+let mainPageAutoReloadInterval = null;
+
+// Function to start/restart main page auto-reload
+function startMainPageAutoReload() {
+    // Clear existing interval if any
+    if (mainPageAutoReloadInterval) {
+        clearInterval(mainPageAutoReloadInterval);
+        mainPageAutoReloadInterval = null;
+    }
+    
+    const config = getConfiguration();
+    const autoReloadTime = config.autoReloadTime !== undefined ? config.autoReloadTime : 5;
+    
+    // Only start interval if autoReloadTime > 0
+    if (autoReloadTime > 0) {
+        mainPageAutoReloadInterval = setInterval(async () => {
+            const currentConfig = getConfiguration();
+            if (currentConfig.compartmentId && currentConfig.projectName) {
+                await loadContainerInstances();
+            }
+        }, autoReloadTime * 1000);
+    }
+}
+
 // Check server status on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadPageContent();
-    
-    // Auto-reload container instances every 5 seconds
-    setInterval(async () => {
-        const config = getConfiguration();
-        if (config.compartmentId && config.projectName) {
-            await loadContainerInstances();
-        }
-    }, 5000);
+    startMainPageAutoReload();
 });
 
 async function loadPageContent() {
@@ -202,6 +241,9 @@ function loadConfiguration() {
         const logGroupSelect = document.getElementById('logGroupId');
         logGroupSelect.value = config.logGroupId;
     }
+    if (config.autoReloadTime !== undefined) {
+        document.getElementById('autoReloadTime').value = config.autoReloadTime;
+    }
 }
 
 async function saveConfiguration() {
@@ -215,7 +257,11 @@ async function saveConfiguration() {
         region: document.getElementById('region').value.trim(),
         ociConfigFile: document.getElementById('ociConfigFile').value.trim() || '~/.oci/config',
         ociConfigProfile: document.getElementById('ociConfigProfile').value.trim() || 'DEFAULT',
-        logGroupId: document.getElementById('logGroupId').value.trim() || ''
+        logGroupId: document.getElementById('logGroupId').value.trim() || '',
+        autoReloadTime: (() => {
+            const value = parseInt(document.getElementById('autoReloadTime').value);
+            return isNaN(value) ? 5 : value;
+        })()
     };
     
     // Validate required fields
@@ -231,6 +277,9 @@ async function saveConfiguration() {
     
     // Save to localStorage
     localStorage.setItem('appConfig', JSON.stringify(config));
+    
+    // Restart auto-reload with new interval
+    startMainPageAutoReload();
     
     // If projectName (CI name) changed, save current ports/volumes under old name
     // and load ports/volumes for new name (if any exist)
@@ -765,21 +814,10 @@ async function loadContainerInstances() {
                     })
                     .slice(0, 10); // Get last 10 (most recent)
                 
-                // Fetch details to get accurate states, then check if states changed
-                const instancesWithDetails = await Promise.all(
-                    sortedInstances.map(async (instance) => {
-                        try {
-                            const response = await fetch(`/api/oci/container-instances/${instance.id}`);
-                            const data = await response.json();
-                            if (data.success && data.data) {
-                                return data.data;
-                            }
-                        } catch (error) {
-                            console.error(`Error fetching details for instance ${instance.id}:`, error);
-                        }
-                        return instance;
-                    })
-                );
+                // Skip fetching details on initial load to avoid rate limiting
+                // Details will be fetched when user clicks on an instance
+                // Only check states from the list response (may not be 100% accurate but avoids extra API calls)
+                const instancesWithDetails = sortedInstances;
                 
                 // Check if any instance states have changed
                 let hasStateChange = false;
@@ -844,35 +882,22 @@ async function displayContainerInstancesWithDetails(instances) {
         return;
     }
     
-    // Fetch VNIC details for each instance to get IP addresses
-    const instancesWithDetails = await Promise.all(
-        instancesToDisplay.map(async (instance) => {
-            // If we have a VNIC ID, fetch VNIC details to get private IP and public IP
-            if (instance.vnics && instance.vnics.length > 0 && instance.vnics[0].vnicId) {
-                try {
-                    const vnicId = instance.vnics[0].vnicId;
-                    const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
-                    const vnicData = await vnicResponse.json();
-                    // Try vnic property first, then fallback to data
-                    const vnic = vnicData.vnic || vnicData.data;
-                    if (vnic) {
-                        // Add private IP to the vnic object
-                        if (vnic.privateIp) {
-                            instance.vnics[0].privateIp = vnic.privateIp;
-                        }
-                        // Add public IP to the vnic object if it exists
-                        if (vnic.publicIp) {
-                            instance.vnics[0].publicIp = vnic.publicIp;
-                        }
-                    }
-                } catch (vnicError) {
-                    console.error(`Error fetching VNIC details for ${instance.vnics[0].vnicId}:`, vnicError);
-                }
+    // Skip fetching VNIC details on initial load to avoid rate limiting
+    // IP addresses will be shown from list response if available, otherwise "N/A"
+    // This significantly reduces API calls on page load
+    const instancesWithDetails = instancesToDisplay.map(instance => {
+        // Use IPs from list response if available, otherwise show N/A
+        if (instance.vnics && instance.vnics.length > 0) {
+            const vnic = instance.vnics[0];
+            if (!vnic.privateIp) {
+                vnic.privateIp = vnic.privateIpAddress || 'N/A';
             }
-            
-            return instance;
-        })
-    );
+            if (!vnic.publicIp) {
+                vnic.publicIp = vnic.publicIpAddress || 'N/A';
+            }
+        }
+        return instance;
+    });
     
     let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${instances.length} container instance(s)`;
     if (!showDeletedCIs && instances.length > instancesWithDetails.length) {
@@ -944,21 +969,31 @@ async function showContainerInstanceDetails(instanceId) {
         }
     }, { once: true });
     
-    // Set up interval to refresh modal content every 5 seconds while modal is open
-    const modalRefreshInterval = setInterval(async () => {
-        const modalInstance = bootstrap.Modal.getInstance(modalElement);
-        // Only refresh if modal is still open, viewing the same instance, and not in edit mode
-        if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
-            await refreshContainerInstanceModal(instanceId);
-        } else {
-            // Modal closed, clear interval
-            clearInterval(modalRefreshInterval);
-            currentModalInstanceId = null;
-        }
-    }, 5000);
+    // Set up interval to refresh modal content based on config
+    const config = getConfiguration();
+    const autoReloadTime = config.autoReloadTime !== undefined ? config.autoReloadTime : 5;
+    
+    let modalRefreshInterval = null;
+    if (autoReloadTime > 0) {
+        modalRefreshInterval = setInterval(async () => {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            // Only refresh if modal is still open, viewing the same instance, and not in edit mode
+            if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
+                await refreshContainerInstanceModal(instanceId);
+            } else {
+                // Modal closed, clear interval
+                if (modalRefreshInterval) {
+                    clearInterval(modalRefreshInterval);
+                }
+                currentModalInstanceId = null;
+            }
+        }, autoReloadTime * 1000);
+    }
     
     // Store interval ID so we can clear it when modal closes
-    modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
+    if (modalRefreshInterval) {
+        modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
+    }
     
     modal.show();
     detailsDiv.innerHTML = '<p class="text-muted">Loading container instance details...</p>';
@@ -983,7 +1018,9 @@ async function refreshContainerInstanceModal(instanceId) {
             const instanceDetails = data.data;
             
             // If we have a VNIC ID, fetch VNIC details to get private IP, public IP, and subnet ID
+            // Add delay to avoid rate limiting
             if (instanceDetails.vnics && instanceDetails.vnics.length > 0 && instanceDetails.vnics[0].vnicId) {
+                await delay(100); // Small delay before VNIC call
                 try {
                     const vnicId = instanceDetails.vnics[0].vnicId;
                     const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
@@ -1011,7 +1048,9 @@ async function refreshContainerInstanceModal(instanceId) {
             }
             
             // Fetch subnet details to get subnet name
+            // Add delay to avoid rate limiting
             if (instanceDetails.subnetId) {
+                await delay(100); // Small delay before subnet call
                 try {
                     const subnetResponse = await fetch(`/api/oci/networking/subnets?subnetId=${instanceDetails.subnetId}`);
                     const subnetData = await subnetResponse.json();
@@ -1024,7 +1063,9 @@ async function refreshContainerInstanceModal(instanceId) {
             }
             
             // Fetch compartment details to get compartment name
+            // Add delay to avoid rate limiting
             if (instanceDetails.compartmentId) {
+                await delay(100); // Small delay before compartment call
                 try {
                     const compartmentResponse = await fetch(`/api/oci/compartments/${instanceDetails.compartmentId}`);
                     const compartmentData = await compartmentResponse.json();
@@ -1045,8 +1086,12 @@ async function refreshContainerInstanceModal(instanceId) {
                 
                 if (!hasFullDetails) {
                     // Need to fetch container details - containers use containerId, not id
-                    const containersWithDetails = await Promise.all(
-                        instanceDetails.containers.map(async (container) => {
+                    // Throttle API calls to avoid rate limiting: process 2 at a time with 150ms delay
+                    const containersWithDetails = await throttleApiCalls(
+                        instanceDetails.containers,
+                        2, // batch size
+                        150, // delay between batches in ms
+                        async (container) => {
                             const containerId = container.containerId || container.id;
                             if (containerId) {
                                 try {
@@ -1071,7 +1116,7 @@ async function refreshContainerInstanceModal(instanceId) {
                                 }
                             }
                             return container; // Fallback to original container if fetch fails
-                        })
+                        }
                     );
                     instanceDetails.containers = containersWithDetails;
                 }
@@ -2309,21 +2354,31 @@ function exitEditMode() {
         const instanceId = currentEditingInstance.id;
         currentModalInstanceId = instanceId;
         
-        // Set up interval to refresh modal content every 5 seconds while modal is open
-        const modalRefreshInterval = setInterval(async () => {
-            const modalInstance = bootstrap.Modal.getInstance(modalElement);
-            // Only refresh if modal is still open, viewing the same instance, and not in edit mode
-            if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
-                await refreshContainerInstanceModal(instanceId);
-            } else {
-                // Modal closed, clear interval
-                clearInterval(modalRefreshInterval);
-                currentModalInstanceId = null;
-            }
-        }, 5000);
+        // Set up interval to refresh modal content based on config
+        const currentConfig = getConfiguration();
+        const autoReloadTime = currentConfig.autoReloadTime !== undefined ? currentConfig.autoReloadTime : 5;
+        
+        let modalRefreshInterval = null;
+        if (autoReloadTime > 0) {
+            modalRefreshInterval = setInterval(async () => {
+                const modalInstance = bootstrap.Modal.getInstance(modalElement);
+                // Only refresh if modal is still open, viewing the same instance, and not in edit mode
+                if (modalInstance && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
+                    await refreshContainerInstanceModal(instanceId);
+                } else {
+                    // Modal closed, clear interval
+                    if (modalRefreshInterval) {
+                        clearInterval(modalRefreshInterval);
+                    }
+                    currentModalInstanceId = null;
+                }
+            }, autoReloadTime * 1000);
+        }
         
         // Store interval ID so we can clear it when modal closes
-        modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
+        if (modalRefreshInterval) {
+            modalElement.setAttribute('data-refresh-interval-id', modalRefreshInterval);
+        }
         
         // Reload the modal content to get fresh data
         // Wait a bit to ensure state has updated on the server
