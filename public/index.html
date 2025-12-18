@@ -211,8 +211,10 @@
                                                         <small class="form-text text-muted">Compartment where the container instance will be created</small>
                                                     </div>
                                                     <div class="col-md-6 mb-3">
-                                                        <label class="form-label">Subnet</label>
-                                                        <input type="text" class="form-control" id="ciSubnetName" readonly>
+                                                        <label class="form-label">Subnet <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="ciSubnetId" required>
+                                                            <option value="">Loading subnets...</option>
+                                                        </select>
                                                         <small class="form-text text-muted">Subnet where the container instance will be created</small>
                                                     </div>
                                                 </div>
@@ -543,7 +545,7 @@
                                                 <small class="form-text text-muted">OCI Compartment for resource operations</small>
                                             </div>
                                             <div class="mb-3">
-                                                <label for="subnetId" class="form-label">Subnet <span class="text-danger">*</span></label>
+                                                <label for="subnetId" class="form-label">Default Subnet <span class="text-danger">*</span></label>
                                                 <div class="input-group">
                                                     <select class="form-select" id="subnetId" required>
                                                         <option value="">Select a compartment first...</option>
