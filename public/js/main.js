@@ -1,4 +1,144 @@
 // Track currently viewed instance in modal
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Initialize hover tooltips for container rows
+function initializeContainerTooltips() {
+    // Remove existing tooltip if any
+    const existingTooltip = document.querySelector('.container-tooltip');
+    if (existingTooltip) {
+        existingTooltip.remove();
+    }
+    
+    const containerRows = document.querySelectorAll('.container-row-hover');
+    containerRows.forEach(row => {
+        // Remove existing event listeners by cloning
+        const newRow = row.cloneNode(true);
+        row.parentNode.replaceChild(newRow, row);
+        
+        let tooltip = null;
+        
+        newRow.addEventListener('mouseenter', function(e) {
+            if (tooltip) {
+                tooltip.remove();
+            }
+            
+            // Get data from attributes
+            const envVarsJson = newRow.getAttribute('data-env-vars');
+            const cmdJson = newRow.getAttribute('data-cmd');
+            const argsJson = newRow.getAttribute('data-args');
+            
+            if (!envVarsJson && !cmdJson && !argsJson) return;
+            
+            // Parse JSON data
+            let envVars = {};
+            let cmd = [];
+            let args = [];
+            
+            try {
+                if (envVarsJson) envVars = JSON.parse(envVarsJson);
+                if (cmdJson) cmd = JSON.parse(cmdJson);
+                if (argsJson) args = JSON.parse(argsJson);
+            } catch (e) {
+                console.error('Error parsing tooltip data:', e);
+                return;
+            }
+            
+            // Build tooltip content
+            let tooltipContent = '';
+            
+            if (envVars && typeof envVars === 'object' && Object.keys(envVars).length > 0) {
+                tooltipContent += '<strong>Environment Variables:</strong><br>';
+                Object.entries(envVars).forEach(([key, value]) => {
+                    tooltipContent += `<code>${escapeHtml(key)}=${escapeHtml(String(value))}</code><br>`;
+                });
+                tooltipContent += '<br>';
+            }
+            
+            if (cmd && cmd.length > 0) {
+                tooltipContent += '<strong>Command:</strong><br><code>' + escapeHtml(cmd.join(' ')) + '</code><br><br>';
+            }
+            
+            if (args && args.length > 0) {
+                tooltipContent += '<strong>Arguments:</strong><br><code>' + escapeHtml(args.join(' ')) + '</code>';
+            }
+            
+            if (!tooltipContent) {
+                tooltipContent = '<em class="text-muted">No environment variables, command, or arguments</em>';
+            }
+            
+            tooltip = document.createElement('div');
+            tooltip.className = 'container-tooltip';
+            tooltip.innerHTML = tooltipContent;
+            document.body.appendChild(tooltip);
+            
+            // Position tooltip - wait a moment for tooltip to be rendered to get accurate dimensions
+            setTimeout(() => {
+                const rect = newRow.getBoundingClientRect();
+                const tooltipRect = tooltip.getBoundingClientRect();
+                
+                // Try to position to the right of the row first
+                let left = rect.right + 15;
+                let top = rect.top + (rect.height / 2) - (tooltipRect.height / 2);
+                
+                // Adjust if tooltip would go off screen to the right
+                if (left + tooltipRect.width > window.innerWidth - 10) {
+                    // Try left side
+                    left = rect.left - tooltipRect.width - 15;
+                    // If still off screen, position it below the row
+                    if (left < 10) {
+                        left = rect.left + 10;
+                        top = rect.bottom + 10;
+                    }
+                }
+                
+                // Ensure tooltip doesn't go off screen vertically
+                if (top + tooltipRect.height > window.innerHeight - 10) {
+                    top = window.innerHeight - tooltipRect.height - 10;
+                }
+                
+                if (top < 10) {
+                    top = 10;
+                }
+                
+                // Ensure tooltip doesn't go off screen horizontally
+                if (left < 10) {
+                    left = 10;
+                }
+                if (left + tooltipRect.width > window.innerWidth - 10) {
+                    left = window.innerWidth - tooltipRect.width - 10;
+                }
+                
+                tooltip.style.left = left + 'px';
+                tooltip.style.top = top + 'px';
+            }, 0);
+            
+            // Show tooltip with slight delay for smooth animation
+            setTimeout(() => {
+                if (tooltip) {
+                    tooltip.classList.add('show');
+                }
+            }, 10);
+        });
+        
+        newRow.addEventListener('mouseleave', function() {
+            if (tooltip) {
+                tooltip.classList.remove('show');
+                setTimeout(() => {
+                    if (tooltip && tooltip.parentNode) {
+                        tooltip.remove();
+                    }
+                    tooltip = null;
+                }, 200);
+            }
+        });
+    });
+}
 let currentModalInstanceId = null;
 
 // Track previous container instance states to detect changes
@@ -22,6 +162,13 @@ async function loadPageContent() {
     
     // Display CI name
     displayProjectName(config.projectName);
+    
+    // Load ports and volumes for the CI name
+    if (config.projectName) {
+        loadPortsAndVolumesForCIName(config.projectName);
+        updatePortsTable();
+        updateVolumesTable();
+    }
     
     // Load container instances if we have required config
     if (config.compartmentId && config.projectName) {
@@ -95,6 +242,8 @@ async function saveConfiguration() {
         savePortsAndVolumesForCIName(oldProjectName);
         // Load ports/volumes for new CI name
         loadPortsAndVolumesForCIName(config.projectName);
+        updatePortsTable();
+        updateVolumesTable();
     }
     
     // Close modal
@@ -104,12 +253,18 @@ async function saveConfiguration() {
     // Show success message
     showNotification('Configuration saved successfully!', 'success');
     
-    // Reload page content to reflect changes (this will reload container instances if config is valid)
-    await loadPageContent();
+    // Update displayed CI name
+    displayProjectName(config.projectName);
     
     // Always reload container instances table if we have valid config
+    // Force refresh by clearing previous states and reloading
     if (config.compartmentId && config.projectName) {
+        previousInstanceStates.clear();
         await loadContainerInstances();
+    } else {
+        // If config is invalid, show message
+        document.getElementById('containerInstancesContent').innerHTML = 
+            '<p class="text-muted">Please configure compartment and CI name to view container instances.</p>';
     }
 }
 
@@ -835,8 +990,37 @@ function displayContainerInstanceDetails(instance) {
     html += `<dt class="col-5 text-muted">Subnet:</dt><dd class="col-7">${instance.subnetName || 'N/A'}</dd>`;
     html += `<dt class="col-5 text-muted">Shape:</dt><dd class="col-7">${instance.shape || 'N/A'}</dd>`;
     if (instance.shapeConfig) {
-        html += `<dt class="col-5 text-muted">Memory:</dt><dd class="col-7">${instance.shapeConfig.memoryInGBs || 'N/A'} GB</dd>`;
-        html += `<dt class="col-5 text-muted">OCPUs:</dt><dd class="col-7">${instance.shapeConfig.ocpus || 'N/A'}</dd>`;
+        const memoryValue = instance.shapeConfig.memoryInGBs || '16';
+        const ocpusValue = instance.shapeConfig.ocpus || '1';
+        
+        // Memory - show dropdown in edit mode, text in view mode
+        html += `<dt class="col-5 text-muted">Memory:</dt>`;
+        html += `<dd class="col-7">`;
+        html += `<span id="detailsMemoryDisplay">${memoryValue} GB</span>`;
+        html += `<select class="form-select form-select-sm" id="detailsShapeMemory" style="display: none;">`;
+        html += `<option value="1" ${memoryValue == '1' ? 'selected' : ''}>1 GB</option>`;
+        html += `<option value="2" ${memoryValue == '2' ? 'selected' : ''}>2 GB</option>`;
+        html += `<option value="4" ${memoryValue == '4' ? 'selected' : ''}>4 GB</option>`;
+        html += `<option value="8" ${memoryValue == '8' ? 'selected' : ''}>8 GB</option>`;
+        html += `<option value="16" ${memoryValue == '16' ? 'selected' : ''}>16 GB</option>`;
+        html += `<option value="32" ${memoryValue == '32' ? 'selected' : ''}>32 GB</option>`;
+        html += `<option value="64" ${memoryValue == '64' ? 'selected' : ''}>64 GB</option>`;
+        html += `</select></dd>`;
+        
+        // OCPUs - show dropdown in edit mode, text in view mode
+        html += `<dt class="col-5 text-muted">OCPUs:</dt>`;
+        html += `<dd class="col-7">`;
+        html += `<span id="detailsOcpusDisplay">${ocpusValue}</span>`;
+        html += `<select class="form-select form-select-sm" id="detailsShapeOcpus" style="display: none;">`;
+        html += `<option value="1" ${ocpusValue == '1' ? 'selected' : ''}>1 OCPU</option>`;
+        html += `<option value="2" ${ocpusValue == '2' ? 'selected' : ''}>2 OCPU</option>`;
+        html += `<option value="3" ${ocpusValue == '3' ? 'selected' : ''}>3 OCPU</option>`;
+        html += `<option value="4" ${ocpusValue == '4' ? 'selected' : ''}>4 OCPU</option>`;
+        html += `<option value="5" ${ocpusValue == '5' ? 'selected' : ''}>5 OCPU</option>`;
+        html += `<option value="6" ${ocpusValue == '6' ? 'selected' : ''}>6 OCPU</option>`;
+        html += `<option value="7" ${ocpusValue == '7' ? 'selected' : ''}>7 OCPU</option>`;
+        html += `<option value="8" ${ocpusValue == '8' ? 'selected' : ''}>8 OCPU</option>`;
+        html += `</select></dd>`;
     }
     html += '</dl>';
     html += '</div>';
@@ -880,7 +1064,6 @@ function displayContainerInstanceDetails(instance) {
     html += '<div class="d-flex">';
     html += `<button class="btn btn-info btn-sm me-1" id="detailsAddContainerBtn" onclick="addContainerToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Container</button>`;
     html += `<button class="btn btn-secondary btn-sm me-1" id="detailsAddSidecarBtn" onclick="showAddSidecarModalToDetails()" style="display: none;"><i class="bi bi-plus"></i> Add Sidecar</button>`;
-    html += `<button class="btn btn-warning btn-sm" id="detailsAddPortBtn" onclick="addPortToDetails('${instance.id}')" style="display: none;"><i class="bi bi-plus"></i> Add Port</button>`;
     html += '</div>';
     html += '</div>';
     
@@ -914,12 +1097,22 @@ function displayContainerInstanceDetails(instance) {
     
     if (detailsContainersData.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm">';
-        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Environment Variables</th><th>Actions</th></tr></thead>';
+        html += '<thead><tr><th>State</th><th>Name</th><th>Port</th><th>Image</th><th>Resource Config</th><th>Actions</th></tr></thead>';
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
             const containerName = container.displayName;
-            html += '<tr>';
+            
+            // Store tooltip data in data attributes
+            const envVars = container.environmentVariables || {};
+            const cmd = container.command || [];
+            const args = container.arguments || [];
+            
+            const envVarsJson = JSON.stringify(envVars);
+            const cmdJson = JSON.stringify(cmd);
+            const argsJson = JSON.stringify(args);
+            
+            html += `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
             
             // State - first column
             html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
@@ -939,22 +1132,10 @@ function displayContainerInstanceDetails(instance) {
             html += `VCPUs: ${container.resourceConfig.vcpus || 'N/A'}`;
             html += `</td>`;
             
-            // Environment Variables
-            const envVars = container.environmentVariables;
-            if (envVars && typeof envVars === 'object' && Object.keys(envVars).length > 0) {
-                html += '<td><small>';
-                Object.entries(envVars).forEach(([key, value]) => {
-                    html += `${key}=${value}<br>`;
-                });
-                html += '</small></td>';
-            } else {
-                html += '<td class="text-muted">None</td>';
-            }
-            
             // Actions column - only show CRUD buttons in edit mode
             html += `<td id="containerActions_${idx}" style="display: none;">`;
-            html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-pencil"></i></button>`;
-            html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-trash"></i></button>`;
+            html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
             
             html += '</tr>';
@@ -968,6 +1149,11 @@ function displayContainerInstanceDetails(instance) {
     
     // Store containers data globally for this instance
     window[`detailsContainers_${containerInstanceId}`] = detailsContainersData;
+    
+    // Initialize hover tooltips for container rows
+    setTimeout(() => {
+        initializeContainerTooltips();
+    }, 100);
     
     // Store ports data for this instance
     // First try to load from localStorage (if CI was edited before)
@@ -1111,9 +1297,6 @@ function enterEditMode(instanceId) {
     const addSidecarBtn = document.getElementById('detailsAddSidecarBtn');
     if (addSidecarBtn) addSidecarBtn.style.display = 'inline-block';
     
-    const addPortBtn = document.getElementById('detailsAddPortBtn');
-    if (addPortBtn) addPortBtn.style.display = 'inline-block';
-    
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'inline-block';
     
@@ -1152,6 +1335,17 @@ function enterEditMode(instanceId) {
     
     const cancelBtn = document.getElementById('detailsCancelBtn');
     if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    
+    // Show editable dropdowns for Memory and OCPUs
+    const memoryDisplay = document.getElementById('detailsMemoryDisplay');
+    const memorySelect = document.getElementById('detailsShapeMemory');
+    if (memoryDisplay) memoryDisplay.style.display = 'none';
+    if (memorySelect) memorySelect.style.display = 'block';
+    
+    const ocpusDisplay = document.getElementById('detailsOcpusDisplay');
+    const ocpusSelect = document.getElementById('detailsShapeOcpus');
+    if (ocpusDisplay) ocpusDisplay.style.display = 'none';
+    if (ocpusSelect) ocpusSelect.style.display = 'block';
 }
 
 function addContainerToDetails() {
@@ -1369,6 +1563,14 @@ function deleteContainerInDetails(index, instanceId) {
     
     // Refresh the display by re-rendering the containers table
     refreshDetailsContainersTable(instanceId);
+    
+    // Ensure buttons are still visible after refresh if in edit mode
+    if (isInEditMode) {
+        containers.forEach((container, idx) => {
+            const actionsCell = document.getElementById(`containerActions_${idx}`);
+            if (actionsCell) actionsCell.style.display = 'table-cell';
+        });
+    }
 }
 
 function refreshDetailsContainersTable(instanceId) {
@@ -1389,24 +1591,23 @@ function refreshDetailsContainersTable(instanceId) {
     
     tbody.innerHTML = containers.map((container, idx) => {
         const containerName = container.displayName;
-        let html = '<tr>';
+        
+        // Store tooltip data in data attributes
+        const envVars = container.environmentVariables || {};
+        const cmd = container.command || [];
+        const args = container.arguments || [];
+        
+        const envVarsJson = JSON.stringify(envVars);
+        const cmdJson = JSON.stringify(cmd);
+        const argsJson = JSON.stringify(args);
+        
+        let html = `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
         
         html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
         html += `<td><strong class="text-primary">${containerName}</strong></td>`;
         html += `<td>${container.port || '-'}</td>`;
         html += `<td><code>${container.imageUrl}</code></td>`;
         html += `<td>Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>VCPUs: ${container.resourceConfig.vcpus || 'N/A'}</td>`;
-        
-        const envVars = container.environmentVariables;
-        if (envVars && typeof envVars === 'object' && Object.keys(envVars).length > 0) {
-            html += '<td><small>';
-            Object.entries(envVars).forEach(([key, value]) => {
-                html += `${key}=${value}<br>`;
-            });
-            html += '</small></td>';
-        } else {
-            html += '<td class="text-muted">None</td>';
-        }
         
         // Actions column - visibility controlled by edit mode
         const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
@@ -1417,6 +1618,11 @@ function refreshDetailsContainersTable(instanceId) {
         html += '</tr>';
         return html;
     }).join('');
+    
+    // Initialize hover tooltips for container rows
+    setTimeout(() => {
+        initializeContainerTooltips();
+    }, 100);
 }
 
 // CRUD functions for Volumes in Details Modal
@@ -1526,10 +1732,59 @@ function addPortToDetails(instanceId) {
 }
 
 function refreshDetailsVolumesTable(instanceId) {
-    const tbody = document.getElementById(`detailsVolumesTableBody_${instanceId}`);
-    if (!tbody) return;
-    
+    let tbody = document.getElementById(`detailsVolumesTableBody_${instanceId}`);
     const volumes = window[`detailsVolumes_${instanceId}`] || [];
+    
+    // If tbody doesn't exist or is not inside a table, we need to create/fix the table structure
+    if (!tbody || !tbody.closest('table')) {
+        // Find the volumes section
+        const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
+        const volumesContainer = addVolumeBtn?.closest('.col-12');
+        
+        if (!volumesContainer) {
+            console.error('Could not find volumes container');
+            return;
+        }
+        
+        // Remove "No volumes found" message if it exists
+        const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
+        if (noVolumesMsg) {
+            noVolumesMsg.remove();
+        }
+        
+        // Remove orphaned tbody if it exists
+        if (tbody && !tbody.closest('table')) {
+            tbody.remove();
+        }
+        
+        // Create table structure
+        const tableHtml = `
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr><th>Name</th><th>Path</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="detailsVolumesTableBody_${instanceId}"></tbody>
+                </table>
+            </div>
+        `;
+        
+        // Insert table after the header row (which contains the Add Volume button)
+        const headerRow = volumesContainer.querySelector('.d-flex');
+        if (headerRow) {
+            headerRow.insertAdjacentHTML('afterend', tableHtml);
+        } else {
+            volumesContainer.insertAdjacentHTML('beforeend', tableHtml);
+        }
+        
+        // Get the newly created tbody
+        tbody = document.getElementById(`detailsVolumesTableBody_${instanceId}`);
+    }
+    
+    if (!tbody) {
+        console.error('Could not find or create volumes table body');
+        return;
+    }
     
     // Get instance state from currentEditingInstance
     const canEditVolumesRefresh = currentEditingInstance && currentEditingInstance.id === instanceId 
@@ -1633,11 +1888,22 @@ async function saveCIChanges(instanceId) {
             }
         });
         
+        // Get shape config from dropdowns if in edit mode, otherwise use current values
+        let shapeConfig = currentEditingInstance.shapeConfig || { memoryInGBs: 16, ocpus: 1 };
+        const memorySelect = document.getElementById('detailsShapeMemory');
+        const ocpusSelect = document.getElementById('detailsShapeOcpus');
+        if (memorySelect && ocpusSelect && isInEditMode) {
+            shapeConfig = {
+                memoryInGBs: parseFloat(memorySelect.value) || shapeConfig.memoryInGBs,
+                ocpus: parseFloat(ocpusSelect.value) || shapeConfig.ocpus
+            };
+        }
+        
         const payload = {
             displayName: currentEditingInstance.displayName,
             compartmentId: currentEditingInstance.compartmentId,
             shape: currentEditingInstance.shape,
-            shapeConfig: currentEditingInstance.shapeConfig || { memoryInGBs: 16, ocpus: 1 },
+            shapeConfig: shapeConfig,
             subnetId: currentEditingInstance.subnetId,
             containers: cleanedContainers,
             containerRestartPolicy: currentEditingInstance.containerRestartPolicy || 'NEVER',
@@ -1713,9 +1979,6 @@ function exitEditMode() {
     const addSidecarBtn = document.getElementById('detailsAddSidecarBtn');
     if (addSidecarBtn) addSidecarBtn.style.display = 'none';
     
-    const addPortBtn = document.getElementById('detailsAddPortBtn');
-    if (addPortBtn) addPortBtn.style.display = 'none';
-    
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'none';
     
@@ -1746,9 +2009,23 @@ function exitEditMode() {
     const cancelBtn = document.getElementById('detailsCancelBtn');
     if (cancelBtn) cancelBtn.style.display = 'none';
     
+    // Hide editable dropdowns for Memory and OCPUs, show read-only text
+    const memoryDisplay = document.getElementById('detailsMemoryDisplay');
+    const memorySelect = document.getElementById('detailsShapeMemory');
+    if (memoryDisplay) memoryDisplay.style.display = 'inline';
+    if (memorySelect) memorySelect.style.display = 'none';
+    
+    const ocpusDisplay = document.getElementById('detailsOcpusDisplay');
+    const ocpusSelect = document.getElementById('detailsShapeOcpus');
+    if (ocpusDisplay) ocpusDisplay.style.display = 'inline';
+    if (ocpusSelect) ocpusSelect.style.display = 'none';
+    
     // Reload the modal content to get fresh data
+    // Wait a bit to ensure state has updated on the server
     if (currentEditingInstance && currentEditingInstance.id) {
-        refreshContainerInstanceModal(currentEditingInstance.id);
+        setTimeout(async () => {
+            await refreshContainerInstanceModal(currentEditingInstance.id);
+        }, 1000);
     }
 }
 
@@ -1778,6 +2055,15 @@ async function restartContainerInstance(instanceId) {
             showNotification('Container instance restart initiated successfully!', 'success');
             // Reload container instances to reflect the new state
             await loadContainerInstances();
+            
+            // Refresh modal if it's still open and showing this instance
+            const modalElement = document.getElementById('containerInstanceModal');
+            if (modalElement && modalElement.classList.contains('show') && currentModalInstanceId === instanceId) {
+                // Wait a bit for the state to update on the server, then refresh
+                setTimeout(async () => {
+                    await refreshContainerInstanceModal(instanceId);
+                }, 2000);
+            }
         } else {
             throw new Error(data.error || 'Failed to restart container instance');
         }
@@ -1980,11 +2266,47 @@ function updateContainerPortDropdown() {
     // Clear existing options except "No port"
     portSelect.innerHTML = '<option value="">No port</option>';
     
+    // Determine which ports to use based on context
+    let portsToUse = portsData;
+    
+    // If we're in CI edit mode (details context), use details ports
+    if (editingDetailsContext && editingDetailsContext.type === 'details') {
+        const instanceId = editingDetailsContext.instanceId || currentEditingInstance?.id;
+        if (instanceId) {
+            const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            // Also load from localStorage for this CI name
+            const config = getConfiguration();
+            if (config.projectName) {
+                const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+                const localStoragePorts = existingData.ports || [];
+                // Merge: use detailsPorts from tags, but also include localStorage ports that don't exist
+                const mergedPorts = [...detailsPorts];
+                localStoragePorts.forEach(localPort => {
+                    const portNum = typeof localPort.port === 'number' ? localPort.port : parseInt(localPort.port);
+                    const exists = mergedPorts.some(p => {
+                        const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                        return pPortNum === portNum;
+                    });
+                    if (!exists) {
+                        mergedPorts.push({
+                            port: portNum,
+                            name: localPort.name || null
+                        });
+                    }
+                });
+                portsToUse = mergedPorts;
+            } else {
+                portsToUse = detailsPorts;
+            }
+        }
+    }
+    
     // Add options for each port
-    portsData.forEach((port, index) => {
+    portsToUse.forEach((port, index) => {
         const option = document.createElement('option');
         option.value = index.toString();
-        const displayText = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+        const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+        const displayText = port.name ? `${port.name} (${portNum})` : `Port ${portNum}`;
         option.textContent = displayText;
         portSelect.appendChild(option);
     });
@@ -2196,7 +2518,14 @@ function saveEditedContainer() {
         window[`detailsContainers_${instanceId}`] = containers;
         refreshDetailsContainersTable(instanceId);
         editingDetailsContext = null;
-        isInEditMode = false;
+        // Don't reset isInEditMode - we're still in edit mode after saving a container
+        // Ensure buttons are still visible after refresh
+        if (isInEditMode) {
+            containers.forEach((container, idx) => {
+                const actionsCell = document.getElementById(`containerActions_${idx}`);
+                if (actionsCell) actionsCell.style.display = 'table-cell';
+            });
+        }
     } else {
         // Normal creation flow
         if (index === '' || index === null) {
@@ -2244,8 +2573,8 @@ function updateContainersTable() {
                 <td>${vcpus}</td>
                 <td>${portDisplay}</td>
                 <td>
-                    <button class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
+                    <button type="button" class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>
         `;
@@ -2442,6 +2771,14 @@ function saveEditedVolume() {
         window[`detailsVolumes_${instanceId}`] = volumes;
         refreshDetailsVolumesTable(instanceId);
         
+        // Ensure buttons are visible after refresh if in edit mode
+        if (isInEditMode) {
+            volumes.forEach((volume, idx) => {
+                const actionsCell = document.getElementById(`volumeActions_${idx}`);
+                if (actionsCell) actionsCell.style.display = 'table-cell';
+            });
+        }
+        
         // Save volumes to localStorage using CI name from configuration
         const config = getConfiguration();
         if (config.projectName) {
@@ -2476,15 +2813,35 @@ function updateVolumesTable() {
     const tbody = document.getElementById('volumesTableBody');
     
     if (volumesData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
         return;
     }
     
+    // Dispose of existing tooltips before updating
+    const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+    existingTooltips.forEach(el => {
+        const tooltipInstance = bootstrap.Tooltip.getInstance(el);
+        if (tooltipInstance) {
+            tooltipInstance.dispose();
+        }
+    });
+    
     tbody.innerHTML = volumesData.map((volume, index) => {
+        const path = volume.path || 'N/A';
+        const escapedPath = escapeHtml(path);
+        // If name is empty, show path instead; otherwise show name
+        const displayText = volume.name && volume.name.trim() ? volume.name : path;
+        
         return `
             <tr>
-                <td>${volume.name || '-'}</td>
-                <td><code>${volume.path || 'N/A'}</code></td>
+                <td>
+                    <span 
+                        data-bs-toggle="tooltip" 
+                        data-bs-placement="top" 
+                        data-bs-title="${escapedPath}"
+                        style="cursor: help;"
+                    >${escapeHtml(displayText)}</span>
+                </td>
                 <td>
                     <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
@@ -2492,9 +2849,28 @@ function updateVolumesTable() {
             </tr>
         `;
     }).join('');
+    
+    // Initialize Bootstrap tooltips for the volume paths
+    const tooltipTriggerList = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
 }
 
 // Port CRUD functions
+// Show Add Port modal from container edit - handles both CI create and CI edit contexts
+function showAddPortFromContainerEdit() {
+    // Check if we're in CI edit mode (details context)
+    if (editingDetailsContext && editingDetailsContext.type === 'details') {
+        const instanceId = editingDetailsContext.instanceId || currentEditingInstance?.id;
+        if (instanceId) {
+            addPortToDetails(instanceId);
+            return;
+        }
+    }
+    
+    // Otherwise, use normal create flow
+    addPortToTable();
+}
+
 function addPortToTable() {
     document.getElementById('editPortForm').reset();
     document.getElementById('editPortIndex').value = '';
@@ -2574,6 +2950,9 @@ function saveEditedPort() {
             savePortsAndVolumesForCIName(config.projectName);
         }
         
+        // Update port dropdown in container edit modal if it's open
+        updateContainerPortDropdown();
+        
         editingDetailsContext = null;
         // Don't set isInEditMode = false here, we're still in edit mode
     } else {
@@ -2589,6 +2968,9 @@ function saveEditedPort() {
         savePortsAndVolumesForCIName(config.projectName);
         
         updatePortsTable();
+        
+        // Update port dropdown in container edit modal if it's open
+        updateContainerPortDropdown();
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editPortModal'));
@@ -2599,15 +2981,20 @@ function updatePortsTable() {
     const tbody = document.getElementById('portsTableBody');
     
     if (portsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td></tr>';
         return;
     }
     
     tbody.innerHTML = portsData.map((port, index) => {
+        // Show "name(port)" if name exists, otherwise just show port
+        const portNumber = port.port || 'N/A';
+        const displayText = port.name && port.name.trim() 
+            ? `${escapeHtml(port.name)} (${portNumber})` 
+            : portNumber;
+        
         return `
             <tr>
-                <td>${port.name || '-'}</td>
-                <td>${port.port || 'N/A'}</td>
+                <td>${displayText}</td>
                 <td>
                     <button type="button" class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>

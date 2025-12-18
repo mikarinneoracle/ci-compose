@@ -47,25 +47,87 @@
                     <h1 id="projectNameDisplay" class="display-5">CI Name</h1>
                 </div>
 
-                <!-- Container Instances Card -->
-                <div class="card shadow">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <h3 class="mb-0"><i class="bi bi-stack"></i> Container Instances</h3>
-                        <div class="d-flex align-items-center gap-2">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="showDeletedToggle" onchange="toggleDeletedCIs()">
-                                <label class="form-check-label text-white" for="showDeletedToggle" style="cursor: pointer;">
-                                    Show Deleted
-                                </label>
+                <!-- Main Content Row -->
+                <div class="row">
+                    <!-- Left Column: Container Instances -->
+                    <div class="col-md-8">
+                        <div class="card shadow">
+                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                <h3 class="mb-0"><i class="bi bi-stack"></i> Container Instances</h3>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="showDeletedToggle" onchange="toggleDeletedCIs()">
+                                        <label class="form-check-label text-white" for="showDeletedToggle" style="cursor: pointer;">
+                                            Show Deleted
+                                        </label>
+                                    </div>
+                                <button class="btn btn-light btn-sm" onclick="showCreateContainerInstanceModal()">
+                                    + Create
+                                </button>
+                                </div>
                             </div>
-                        <button class="btn btn-light btn-sm" onclick="showCreateContainerInstanceModal()">
-                            + Create
-                        </button>
+                            <div class="card-body">
+                                <div id="containerInstancesContent">
+                                    <p class="text-muted">Loading container instances...</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="card-body">
-                        <div id="containerInstancesContent">
-                            <p class="text-muted">Loading container instances...</p>
+
+                    <!-- Right Column: Ports and Volumes -->
+                    <div class="col-md-4">
+                        <!-- Ports Card -->
+                        <div class="card shadow mb-4">
+                            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                                <h3 class="mb-0"><i class="bi bi-ethernet"></i> Ports</h3>
+                                <button class="btn btn-dark btn-sm" onclick="addPortToTable()">
+                                    + Add Port
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered" id="portsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Port</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="portsTableBody">
+                                            <tr>
+                                                <td colspan="2" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Volumes Card -->
+                        <div class="card shadow">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                                <h3 class="mb-0"><i class="bi bi-hdd"></i> Volumes</h3>
+                                <button class="btn btn-light btn-sm" onclick="addVolumeToTable()">
+                                    + Add Volume
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered" id="volumesTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Volume</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                <tbody id="volumesTableBody">
+                                    <tr>
+                                        <td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -153,58 +215,6 @@
                                                         <input type="text" class="form-control" id="ciSubnetName" readonly>
                                                         <small class="form-text text-muted">Subnet where the container instance will be created</small>
                                                     </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Volumes -->
-                                            <div class="mb-4">
-                                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                                    <h5 class="mb-0">Volumes</h5>
-                                                    <button type="button" class="btn btn-success btn-sm" onclick="addVolumeToTable()">
-                                                        + Add Volume
-                                                    </button>
-                                                </div>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered" id="volumesTable">
-                                                        <thead class="table-light">
-                                                            <tr>
-                                                                <th>Name</th>
-                                                                <th>Path</th>
-                                                                <th>Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody id="volumesTableBody">
-                                                            <tr>
-                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Ports -->
-                                            <div class="mb-4">
-                                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                                    <h5 class="mb-0">Ports</h5>
-                                                    <button type="button" class="btn btn-warning btn-sm" onclick="addPortToTable()">
-                                                        + Add Port
-                                                    </button>
-                                                </div>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered" id="portsTable">
-                                                        <thead class="table-light">
-                                                            <tr>
-                                                                <th>Name</th>
-                                                                <th>Port</th>
-                                                                <th>Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody id="portsTableBody">
-                                                            <tr>
-                                                                <td colspan="3" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
                                                 </div>
                                             </div>
                                             
@@ -414,7 +424,12 @@
                                                 </div>
                                             </div>
                                             <div class="mb-3">
-                                                <label for="editContainerPort" class="form-label">Port</label>
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <label for="editContainerPort" class="form-label mb-0">Port</label>
+                                                    <button type="button" class="btn btn-warning btn-sm" onclick="showAddPortFromContainerEdit()">
+                                                        <i class="bi bi-plus"></i> Add Port
+                                                    </button>
+                                                </div>
                                                 <select class="form-select" id="editContainerPort">
                                                     <option value="">No port</option>
                                                 </select>
