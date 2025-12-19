@@ -3399,6 +3399,12 @@ function addSidecarToDetails(index) {
     // Don't reset isInEditMode - we're still in edit mode
 }
 
+// Show About modal
+function showAboutModal() {
+    const modal = new bootstrap.Modal(document.getElementById('aboutModal'));
+    modal.show();
+}
+
 // Sidecar Gallery functions
 async function showSidecarGalleryModal() {
     await loadSidecars();

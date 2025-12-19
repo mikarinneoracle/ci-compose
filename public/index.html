@@ -22,19 +22,13 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="#">Home</a>
-                    </li>
-                    <li class="nav-item">
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showConfigModal()">Configuration</button>
                     </li>
                     <li class="nav-item">
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showSidecarGalleryModal()">Sidecar Gallery</button>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#">About</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">Contact</a>
+                        <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showAboutModal()">About</button>
                     </li>
                 </ul>
             </div>
@@ -598,6 +592,78 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal fade" id="aboutModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">About CI Compose</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4">
+                        <h4 class="mb-3">CI Compose</h4>
+                        <p class="lead">
+                            CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastructure (OCI) Container Instances. 
+                            It provides an intuitive interface for creating, configuring, and managing container instances with support for 
+                            multiple containers, sidecars, volumes, and networking configurations.
+                        </p>
+                        <div class="alert alert-warning mt-3" role="alert">
+                            <strong>Notice:</strong> This software (version 0.1.0) is currently intended for experimental use and evaluation purposes. 
+                            It is not recommended for production environments at this time.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">Features</h5>
+                        <ul>
+                            <li>Create and manage OCI Container Instances</li>
+                            <li>Configure containers with custom images, resource limits, and environment variables</li>
+                            <li>Manage sidecars from the Sidecar Gallery (stock and custom sidecars)</li>
+                            <li>Configure networking with port mappings and subnet selection</li>
+                            <li>Manage volumes and volume mounts</li>
+                            <li>View container logs (using OCI Logging sidecar) and instance details</li>
+                            <li>Edit, restart, and delete container instances</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">Custom Sidecars</h5>
+                        <p>
+                            If you want to add a custom sidecar to this project, please contact 
+                            <a href="mailto:mika.rinne@oracle.com">mika.rinne@oracle.com</a>.
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">License</h5>
+                        <p>
+                            This software is licensed under the Universal Permissive License (UPL), Version 1.0.
+                        </p>
+                        <p class="small text-muted">
+                            The Universal Permissive License (UPL) is a permissive open source license that allows 
+                            you to use, modify, and distribute the software with minimal restrictions.
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">Contact</h5>
+                        <p>
+                            For questions, support, or inquiries, please contact:
+                        </p>
+                        <p>
+                            <strong>Mika Rinne</strong><br>
+                            <a href="mailto:mika.rinne@oracle.com">mika.rinne@oracle.com</a>
+                        </p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
