@@ -16,7 +16,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 
 ## Custom Sidecars
 
-If you want to add a custom sidecar to this project, please contact [mika.rinne@oracle.com](mailto:mika.rinne@oracle.com).
+If you want to add a custom sidecar to this project, please contact [@mikarinneoracle](https://github.com/mikarinneoracle).
 
 ## License
 
@@ -29,29 +29,63 @@ The Universal Permissive License (UPL) is a permissive open source license that 
 For questions, support, or inquiries, please contact:
 
 **Mika Rinne**  
-[mika.rinne@oracle.com](mailto:mika.rinne@oracle.com)
+[@mikarinneoracle](https://github.com/mikarinneoracle)
 
-## Installation
+## Getting Started
 
-```bash
-npm install
-```
+### Prerequisites
 
-## Usage
+Before you begin, ensure you have:
 
-### Development
+- **Node.js** installed (version 14 or higher recommended)
+- **Oracle Cloud Infrastructure (OCI) CLI** properly configured with valid credentials
+- Access to an OCI tenancy with appropriate permissions for Container Instances, Networking, and Logging services
+- OCI SDK credentials configured (via `~/.oci/config` or environment variables)
 
-```bash
-npm run dev
-```
+### Installation
 
-### Production
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/mikarinneoracle/ci-compose.git
+   cd ci-compose
+   ```
 
-```bash
-npm run prod
-```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-The application will start on `http://localhost:3000` by default.
+3. **Start the application:**
+   ```bash
+   npm run dev
+   ```
+   
+   For production use:
+   ```bash
+   npm run prod
+   ```
+
+   The application will start on `http://localhost:3000` by default.
+
+### Configuration
+
+Once the application is running, access the Configuration menu to set up your environment:
+
+1. **CI Name:** Enter a name for your container instance deployments and respective settings. This name will be used as a prefix for all container instances you create and will help organize your deployments.
+
+2. **Compartment:** Select the OCI compartment where you want to create and manage your container instances.
+
+3. **Default Subnet:** Choose the default subnet for your container instances. This subnet will be preselected when creating new instances, but can be changed per instance if needed.
+
+4. **Default Log Group (Optional):** If you plan to use OCI Logging for container logs, select a default log group. This is optional and only required if you want to view container logs through the OCI Logging service.
+
+5. **Additional Settings:** Configure other settings such as:
+   - OCI Config File Path (default: `~/.oci/config`)
+   - OCI Config Profile (default: `DEFAULT`)
+   - Region (auto-loaded from config file when available)
+   - Auto-Reload Time (in seconds, 0 to disable)
+
+After completing the configuration, you can start creating and managing container instances through the web interface.
 
 ## Requirements
 
