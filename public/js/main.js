@@ -1536,6 +1536,7 @@ function displayContainerInstanceDetails(instance) {
     // CRUD buttons only visible in edit mode
     html += `<button class="btn btn-success btn-sm" id="detailsAddVolumeBtn" onclick="addVolumeToDetails('${containerInstanceId}')" style="display: none;"><i class="bi bi-plus"></i> Add Volume</button>`;
     html += '</div>';
+    html += '<p class="text-muted small mb-2">Volumes are accessible to all containers in the deployment via their mounted paths.</p>';
     
     // Store volumes data for CRUD operations
     // volumesList was potentially updated above from localStorage

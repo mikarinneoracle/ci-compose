@@ -217,32 +217,6 @@
                                                 </div>
                                             </div>
                                             
-                                            <!-- Volumes -->
-                                            <div class="mb-4">
-                                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                                    <h5 class="mb-0">Volumes</h5>
-                                                    <button type="button" class="btn btn-success btn-sm" onclick="addVolumeToTable()">
-                                                        + Add Volume
-                                                    </button>
-                                                </div>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered" id="createVolumesTable">
-                                                        <thead class="table-light">
-                                                            <tr>
-                                                                <th>Name</th>
-                                                                <th>Path</th>
-                                                                <th>Actions</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody id="createVolumesTableBody">
-                                                            <tr>
-                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                            
                                             <!-- Containers -->
                                             <div class="mb-4">
                                                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -271,6 +245,33 @@
                                                         <tbody id="containersTableBody">
                                                             <tr>
                                                                 <td colspan="6" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- Volumes -->
+                                            <div class="mb-4">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h5 class="mb-0">Volumes</h5>
+                                                    <button type="button" class="btn btn-success btn-sm" onclick="addVolumeToTable()">
+                                                        + Add Volume
+                                                    </button>
+                                                </div>
+                                                <p class="text-muted small mb-2">Volumes are accessible to all containers in the deployment via their mounted paths.</p>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered" id="createVolumesTable">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Name</th>
+                                                                <th>Path</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="createVolumesTableBody">
+                                                            <tr>
+                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>
