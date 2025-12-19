@@ -2550,6 +2550,11 @@ function closeDetailsModal() {
 
 // Restart container instance
 async function restartContainerInstance(instanceId) {
+    // Confirm restart action
+    if (!confirm('Are you sure you want to restart this container instance?')) {
+        return;
+    }
+    
     try {
         showNotification('Restarting container instance...', 'info');
         
@@ -2561,17 +2566,18 @@ async function restartContainerInstance(instanceId) {
         
         if (data.success) {
             showNotification('Container instance restart initiated successfully!', 'success');
+            
+            // Close the modal
+            const modalElement = document.getElementById('containerInstanceModal');
+            if (modalElement) {
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) {
+                    modal.hide();
+                }
+            }
+            
             // Reload container instances to reflect the new state
             await loadContainerInstances();
-            
-            // Refresh modal if it's still open and showing this instance, and not in edit mode
-            const modalElement = document.getElementById('containerInstanceModal');
-            if (modalElement && modalElement.classList.contains('show') && currentModalInstanceId === instanceId && !isInEditMode) {
-                // Wait a bit for the state to update on the server, then refresh
-                setTimeout(async () => {
-                    await refreshContainerInstanceModal(instanceId);
-                }, 2000);
-            }
         } else {
             throw new Error(data.error || 'Failed to restart container instance');
         }
