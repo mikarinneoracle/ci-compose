@@ -202,6 +202,9 @@ async function loadPageContent() {
     // Display CI name
     displayProjectName(config.projectName);
     
+    // Update footer with compartment and CI name
+    updateContainerInstancesFooter();
+    
     // Load ports and volumes for the CI name
     if (config.projectName) {
         loadPortsAndVolumesForCIName(config.projectName);
@@ -226,6 +229,68 @@ function displayProjectName(projectName) {
         projectNameDisplay.textContent = 'CI Name (Not Set)';
         projectNameDisplay.classList.add('text-muted');
     }
+}
+
+function updateContainerInstancesFooter() {
+    const config = getConfiguration();
+    const footerText = document.getElementById('containerInstancesFooterText');
+    
+    if (!footerText) return;
+    
+    let compartmentName = 'N/A';
+    const ciName = config.projectName || 'N/A';
+    
+    // Try to get compartment name from the dropdown if available
+    const compartmentSelect = document.getElementById('compartmentId');
+    if (compartmentSelect && compartmentSelect.value) {
+        const selectedOption = compartmentSelect.options[compartmentSelect.selectedIndex];
+        if (selectedOption && selectedOption.textContent) {
+            // Extract just the name (before any description)
+            compartmentName = selectedOption.textContent.split(' - ')[0];
+        }
+    }
+    
+    // If dropdown not available, try to get from config or use compartmentId
+    if (compartmentName === 'N/A' && config.compartmentId) {
+        // Try to fetch compartment name from API
+        fetchCompartmentName(config.compartmentId).then(name => {
+            if (name) {
+                compartmentName = name;
+                footerText.textContent = `Showing Containers Instances deployments in compartment ${compartmentName} with name: ${ciName}`;
+            } else {
+                footerText.textContent = `Showing Containers Instances deployments in compartment ${config.compartmentId} with name: ${ciName}`;
+            }
+        }).catch(() => {
+            footerText.textContent = `Showing Containers Instances deployments in compartment ${config.compartmentId} with name: ${ciName}`;
+        });
+        return;
+    }
+    
+    footerText.textContent = `Showing Containers Instances deployments in compartment ${compartmentName} with name: ${ciName}`;
+}
+
+async function fetchCompartmentName(compartmentId) {
+    try {
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        const response = await fetch(`/api/oci/compartments/${compartmentId}?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.name) {
+            return data.data.name;
+        }
+    } catch (error) {
+        console.error('Error fetching compartment name:', error);
+    }
+    return null;
 }
 
 // Configuration management functions
@@ -309,6 +374,9 @@ async function saveConfiguration() {
     
     // Update displayed CI name
     displayProjectName(config.projectName);
+    
+    // Update footer with compartment and CI name
+    updateContainerInstancesFooter();
     
     // Always reload container instances table if we have valid config
     // Force refresh by clearing previous states and reloading
@@ -486,6 +554,8 @@ async function loadCompartments() {
                     loadSubnets();
                     loadLogGroups();
                 }
+                // Update footer with compartment name
+                updateContainerInstancesFooter();
             }
         } else {
             compartmentSelect.innerHTML = '<option value="">Error loading compartments</option>';
