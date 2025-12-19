@@ -1659,6 +1659,9 @@ function displayContainerInstanceDetails(instance) {
     html += `<button class="btn btn-info me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
     html += '<i class="bi bi-arrow-clockwise"></i> Restart';
     html += '</button>';
+    html += `<button class="btn btn-light me-2" id="detailsStopBtn" onclick="stopContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
+    html += '<i class="bi bi-stop"></i> Stop';
+    html += '</button>';
     html += `<button class="btn btn-danger me-2" id="detailsDeleteBtn" onclick="deleteContainerInstance('${containerInstanceId}')" ${deleteDisabledAttr}>`;
     html += '<i class="bi bi-trash"></i> Delete';
     html += '</button>';
@@ -1729,6 +1732,9 @@ function enterEditMode(instanceId) {
     
     const restartBtn = document.getElementById('detailsRestartBtn');
     if (restartBtn) restartBtn.style.display = 'none';
+    
+    const stopBtn = document.getElementById('detailsStopBtn');
+    if (stopBtn) stopBtn.style.display = 'none';
     
     const deleteBtn = document.getElementById('detailsDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'none';
@@ -2535,6 +2541,9 @@ function exitEditMode() {
     const restartBtn = document.getElementById('detailsRestartBtn');
     if (restartBtn) restartBtn.style.display = 'inline-block';
     
+    const stopBtn = document.getElementById('detailsStopBtn');
+    if (stopBtn) stopBtn.style.display = 'inline-block';
+    
     const deleteBtn = document.getElementById('detailsDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'inline-block';
     
@@ -2653,6 +2662,45 @@ async function restartContainerInstance(instanceId) {
     } catch (error) {
         console.error('Error restarting container instance:', error);
         showNotification(`Error restarting container instance: ${error.message}`, 'error');
+    }
+}
+
+// Stop container instance
+async function stopContainerInstance(instanceId) {
+    // Confirm stop action
+    if (!confirm('Are you sure you want to stop this container instance?')) {
+        return;
+    }
+    
+    try {
+        showNotification('Stopping container instance...', 'info');
+        
+        const response = await fetch(`/api/oci/container-instances/${instanceId}/stop`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Container instance stop initiated successfully!', 'success');
+            
+            // Close the modal
+            const modalElement = document.getElementById('containerInstanceModal');
+            if (modalElement) {
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) {
+                    modal.hide();
+                }
+            }
+            
+            // Reload container instances to reflect the new state
+            await loadContainerInstances();
+        } else {
+            throw new Error(data.error || 'Failed to stop container instance');
+        }
+    } catch (error) {
+        console.error('Error stopping container instance:', error);
+        showNotification(`Error stopping container instance: ${error.message}`, 'error');
     }
 }
 

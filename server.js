@@ -735,6 +735,29 @@ app.post('/api/oci/container-instances/:instanceId/restart', async (req, res) =>
   }
 });
 
+app.post('/api/oci/container-instances/:instanceId/stop', async (req, res) => {
+  try {
+    const instanceId = req.params.instanceId;
+
+    const stopContainerInstanceRequest = {
+      containerInstanceId: instanceId
+    };
+
+    const response = await containerInstancesClient.stopContainerInstance(stopContainerInstanceRequest);
+    
+    res.json({
+      success: true,
+      message: 'Container instance stop initiated'
+    });
+  } catch (error) {
+    console.error('Error stopping container instance:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // Container Instances - Get Container Details
 app.get('/api/oci/containers/:containerId', async (req, res) => {
   try {
