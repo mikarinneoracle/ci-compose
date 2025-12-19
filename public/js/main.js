@@ -3234,6 +3234,11 @@ function addSidecar(index) {
     containersData.push(container);
     updateContainersTable();
     
+    // Show notification if sidecar has environment variables that need configuration
+    if (effectiveSidecar.envs && Array.isArray(effectiveSidecar.envs) && effectiveSidecar.envs.length > 0) {
+        showNotification('Sidecar has been added. Please configure its environment variables and add any required volumes for proper operation.', 'info', 10000);
+    }
+    
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
     modal.hide();
 }
@@ -3361,6 +3366,11 @@ function addSidecarToDetails(index) {
     const containers = window[`detailsContainers_${instanceId}`] || [];
     containers.push(container);
     window[`detailsContainers_${instanceId}`] = containers;
+    
+    // Show notification if sidecar has environment variables that need configuration
+    if (effectiveSidecar.envs && Array.isArray(effectiveSidecar.envs) && effectiveSidecar.envs.length > 0) {
+        showNotification('Sidecar has been added. Please configure its environment variables and add any required volumes for proper operation.', 'info', 10000);
+    }
     
     refreshDetailsContainersTable(instanceId);
     
