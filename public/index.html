@@ -183,6 +183,34 @@
                                                 </div>
                                                 <div class="row">
                                                     <div class="col-md-6 mb-3">
+                                                        <label class="form-label">Compartment</label>
+                                                        <input type="text" class="form-control" id="ciCompartmentName" readonly>
+                                                        <small class="form-text text-muted">Compartment where the container instance will be created</small>
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label">Subnet <span class="text-danger">*</span></label>
+                                                        <select class="form-select" id="ciSubnetId" required>
+                                                            <option value="">Loading subnets...</option>
+                                                        </select>
+                                                        <small class="form-text text-muted">Subnet where the container instance will be created</small>
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label">Architecture <span class="text-danger">*</span></label>
+                                                        <div>
+                                                            <div class="form-check form-check-inline">
+                                                                <input class="form-check-input" type="radio" name="ciArchitecture" id="ciArchX86" value="x86" checked required>
+                                                                <label class="form-check-label" for="ciArchX86">x86</label>
+                                                            </div>
+                                                            <div class="form-check form-check-inline">
+                                                                <input class="form-check-input" type="radio" name="ciArchitecture" id="ciArchARM64" value="ARM64" required>
+                                                                <label class="form-check-label" for="ciArchARM64">ARM64</label>
+                                                            </div>
+                                                        </div>
+                                                        <small class="form-text text-muted">Container instance architecture</small>
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
                                                         <label for="ciShapeMemory" class="form-label">Shape Memory (GB) <span class="text-danger">*</span></label>
                                                         <select class="form-select" id="ciShapeMemory" required>
                                                             <option value="16" selected>16 GB</option>
@@ -192,6 +220,10 @@
                                                             <option value="128">128 GB</option>
                                                         </select>
                                                         <small class="form-text text-muted">Total memory for the container instance</small>
+                                                    </div>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
                                                     </div>
                                                     <div class="col-md-6 mb-3">
                                                         <label for="ciShapeOcpus" class="form-label">Shape OCPUs <span class="text-danger">*</span></label>
@@ -206,20 +238,6 @@
                                                             <option value="8">8 OCPU</option>
                                                         </select>
                                                         <small class="form-text text-muted">Total OCPUs for the container instance</small>
-                                                    </div>
-                                                </div>
-                                                <div class="row">
-                                                    <div class="col-md-6 mb-3">
-                                                        <label class="form-label">Compartment</label>
-                                                        <input type="text" class="form-control" id="ciCompartmentName" readonly>
-                                                        <small class="form-text text-muted">Compartment where the container instance will be created</small>
-                                                    </div>
-                                                    <div class="col-md-6 mb-3">
-                                                        <label class="form-label">Subnet <span class="text-danger">*</span></label>
-                                                        <select class="form-select" id="ciSubnetId" required>
-                                                            <option value="">Loading subnets...</option>
-                                                        </select>
-                                                        <small class="form-text text-muted">Subnet where the container instance will be created</small>
                                                     </div>
                                                 </div>
                                             </div>

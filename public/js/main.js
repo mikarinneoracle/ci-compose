@@ -1322,7 +1322,8 @@ function displayContainerInstanceDetails(instance) {
         shape: instance.shape,
         shapeConfig: instance.shapeConfig,
         containerRestartPolicy: instance.containerRestartPolicy || 'NEVER',
-        lifecycleState: instance.lifecycleState
+        lifecycleState: instance.lifecycleState,
+        freeformTags: instance.freeformTags || {}
     };
     
     let html = '<div class="row">';
@@ -1373,31 +1374,46 @@ function displayContainerInstanceDetails(instance) {
         const memoryValue = instance.shapeConfig.memoryInGBs || '16';
         const ocpusValue = instance.shapeConfig.ocpus || '1';
         
-        // Memory - show dropdown in edit mode, text in view mode
-        html += `<dt class="col-5 text-muted">Memory:</dt>`;
-        html += `<dd class="col-7">`;
-        html += `<span id="detailsMemoryDisplay">${memoryValue} GB</span>`;
-        html += `<select class="form-select form-select-sm" id="detailsShapeMemory" style="display: none;">`;
-        html += `<option value="16" ${memoryValue == '16' ? 'selected' : ''}>16 GB</option>`;
-        html += `<option value="32" ${memoryValue == '32' ? 'selected' : ''}>32 GB</option>`;
-        html += `<option value="64" ${memoryValue == '64' ? 'selected' : ''}>64 GB</option>`;
-        html += `<option value="96" ${memoryValue == '96' ? 'selected' : ''}>96 GB</option>`;
-        html += `<option value="128" ${memoryValue == '128' ? 'selected' : ''}>128 GB</option>`;
-        html += `</select></dd>`;
+        // Architecture - read-only display (on top)
+        const architectureValue = instance.freeformTags?.architecture || 'x86';
+        html += `<dt class="col-5 text-muted">Architecture:</dt>`;
+        html += `<dd class="col-7">${architectureValue}</dd>`;
         
         // OCPUs - show dropdown in edit mode, text in view mode
         html += `<dt class="col-5 text-muted">OCPUs:</dt>`;
         html += `<dd class="col-7">`;
         html += `<span id="detailsOcpusDisplay">${ocpusValue}</span>`;
         html += `<select class="form-select form-select-sm" id="detailsShapeOcpus" style="display: none;">`;
-        html += `<option value="1" ${ocpusValue == '1' ? 'selected' : ''}>1 OCPU</option>`;
-        html += `<option value="2" ${ocpusValue == '2' ? 'selected' : ''}>2 OCPU</option>`;
-        html += `<option value="3" ${ocpusValue == '3' ? 'selected' : ''}>3 OCPU</option>`;
-        html += `<option value="4" ${ocpusValue == '4' ? 'selected' : ''}>4 OCPU</option>`;
-        html += `<option value="5" ${ocpusValue == '5' ? 'selected' : ''}>5 OCPU</option>`;
-        html += `<option value="6" ${ocpusValue == '6' ? 'selected' : ''}>6 OCPU</option>`;
-        html += `<option value="7" ${ocpusValue == '7' ? 'selected' : ''}>7 OCPU</option>`;
-        html += `<option value="8" ${ocpusValue == '8' ? 'selected' : ''}>8 OCPU</option>`;
+        if (architectureValue === 'ARM64') {
+            // ARM64: 1-16
+            for (let ocpu = 1; ocpu <= 16; ocpu++) {
+                html += `<option value="${ocpu}" ${ocpusValue == ocpu.toString() ? 'selected' : ''}>${ocpu} OCPU</option>`;
+            }
+        } else {
+            // x86: 1-8
+            for (let ocpu = 1; ocpu <= 8; ocpu++) {
+                html += `<option value="${ocpu}" ${ocpusValue == ocpu.toString() ? 'selected' : ''}>${ocpu} OCPU</option>`;
+            }
+        }
+        html += `</select></dd>`;
+        
+        // Memory - show dropdown in edit mode, text in view mode
+        html += `<dt class="col-5 text-muted">Memory:</dt>`;
+        html += `<dd class="col-7">`;
+        html += `<span id="detailsMemoryDisplay">${memoryValue} GB</span>`;
+        html += `<select class="form-select form-select-sm" id="detailsShapeMemory" style="display: none;">`;
+        if (architectureValue === 'ARM64') {
+            // ARM64: 6 to 96 in increments of 6
+            for (let mem = 6; mem <= 96; mem += 6) {
+                html += `<option value="${mem}" ${memoryValue == mem.toString() ? 'selected' : ''}>${mem} GB</option>`;
+            }
+        } else {
+            // x86: 16, 32, 64, 96, 128
+            const x86MemoryOptions = [16, 32, 64, 96, 128];
+            x86MemoryOptions.forEach(mem => {
+                html += `<option value="${mem}" ${memoryValue == mem.toString() ? 'selected' : ''}>${mem} GB</option>`;
+            });
+        }
         html += `</select></dd>`;
     }
     html += '</dl>';
@@ -1770,6 +1786,45 @@ function enterEditMode(instanceId) {
     }
 }
 
+// Helper function to populate memory dropdown based on architecture
+function populateContainerMemoryDropdown(architecture, selectedValue = null) {
+    const memorySelect = document.getElementById('editContainerMemory');
+    if (!memorySelect) return;
+    
+    memorySelect.innerHTML = '';
+    const defaultMemory = architecture === 'ARM64' ? '6' : '16';
+    const valueToSelect = selectedValue || defaultMemory;
+    
+    if (architecture === 'ARM64') {
+        // ARM64: 6 to 96 in increments of 6
+        for (let mem = 6; mem <= 96; mem += 6) {
+            const option = document.createElement('option');
+            option.value = mem.toString();
+            option.textContent = `${mem} GB`;
+            if (mem.toString() === valueToSelect.toString()) {
+                option.selected = true;
+            }
+            memorySelect.appendChild(option);
+        }
+    } else {
+        // x86: 16, 32, 64, 96, 128
+        const x86MemoryOptions = [16, 32, 64, 96, 128];
+        x86MemoryOptions.forEach(mem => {
+            const option = document.createElement('option');
+            option.value = mem.toString();
+            option.textContent = `${mem} GB`;
+            if (mem.toString() === valueToSelect.toString()) {
+                option.selected = true;
+            }
+            memorySelect.appendChild(option);
+        });
+    }
+    // If no option was selected (value doesn't match), select the first one
+    if (!memorySelect.value && memorySelect.options.length > 0) {
+        memorySelect.selectedIndex = 0;
+    }
+}
+
 function addContainerToDetails() {
     // Ensure we're in edit mode
     if (!isInEditMode) {
@@ -1791,6 +1846,10 @@ function addContainerToDetails() {
     if (modalTitle) {
         modalTitle.textContent = 'Add Container';
     }
+    
+    // Populate memory dropdown based on CI architecture
+    const architecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
+    populateContainerMemoryDropdown(architecture);
     
     // Load ports from localStorage for this CI name and update port dropdown
     let detailsPorts = [];
@@ -1884,7 +1943,14 @@ function editContainerInDetails(index, instanceId) {
     document.getElementById('editContainerIndex').value = index;
     document.getElementById('editContainerName').value = container.displayName || '';
     document.getElementById('editContainerImage').value = container.imageUrl || '';
-    document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '16';
+    
+    // Get architecture from CI to populate memory dropdown correctly
+    const architecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
+    const memoryValue = container.resourceConfig?.memoryInGBs || (architecture === 'ARM64' ? '6' : '16');
+    
+    // Update memory dropdown based on architecture
+    populateContainerMemoryDropdown(architecture, memoryValue);
+    
     document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '1';
     
     // Load ports from localStorage for this CI name and update port dropdown
@@ -2395,8 +2461,13 @@ async function saveCIChanges(instanceId) {
             });
         }
         
-        // Build freeformTags (volumes and ports)
+        // Build freeformTags (architecture, volumes and ports)
         const baseFreeformTags = {};
+        
+        // Add architecture tag from current instance or default to x86
+        const architecture = currentEditingInstance.freeformTags?.architecture || 'x86';
+        baseFreeformTags.architecture = architecture;
+        
         if (volumes.length > 0) {
             const volumesTag = volumes.map((v, idx) => {
                 const volumeName = v.name || `volume-${idx}`;
@@ -2435,15 +2506,39 @@ async function saveCIChanges(instanceId) {
             };
         }
         
+        // Get required fields with fallbacks for failed CIs
+        const config = getConfiguration();
+        const displayName = currentEditingInstance.displayName || document.getElementById('ciName')?.value || config.projectName || 'CI';
+        const compartmentId = currentEditingInstance.compartmentId || config.compartmentId;
+        const subnetId = (() => {
+            const subnetSelect = document.getElementById('detailsSubnetId');
+            return subnetSelect && subnetSelect.value ? subnetSelect.value : currentEditingInstance.subnetId || config.defaultSubnetId;
+        })();
+        
+        // Determine shape from architecture tag or instance shape, with fallback
+        let shape = currentEditingInstance.shape;
+        if (!shape) {
+            // Try to get architecture from freeformTags or determine from shape name
+            const architecture = baseFreeformTags.architecture || 'x86';
+            shape = architecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
+        }
+        
+        // Validate required fields
+        if (!displayName || !compartmentId || !shape || !subnetId) {
+            const missingFields = [];
+            if (!displayName) missingFields.push('displayName');
+            if (!compartmentId) missingFields.push('compartmentId');
+            if (!shape) missingFields.push('shape');
+            if (!subnetId) missingFields.push('subnetId');
+            throw new Error(`Missing required fields: ${missingFields.join(', ')}. Please ensure the container instance has all required information or check your configuration.`);
+        }
+        
         const payload = {
-            displayName: currentEditingInstance.displayName,
-            compartmentId: currentEditingInstance.compartmentId,
-            shape: currentEditingInstance.shape,
+            displayName: displayName,
+            compartmentId: compartmentId,
+            shape: shape,
             shapeConfig: shapeConfig,
-            subnetId: (() => {
-                const subnetSelect = document.getElementById('detailsSubnetId');
-                return subnetSelect && subnetSelect.value ? subnetSelect.value : currentEditingInstance.subnetId;
-            })(),
+            subnetId: subnetId,
             containers: cleanedContainers,
             containerRestartPolicy: currentEditingInstance.containerRestartPolicy || 'NEVER',
             volumes: volumesPayload,
@@ -2840,6 +2935,100 @@ async function showCreateContainerInstanceModal() {
     document.getElementById('ciShape').value = 'CI.Standard.E4.Flex';
     document.getElementById('ciShapeMemory').value = '16';
     document.getElementById('ciShapeOcpus').value = '1';
+    // Set default architecture to x86
+    const archX86 = document.getElementById('ciArchX86');
+    const archARM64 = document.getElementById('ciArchARM64');
+    if (archX86) archX86.checked = true;
+    if (archARM64) archARM64.checked = false;
+    
+    // Track previous architecture to detect changes
+    let previousArchitecture = 'x86';
+    
+    // Function to update memory and OCPU dropdowns based on architecture
+    const updateMemoryAndOcpuDropdowns = (architecture) => {
+        const memorySelect = document.getElementById('ciShapeMemory');
+        const ocpusSelect = document.getElementById('ciShapeOcpus');
+        
+        if (memorySelect) {
+            memorySelect.innerHTML = '';
+            if (architecture === 'ARM64') {
+                // ARM64: 6 to 96 in increments of 6
+                for (let mem = 6; mem <= 96; mem += 6) {
+                    const option = document.createElement('option');
+                    option.value = mem.toString();
+                    option.textContent = `${mem} GB`;
+                    if (mem === 6) option.selected = true; // Default to 6
+                    memorySelect.appendChild(option);
+                }
+            } else {
+                // x86: 16, 32, 64, 96, 128
+                const x86MemoryOptions = [16, 32, 64, 96, 128];
+                x86MemoryOptions.forEach(mem => {
+                    const option = document.createElement('option');
+                    option.value = mem.toString();
+                    option.textContent = `${mem} GB`;
+                    if (mem === 16) option.selected = true; // Default to 16
+                    memorySelect.appendChild(option);
+                });
+            }
+        }
+        
+        if (ocpusSelect) {
+            ocpusSelect.innerHTML = '';
+            if (architecture === 'ARM64') {
+                // ARM64: 1-16
+                for (let ocpu = 1; ocpu <= 16; ocpu++) {
+                    const option = document.createElement('option');
+                    option.value = ocpu.toString();
+                    option.textContent = `${ocpu} OCPU`;
+                    if (ocpu === 1) option.selected = true; // Default to 1
+                    ocpusSelect.appendChild(option);
+                }
+            } else {
+                // x86: 1-8
+                for (let ocpu = 1; ocpu <= 8; ocpu++) {
+                    const option = document.createElement('option');
+                    option.value = ocpu.toString();
+                    option.textContent = `${ocpu} OCPU`;
+                    if (ocpu === 1) option.selected = true; // Default to 1
+                    ocpusSelect.appendChild(option);
+                }
+            }
+        }
+    };
+    
+    // Add event listeners to update shape and dropdowns when architecture changes
+    const updateShapeFromArchitecture = () => {
+        const selectedArch = document.querySelector('input[name="ciArchitecture"]:checked')?.value || 'x86';
+        
+        // Check if architecture actually changed and containers are already added
+        if (selectedArch !== previousArchitecture && containersData && containersData.length > 0) {
+            showNotification('You are changing the deployment architecture. Please make sure containers are compatible with this change.', 'warning', 8000);
+        }
+        
+        // Update previous architecture
+        previousArchitecture = selectedArch;
+        
+        const shapeField = document.getElementById('ciShape');
+        if (shapeField) {
+            shapeField.value = selectedArch === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
+        }
+        // Update memory and OCPU dropdowns
+        updateMemoryAndOcpuDropdowns(selectedArch);
+    };
+    
+    // Initialize dropdowns for default architecture (x86)
+    updateMemoryAndOcpuDropdowns('x86');
+    
+    // Remove existing listeners to avoid duplicates
+    if (archX86) {
+        archX86.removeEventListener('change', updateShapeFromArchitecture);
+        archX86.addEventListener('change', updateShapeFromArchitecture);
+    }
+    if (archARM64) {
+        archARM64.removeEventListener('change', updateShapeFromArchitecture);
+        archARM64.addEventListener('change', updateShapeFromArchitecture);
+    }
     
     // Load compartment name
     try {
@@ -2948,6 +3137,11 @@ function addContainerToTable() {
         modalTitle.textContent = 'Add Container';
     }
     
+    // Populate memory dropdown based on CI architecture
+    const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
+    const architecture = archRadio ? archRadio.value : 'x86';
+    populateContainerMemoryDropdown(architecture);
+    
     // Update port dropdown
     updateContainerPortDropdown();
     
@@ -2993,7 +3187,13 @@ function editContainer(index) {
     document.getElementById('editContainerIndex').value = index;
     document.getElementById('editContainerName').value = container.displayName || '';
     document.getElementById('editContainerImage').value = container.imageUrl || '';
-    document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '';
+    
+    // Populate memory dropdown based on CI architecture
+    const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
+    const architecture = archRadio ? archRadio.value : 'x86';
+    const memoryValue = container.resourceConfig?.memoryInGBs || (architecture === 'ARM64' ? '6' : '16');
+    populateContainerMemoryDropdown(architecture, memoryValue);
+    
     document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '';
     
     // Update port dropdown
@@ -3253,13 +3453,38 @@ function populateAddSidecarModal() {
         return;
     }
     
-    container.innerHTML = sidecars.map((sidecar, index) => `
+    // Get architecture from CI create modal or CI edit mode
+    let selectedArchitecture = 'x86'; // default
+    if (editingDetailsContext && editingDetailsContext.type === 'details') {
+        // In CI edit mode, get architecture from currentEditingInstance
+        selectedArchitecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
+    } else {
+        // In CI create mode, get architecture from radio buttons
+        const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
+        selectedArchitecture = archRadio ? archRadio.value : 'x86';
+    }
+    
+    // Filter sidecars by architecture
+    // Map sidecars to their original index in the full sidecars array
+    const filteredSidecars = sidecars
+        .map((sidecar, originalIndex) => ({ sidecar, originalIndex }))
+        .filter(({ sidecar }) => {
+            const sidecarArch = sidecar.arch || 'x86'; // Default to x86 if not specified
+            return sidecarArch === selectedArchitecture;
+        });
+    
+    if (filteredSidecars.length === 0) {
+        container.innerHTML = `<p class="text-muted">No sidecars available for ${selectedArchitecture} architecture. Please add sidecars in the Sidecar Gallery.</p>`;
+        return;
+    }
+    
+    container.innerHTML = filteredSidecars.map(({ sidecar, originalIndex }) => `
         <div class="col-md-6">
             <div class="card h-100">
                 <div class="card-body">
                     <h6 class="card-title">${sidecar.name}</h6>
                     <p class="card-text small text-muted">${sidecar.image}</p>
-                    <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(${index})">
+                    <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(${originalIndex})">
                         Add ${sidecar.name}
                     </button>
                 </div>
@@ -4344,6 +4569,7 @@ function showCISummaryModal() {
     const ciShape = document.getElementById('ciShape').value;
     const ciShapeMemory = document.getElementById('ciShapeMemory').value;
     const ciShapeOcpus = document.getElementById('ciShapeOcpus').value;
+    const ciArchitecture = document.querySelector('input[name="ciArchitecture"]:checked')?.value || 'x86';
     const compartmentName = document.getElementById('ciCompartmentName').value;
     const subnetId = document.getElementById('ciSubnetId').value;
     if (!subnetId) {
@@ -4363,11 +4589,12 @@ function showCISummaryModal() {
     html += '<h5 class="border-bottom pb-2 mb-3">Basic Information</h5>';
     html += '<dl class="row">';
     html += `<dt class="col-sm-4">Name:</dt><dd class="col-sm-8"><strong>${ciName}</strong></dd>`;
+    html += `<dt class="col-sm-4">Subnet:</dt><dd class="col-sm-8">${subnetName}</dd>`;
     html += `<dt class="col-sm-4">Shape:</dt><dd class="col-sm-8">${ciShape}</dd>`;
+    html += `<dt class="col-sm-4">Architecture:</dt><dd class="col-sm-8">${ciArchitecture}</dd>`;
     html += `<dt class="col-sm-4">Shape Memory:</dt><dd class="col-sm-8">${ciShapeMemory} GB</dd>`;
     html += `<dt class="col-sm-4">Shape OCPUs:</dt><dd class="col-sm-8">${ciShapeOcpus}</dd>`;
     html += `<dt class="col-sm-4">Compartment:</dt><dd class="col-sm-8">${compartmentName}</dd>`;
-    html += `<dt class="col-sm-4">Subnet:</dt><dd class="col-sm-8">${subnetName}</dd>`;
     html += '</dl>';
     html += '</div>';
     
@@ -4474,9 +4701,15 @@ function showCISummaryModal() {
 async function confirmCreateContainerInstance() {
     const config = getConfiguration();
     
-    // Build base freeformTags for CI instance (volumes and ports)
+    // Get architecture value
+    const ciArchitecture = document.querySelector('input[name="ciArchitecture"]:checked')?.value || 'x86';
+    
+    // Build base freeformTags for CI instance (volumes, ports, and architecture)
     // Note: OCI requires all containers to have the same tags as the instance
     const baseFreeformTags = {};
+    
+    // Add architecture tag
+    baseFreeformTags.architecture = ciArchitecture;
     
     // Add volumes tag
     if (volumesData.length > 0) {
@@ -4513,7 +4746,7 @@ async function confirmCreateContainerInstance() {
         };
         
         // OCI requires all containers to have the same freeformTags as the instance
-        // So we add the same base tags (volumes and ports) to all containers
+        // So we add the same base tags (volumes, ports, and architecture) to all containers
         if (Object.keys(baseFreeformTags).length > 0) {
             cleaned.freeformTags = { ...baseFreeformTags };
         }
@@ -4537,21 +4770,25 @@ async function confirmCreateContainerInstance() {
         return cleaned;
     });
     
+    // Set shape based on architecture
+    const ciShape = ciArchitecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
+    
     const payload = {
         displayName: document.getElementById('ciName').value.trim(),
         compartmentId: config.compartmentId,
-        shape: document.getElementById('ciShape').value,
+        shape: ciShape,
         shapeConfig: {
             memoryInGBs: parseFloat(document.getElementById('ciShapeMemory').value),
             ocpus: parseFloat(document.getElementById('ciShapeOcpus').value)
         },
+        architecture: ciArchitecture,
         subnetId: document.getElementById('ciSubnetId').value,
         containers: cleanedContainers,
         containerRestartPolicy: 'NEVER'
     };
     
     // Add freeformTags to CI instance (must match container tags per OCI requirement)
-    // Use the same base tags that containers have (volumes), but collect all unique port info
+    // baseFreeformTags already includes arch, volumes, and ports
     if (Object.keys(baseFreeformTags).length > 0) {
         payload.freeformTags = baseFreeformTags;
     }
