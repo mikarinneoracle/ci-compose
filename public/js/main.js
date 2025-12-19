@@ -3506,8 +3506,15 @@ function displaySidecarGallery() {
             <div class="col-md-4">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h6 class="card-title">${sidecar.name}</h6>
-                        <p class="card-text small text-muted">${sidecar.image}</p>
+                        <div class="mb-2">
+                            <h6 class="card-title mb-1">${sidecar.name}</h6>
+                            <p class="card-text small text-muted mb-0">${sidecar.image}</p>
+                        </div>
+                        <div class="mb-2 small">
+                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'} | 
+                            <span class="text-muted">Mem:</span> ${sidecar.mem || 'N/A'} GB | 
+                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'}
+                        </div>
                         <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('default', ${index})">
                             View Details
                         </button>
@@ -3525,8 +3532,15 @@ function displaySidecarGallery() {
             <div class="col-md-4">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h6 class="card-title">${sidecar.name}</h6>
-                        <p class="card-text small text-muted">${sidecar.image}</p>
+                        <div class="mb-2">
+                            <h6 class="card-title mb-1">${sidecar.name}</h6>
+                            <p class="card-text small text-muted mb-0">${sidecar.image}</p>
+                        </div>
+                        <div class="mb-2 small">
+                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'} | 
+                            <span class="text-muted">Mem:</span> ${sidecar.mem || 'N/A'} GB | 
+                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'}
+                        </div>
                         <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('custom', ${index})">
                             View Details
                         </button>

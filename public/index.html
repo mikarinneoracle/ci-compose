@@ -724,28 +724,33 @@
                     <form id="viewSidecarForm">
                         <input type="hidden" id="viewSidecarId">
                         <input type="hidden" id="viewSidecarIsDefault">
-                        <div class="mb-3">
-                            <label for="viewSidecarName" class="form-label">Name</label>
-                            <input type="text" class="form-control" id="viewSidecarName" readonly>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="viewSidecarName" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="viewSidecarName" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="viewSidecarImage" class="form-label">Image</label>
+                                <input type="text" class="form-control" id="viewSidecarImage" readonly>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="viewSidecarImage" class="form-label">Image</label>
-                            <input type="text" class="form-control" id="viewSidecarImage" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label for="viewSidecarPort" class="form-label">Port</label>
-                            <input type="text" class="form-control" id="viewSidecarPort" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Memory (GB)</label>
-                            <input type="text" class="form-control" id="viewSidecarMem" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">OCPUs</label>
-                            <input type="text" class="form-control" id="viewSidecarOcpu" readonly>
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="viewSidecarPort" class="form-label">Port</label>
+                                <input type="text" class="form-control" id="viewSidecarPort" readonly>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Memory (GB)</label>
+                                <input type="text" class="form-control" id="viewSidecarMem" readonly>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">OCPUs</label>
+                                <input type="text" class="form-control" id="viewSidecarOcpu" readonly>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Environment Variables</label>
+                            <small class="form-text text-muted d-block mb-2">User is expected to edit these values when using the sidecar in the deployment (unless the default value is suitable). Typically file path -type vars require also creating a volume with matching path.</small>
                             <div id="viewSidecarEnvs" class="border rounded p-2 bg-light">
                                 <p class="text-muted mb-0">No environment variables</p>
                             </div>
@@ -754,20 +759,42 @@
                             <hr>
                             <h6>Default Values (Saved)</h6>
                             <p class="text-muted small">These values will be used when adding this sidecar to a container instance.</p>
-                            <div class="mb-3">
-                                <label for="defaultSidecarPort" class="form-label">Port</label>
-                                <input type="text" class="form-control" id="defaultSidecarPort">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Memory (GB)</label>
-                                <input type="text" class="form-control" id="defaultSidecarMem">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">OCPUs</label>
-                                <input type="text" class="form-control" id="defaultSidecarOcpu">
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label for="defaultSidecarPort" class="form-label">Port</label>
+                                    <input type="text" class="form-control" id="defaultSidecarPort">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Memory (GB)</label>
+                                    <select class="form-select" id="defaultSidecarMem">
+                                        <option value="">Select...</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="4">4</option>
+                                        <option value="8">8</option>
+                                        <option value="16">16</option>
+                                        <option value="32">32</option>
+                                        <option value="64">64</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">OCPUs</label>
+                                    <select class="form-select" id="defaultSidecarOcpu">
+                                        <option value="">Select...</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                    </select>
+                                </div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Environment Variables</label>
+                                <small class="form-text text-muted d-block mb-2">User is expected to edit these values when using the sidecar in the deployment (unless the default value is suitable). Typically file path -type vars require also creating a volume with matching path.</small>
                                 <div id="defaultSidecarEnvs" class="border rounded p-2">
                                     <p class="text-muted mb-0">No environment variables</p>
                                 </div>
@@ -796,28 +823,52 @@
                 <div class="modal-body">
                     <form id="addEditCustomSidecarForm">
                         <input type="hidden" id="editCustomSidecarId">
-                        <div class="mb-3">
-                            <label for="editCustomSidecarName" class="form-label">Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="editCustomSidecarName" required>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="editCustomSidecarName" class="form-label">Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editCustomSidecarName" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editCustomSidecarImage" class="form-label">Image <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editCustomSidecarImage" required>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="editCustomSidecarImage" class="form-label">Image <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="editCustomSidecarImage" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editCustomSidecarPort" class="form-label">Port</label>
-                            <input type="text" class="form-control" id="editCustomSidecarPort" placeholder="e.g., 8080">
-                        </div>
-                        <div class="mb-3">
-                            <label for="editCustomSidecarMem" class="form-label">Memory (GB)</label>
-                            <input type="text" class="form-control" id="editCustomSidecarMem" placeholder="e.g., 1">
-                        </div>
-                        <div class="mb-3">
-                            <label for="editCustomSidecarOcpu" class="form-label">OCPUs</label>
-                            <input type="text" class="form-control" id="editCustomSidecarOcpu" placeholder="e.g., 1">
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="editCustomSidecarPort" class="form-label">Port</label>
+                                <input type="text" class="form-control" id="editCustomSidecarPort" placeholder="e.g., 8080">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editCustomSidecarMem" class="form-label">Memory (GB)</label>
+                                <select class="form-select" id="editCustomSidecarMem">
+                                    <option value="">Select...</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="4">4</option>
+                                    <option value="8">8</option>
+                                    <option value="16">16</option>
+                                    <option value="32">32</option>
+                                    <option value="64">64</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editCustomSidecarOcpu" class="form-label">OCPUs</label>
+                                <select class="form-select" id="editCustomSidecarOcpu">
+                                    <option value="">Select...</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                    <option value="6">6</option>
+                                    <option value="7">7</option>
+                                    <option value="8">8</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Environment Variables</label>
+                            <small class="form-text text-muted d-block mb-2">User is expected to edit these values when using the sidecar in the deployment (unless the default value is suitable). Typically file path -type vars require also creating a volume with matching path.</small>
                             <div id="editCustomSidecarEnvs" class="border rounded p-2 mb-2">
                                 <p class="text-muted mb-2">No environment variables added</p>
                             </div>
