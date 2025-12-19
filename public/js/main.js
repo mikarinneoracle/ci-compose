@@ -3557,9 +3557,10 @@ function displaySidecarGallery() {
                             <p class="card-text small text-muted mb-0">${sidecar.image}</p>
                         </div>
                         <div class="mb-2 small">
-                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'} | 
+                            <span class="text-muted">Arch:</span> ${sidecar.arch || 'N/A'} | 
                             <span class="text-muted">Mem:</span> ${sidecar.mem || 'N/A'} GB | 
-                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'}
+                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'} | 
+                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'}
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('default', ${index})">
                             View Details
@@ -3583,9 +3584,10 @@ function displaySidecarGallery() {
                             <p class="card-text small text-muted mb-0">${sidecar.image}</p>
                         </div>
                         <div class="mb-2 small">
-                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'} | 
+                            <span class="text-muted">Arch:</span> ${sidecar.arch || 'N/A'} | 
                             <span class="text-muted">Mem:</span> ${sidecar.mem || 'N/A'} GB | 
-                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'}
+                            <span class="text-muted">OCPU:</span> ${sidecar.ocpu || 'N/A'} | 
+                            <span class="text-muted">Port:</span> ${sidecar.port || '(none)'}
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('custom', ${index})">
                             View Details
@@ -3616,6 +3618,7 @@ function viewSidecar(type, index) {
     document.getElementById('viewSidecarPort').value = portValue;
     document.getElementById('viewSidecarMem').value = sidecar.mem || '';
     document.getElementById('viewSidecarOcpu').value = sidecar.ocpu || '';
+    document.getElementById('viewSidecarArch').value = sidecar.arch || '';
     
     // Display environment variables
     const envsContainer = document.getElementById('viewSidecarEnvs');
@@ -3745,6 +3748,7 @@ function showAddCustomSidecarModal() {
     document.getElementById('editCustomSidecarId').value = '';
     document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Add Custom Sidecar';
     document.getElementById('editCustomSidecarEnvs').innerHTML = '<p class="text-muted mb-2">No environment variables added</p>';
+    document.getElementById('editCustomSidecarArch').value = '';
     
     const modal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
     modal.show();
@@ -3762,6 +3766,7 @@ function editCustomSidecar() {
     document.getElementById('editCustomSidecarPort').value = sidecar.port || '';
     document.getElementById('editCustomSidecarMem').value = sidecar.mem || '';
     document.getElementById('editCustomSidecarOcpu').value = sidecar.ocpu || '';
+    document.getElementById('editCustomSidecarArch').value = sidecar.arch || '';
     
     // Display environment variables
     const envsContainer = document.getElementById('editCustomSidecarEnvs');
@@ -3920,6 +3925,7 @@ function saveCustomSidecar() {
         port: document.getElementById('editCustomSidecarPort').value,
         mem: document.getElementById('editCustomSidecarMem').value,
         ocpu: document.getElementById('editCustomSidecarOcpu').value,
+        arch: document.getElementById('editCustomSidecarArch').value,
         envs: []
     };
     

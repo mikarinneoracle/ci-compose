@@ -24,7 +24,8 @@
             }
         ],
         "mem": "16",
-        "ocpu": "1"
+        "ocpu": "1",
+        "arch": "x86"
     },
     {
         "id": "2",
@@ -47,7 +48,8 @@
             }
         ],
         "mem": "16",
-        "ocpu": "1"
+        "ocpu": "1",
+        "arch": "x86"
     },
     {
         "id": "3",
@@ -74,7 +76,88 @@
             }
         ],
         "mem": "16",
-        "ocpu": "1"
+        "ocpu": "1",
+        "arch": "x86"
+    },
+    {
+        "id": "4",
+        "name": "OsReader",
+        "image": "mikarinneoracle/ci-sidecar-os:0.1.0-arm",
+        "port": "",
+        "volumes": [
+            {
+                "name": "data"
+            }
+        ],
+        "envs": [
+            {
+                "var": "data_path",
+                "value": "/data"
+            },
+            {
+                "var": "os_bucket",
+                "value": "***put here your OS bucket name****"
+            },
+            {
+                "var": "reload_delay",
+                "value": "30000"
+            }
+        ],
+        "mem": "6",
+        "ocpu": "1",
+        "arch": "ARM64"
+    },
+    {
+        "id": "5",
+        "name": "VaultReader",
+        "image": "mikarinneoracle/ci-sidecar-vault:0.1.0-arm",
+        "port": "",
+        "volumes": [
+            {
+                "name": "db-config"
+            }
+        ],
+        "envs": [
+            {
+                "var": "secrets_file",
+                "value": "/secrets/connection.txt"
+            },
+            {
+                "var": "secret_ocid",
+                "value": "***put here secrets OCID***"
+            }
+        ],
+        "mem": "6",
+        "ocpu": "1",
+        "arch": "ARM64"
+    },
+    {
+        "id": "6",
+        "name": "LogWriter",
+        "image": "mikarinneoracle/ci-sidecar-log:0.1.0-arm",
+        "port": "",
+        "volumes": [
+            {
+                "name": "logs"
+            }
+        ],
+        "envs": [
+            {
+                "var": "log_file",
+                "value": "/var/log/app.log"
+            },
+            {
+                "var": "log_ocid",
+                "value": "***put here log OCID***"
+            },
+            {
+                "var": "log_header",
+                "value": "***logs header***"
+            }
+        ],
+        "mem": "6",
+        "ocpu": "1",
+        "arch": "ARM64"
     }
 ]
 
