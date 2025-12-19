@@ -1378,13 +1378,11 @@ function displayContainerInstanceDetails(instance) {
         html += `<dd class="col-7">`;
         html += `<span id="detailsMemoryDisplay">${memoryValue} GB</span>`;
         html += `<select class="form-select form-select-sm" id="detailsShapeMemory" style="display: none;">`;
-        html += `<option value="1" ${memoryValue == '1' ? 'selected' : ''}>1 GB</option>`;
-        html += `<option value="2" ${memoryValue == '2' ? 'selected' : ''}>2 GB</option>`;
-        html += `<option value="4" ${memoryValue == '4' ? 'selected' : ''}>4 GB</option>`;
-        html += `<option value="8" ${memoryValue == '8' ? 'selected' : ''}>8 GB</option>`;
         html += `<option value="16" ${memoryValue == '16' ? 'selected' : ''}>16 GB</option>`;
         html += `<option value="32" ${memoryValue == '32' ? 'selected' : ''}>32 GB</option>`;
         html += `<option value="64" ${memoryValue == '64' ? 'selected' : ''}>64 GB</option>`;
+        html += `<option value="96" ${memoryValue == '96' ? 'selected' : ''}>96 GB</option>`;
+        html += `<option value="128" ${memoryValue == '128' ? 'selected' : ''}>128 GB</option>`;
         html += `</select></dd>`;
         
         // OCPUs - show dropdown in edit mode, text in view mode
@@ -1880,7 +1878,7 @@ function editContainerInDetails(index, instanceId) {
     document.getElementById('editContainerIndex').value = index;
     document.getElementById('editContainerName').value = container.displayName || '';
     document.getElementById('editContainerImage').value = container.imageUrl || '';
-    document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '1';
+    document.getElementById('editContainerMemory').value = container.resourceConfig?.memoryInGBs || '16';
     document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '1';
     
     // Load ports from localStorage for this CI name and update port dropdown
@@ -2356,7 +2354,7 @@ async function saveCIChanges(instanceId) {
                 displayName: container.displayName,
                 imageUrl: container.imageUrl,
                 resourceConfig: {
-                    memoryInGBs: parseFloat(container.resourceConfig?.memoryInGBs) || 1,
+                    memoryInGBs: parseFloat(container.resourceConfig?.memoryInGBs) || 16,
                     vcpus: parseFloat(container.resourceConfig?.vcpus) || 1
                 }
             };
@@ -3243,7 +3241,7 @@ function addSidecar(index) {
                 effectiveSidecar = {
                     ...sidecar,
                     port: defaults.port || sidecar.port || '',
-                    mem: defaults.mem || sidecar.mem || '1',
+                    mem: defaults.mem || sidecar.mem || '16',
                     ocpu: defaults.ocpu || sidecar.ocpu || '1',
                     envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
                 };
@@ -3294,7 +3292,7 @@ function addSidecar(index) {
         displayName: effectiveSidecar.name,
         imageUrl: effectiveSidecar.image,
         resourceConfig: {
-            memoryInGBs: parseFloat(effectiveSidecar.mem || '1'),
+            memoryInGBs: parseFloat(effectiveSidecar.mem || '16'),
             vcpus: parseFloat(effectiveSidecar.ocpu || '1')
         },
         environmentVariables: environmentVariables,
@@ -3355,7 +3353,7 @@ function addSidecarToDetails(index) {
                 effectiveSidecar = {
                     ...sidecar,
                     port: defaults.port || sidecar.port || '',
-                    mem: defaults.mem || sidecar.mem || '1',
+                    mem: defaults.mem || sidecar.mem || '16',
                     ocpu: defaults.ocpu || sidecar.ocpu || '1',
                     envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
                 };
@@ -3425,7 +3423,7 @@ function addSidecarToDetails(index) {
         displayName: effectiveSidecar.name,
         imageUrl: effectiveSidecar.image,
         resourceConfig: {
-            memoryInGBs: parseFloat(effectiveSidecar.mem || '1'),
+            memoryInGBs: parseFloat(effectiveSidecar.mem || '16'),
             vcpus: parseFloat(effectiveSidecar.ocpu || '1')
         },
         environmentVariables: environmentVariables,
@@ -4448,7 +4446,7 @@ async function confirmCreateContainerInstance() {
     // Clean containers data - remove frontend-only fields like portIndex
     const cleanedContainers = containersData.map((container, containerIdx) => {
         // Ensure resourceConfig values are numbers
-        const memoryInGBs = parseFloat(container.resourceConfig?.memoryInGBs) || 1;
+        const memoryInGBs = parseFloat(container.resourceConfig?.memoryInGBs) || 16;
         const vcpus = parseFloat(container.resourceConfig?.vcpus) || 1;
         
         const cleaned = {
