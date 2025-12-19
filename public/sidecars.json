@@ -1,0 +1,80 @@
+[
+    {
+        "id": "1",
+        "name": "OsReader",
+        "image": "mikarinneoracle/ci-sidecar-os:0.1.0",
+        "port": "",
+        "volumes": [
+            {
+                "name": "data"
+            }
+        ],
+        "envs": [
+            {
+                "var": "data_path",
+                "value": "/data"
+            },
+            {
+                "var": "os_bucket",
+                "value": "***put here your OS bucket name****"
+            },
+            {
+                "var": "reload_delay",
+                "value": "30000"
+            }
+        ],
+        "mem": "1",
+        "ocpu": "1"
+    },
+    {
+        "id": "2",
+        "name": "VaultReader",
+        "image": "mikarinneoracle/ci-sidecar-vault:0.1.0",
+        "port": "",
+        "volumes": [
+            {
+                "name": "db-config"
+            }
+        ],
+        "envs": [
+            {
+                "var": "secrets_file",
+                "value": "/secrets/connection.txt"
+            },
+            {
+                "var": "secret_ocid",
+                "value": "***put here secrets OCID***"
+            }
+        ],
+        "mem": "1",
+        "ocpu": "1"
+    },
+    {
+        "id": "3",
+        "name": "LogWriter",
+        "image": "mikarinneoracle/ci-sidecar-log:0.1.0",
+        "port": "",
+        "volumes": [
+            {
+                "name": "logs"
+            }
+        ],
+        "envs": [
+            {
+                "var": "log_file",
+                "value": "/var/log/app.log"
+            },
+            {
+                "var": "log_ocid",
+                "value": "***put here log OCID***"
+            },
+            {
+                "var": "log_header",
+                "value": "***logs header***"
+            }
+        ],
+        "mem": "1",
+        "ocpu": "1"
+    }
+]
+

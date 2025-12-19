@@ -28,6 +28,9 @@
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showConfigModal()">Configuration</button>
                     </li>
                     <li class="nav-item">
+                        <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showSidecarGalleryModal()">Sidecar Gallery</button>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#">About</a>
                     </li>
                     <li class="nav-item">
@@ -299,40 +302,8 @@
                                     </div>
                                     <div class="modal-body">
                                         <p class="text-muted mb-3">Select a sidecar to add to your container instance:</p>
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <div class="card h-100">
-                                                    <div class="card-body">
-                                                        <h6 class="card-title">OsReader</h6>
-                                                        <p class="card-text small text-muted">Object Storage Reader</p>
-                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(0)">
-                                                            Add OsReader
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="card h-100">
-                                                    <div class="card-body">
-                                                        <h6 class="card-title">VaultReader</h6>
-                                                        <p class="card-text small text-muted">Vault Secrets Reader</p>
-                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(1)">
-                                                            Add VaultReader
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="card h-100">
-                                                    <div class="card-body">
-                                                        <h6 class="card-title">LogWriter</h6>
-                                                        <p class="card-text small text-muted">Log Writer</p>
-                                                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(2)">
-                                                            Add LogWriter
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                        <div class="row g-3" id="addSidecarModalBody">
+                                            <p class="text-muted">Loading sidecars...</p>
                                         </div>
                                     </div>
                                     <div class="modal-footer">
@@ -409,7 +380,7 @@
                             <div class="modal-dialog modal-lg">
                                 <div class="modal-content">
                                     <div class="modal-header bg-info text-white">
-                                        <h5 class="modal-title">Edit Container</h5>
+                                        <h5 class="modal-title" id="editContainerModalTitle">Edit Container</h5>
                                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
@@ -627,6 +598,162 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidecar Gallery Modal -->
+    <div class="modal fade" id="sidecarGalleryModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title">Sidecar Gallery</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">Stock Sidecars</h6>
+                        <button type="button" class="btn btn-success btn-sm" onclick="showAddCustomSidecarModal()">
+                            <i class="bi bi-plus"></i> Add Custom Sidecar
+                        </button>
+                    </div>
+                    <div id="defaultSidecarsContainer" class="row g-3 mb-4">
+                        <p class="text-muted">Loading sidecars...</p>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">Custom Sidecars</h6>
+                    </div>
+                    <div id="customSidecarsContainer" class="row g-3">
+                        <p class="text-muted">No custom sidecars yet. Click "Add Custom Sidecar" to create one.</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View/Edit Sidecar Modal -->
+    <div class="modal fade" id="viewSidecarModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title" id="viewSidecarModalTitle">Sidecar Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="viewSidecarForm">
+                        <input type="hidden" id="viewSidecarId">
+                        <input type="hidden" id="viewSidecarIsDefault">
+                        <div class="mb-3">
+                            <label for="viewSidecarName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="viewSidecarName" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="viewSidecarImage" class="form-label">Image</label>
+                            <input type="text" class="form-control" id="viewSidecarImage" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="viewSidecarPort" class="form-label">Port</label>
+                            <input type="text" class="form-control" id="viewSidecarPort" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Memory (GB)</label>
+                            <input type="text" class="form-control" id="viewSidecarMem" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">OCPUs</label>
+                            <input type="text" class="form-control" id="viewSidecarOcpu" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Environment Variables</label>
+                            <div id="viewSidecarEnvs" class="border rounded p-2 bg-light">
+                                <p class="text-muted mb-0">No environment variables</p>
+                            </div>
+                        </div>
+                        <div id="defaultSidecarDefaultsSection" style="display: none;">
+                            <hr>
+                            <h6>Default Values (Saved)</h6>
+                            <p class="text-muted small">These values will be used when adding this sidecar to a container instance.</p>
+                            <div class="mb-3">
+                                <label for="defaultSidecarPort" class="form-label">Port</label>
+                                <input type="text" class="form-control" id="defaultSidecarPort">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Memory (GB)</label>
+                                <input type="text" class="form-control" id="defaultSidecarMem">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">OCPUs</label>
+                                <input type="text" class="form-control" id="defaultSidecarOcpu">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Environment Variables</label>
+                                <div id="defaultSidecarEnvs" class="border rounded p-2">
+                                    <p class="text-muted mb-0">No environment variables</p>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-danger" id="deleteCustomSidecarBtn" style="display: none;" onclick="deleteCustomSidecar()">Delete</button>
+                    <button type="button" class="btn btn-warning" id="editCustomSidecarBtn" style="display: none;" onclick="editCustomSidecar()">Edit</button>
+                    <button type="button" class="btn btn-primary" id="saveDefaultsBtn" style="display: none;" onclick="saveSidecarDefaults()">Save Defaults</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Custom Sidecar Modal -->
+    <div class="modal fade" id="addEditCustomSidecarModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="addEditCustomSidecarModalTitle">Add Custom Sidecar</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addEditCustomSidecarForm">
+                        <input type="hidden" id="editCustomSidecarId">
+                        <div class="mb-3">
+                            <label for="editCustomSidecarName" class="form-label">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editCustomSidecarName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomSidecarImage" class="form-label">Image <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editCustomSidecarImage" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomSidecarPort" class="form-label">Port</label>
+                            <input type="text" class="form-control" id="editCustomSidecarPort" placeholder="e.g., 8080">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomSidecarMem" class="form-label">Memory (GB)</label>
+                            <input type="text" class="form-control" id="editCustomSidecarMem" placeholder="e.g., 1">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editCustomSidecarOcpu" class="form-label">OCPUs</label>
+                            <input type="text" class="form-control" id="editCustomSidecarOcpu" placeholder="e.g., 1">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Environment Variables</label>
+                            <div id="editCustomSidecarEnvs" class="border rounded p-2 mb-2">
+                                <p class="text-muted mb-2">No environment variables added</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="addEnvToCustomSidecar()">
+                                <i class="bi bi-plus"></i> Add Environment Variable
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveCustomSidecar()">Save</button>
                 </div>
             </div>
         </div>

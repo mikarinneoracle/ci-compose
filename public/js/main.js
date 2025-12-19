@@ -1409,10 +1409,8 @@ function displayContainerInstanceDetails(instance) {
     if (detailsContainersData.length > 0) {
         html += '<table class="table table-sm" style="width: 100%; table-layout: auto;">';
         // Actions column header - only show in edit mode
-        // Log column header - only show in non-edit mode
         const actionsHeader = isInEditMode ? '<th style="width: auto; white-space: nowrap; text-align: right;">Actions</th>' : '';
-        const logHeader = !isInEditMode ? '<th style="border-bottom: 1px solid #dee2e6;">Logs</th>' : '';
-        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}${logHeader}</tr></thead>`;
+        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}</tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1453,18 +1451,17 @@ function displayContainerInstanceDetails(instance) {
             html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
             
-            // Log column - only show in non-edit mode and if container has log_ocid env var
+            // Log button - only show in non-edit mode and if container has log_ocid env var
             if (!isInEditMode) {
                 const logOcid = envVars.log_ocid;
                 if (logOcid) {
-                    html += `<td>`;
+                    html += `<td style="white-space: nowrap;">`;
                     html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                     html += `<i class="bi bi-file-text"></i> Log`;
                     html += `</button>`;
                     html += `</td>`;
-                } else {
-                    html += `<td>-</td>`;
                 }
+                // No else clause - don't add a cell if there's no log_ocid
             }
             
             html += '</tr>';
@@ -1699,6 +1696,11 @@ function enterEditMode(instanceId) {
 }
 
 function addContainerToDetails() {
+    // Ensure we're in edit mode
+    if (!isInEditMode) {
+        isInEditMode = true;
+    }
+    
     // Set editing context
     const instanceId = currentEditingInstance?.id;
     if (!instanceId) return;
@@ -1708,6 +1710,12 @@ function addContainerToDetails() {
     // Reset edit form
     document.getElementById('editContainerForm').reset();
     document.getElementById('editContainerIndex').value = '';
+    
+    // Set modal title to "Add Container"
+    const modalTitle = document.getElementById('editContainerModalTitle');
+    if (modalTitle) {
+        modalTitle.textContent = 'Add Container';
+    }
     
     // Load ports from localStorage for this CI name and update port dropdown
     let detailsPorts = [];
@@ -1790,6 +1798,12 @@ function editContainerInDetails(index, instanceId) {
     
     // Set editing context
     editingDetailsContext = { type: 'details', instanceId: instanceId, index: index };
+    
+    // Set modal title to "Edit Container"
+    const modalTitle = document.getElementById('editContainerModalTitle');
+    if (modalTitle) {
+        modalTitle.textContent = 'Edit Container';
+    }
     
     // Populate edit form with container data
     document.getElementById('editContainerIndex').value = index;
@@ -1925,7 +1939,22 @@ function deleteContainerInDetails(index, instanceId) {
                     actionsCell.style.display = 'table-cell';
                 }
             });
-        }, 50);
+            // Also ensure the Actions header is visible
+            const table = document.getElementById('detailsContainersTableBody')?.closest('table');
+            if (table) {
+                const thead = table.querySelector('thead tr');
+                if (thead) {
+                    const headers = thead.querySelectorAll('th');
+                    if (headers.length > 5) {
+                        const actionsHeader = headers[headers.length - 2];
+                        if (actionsHeader) {
+                            actionsHeader.style.display = 'table-cell';
+                            actionsHeader.style.borderBottom = '1px solid #dee2e6';
+                        }
+                    }
+                }
+            }
+        }, 100);
     }
 }
 
@@ -1946,29 +1975,20 @@ function refreshDetailsContainersTable(instanceId) {
         return;
     }
     
-    // Show/hide Actions and Log column headers
+    // Show/hide Actions column header
     const table = tbody.closest('table');
     if (table) {
         const thead = table.querySelector('thead tr');
         if (thead) {
             const headers = thead.querySelectorAll('th');
-            // Actions header is second to last (before Log if it exists)
-            // Log header is last (if it exists)
+            // Actions header is last
             if (headers.length > 5) {
-                const actionsHeader = headers[headers.length - 2]; // Second to last
-                const logHeader = headers[headers.length - 1]; // Last
+                const actionsHeader = headers[headers.length - 1]; // Last
                 if (actionsHeader) {
                     actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
                     // Ensure border is maintained when visible
                     if (isInEditMode) {
                         actionsHeader.style.borderBottom = '1px solid #dee2e6';
-                    }
-                }
-                if (logHeader) {
-                    logHeader.style.display = !isInEditMode ? 'table-cell' : 'none';
-                    // Ensure border is maintained when visible
-                    if (!isInEditMode) {
-                        logHeader.style.borderBottom = '1px solid #dee2e6';
                     }
                 }
             }
@@ -1987,11 +2007,21 @@ function refreshDetailsContainersTable(instanceId) {
         const cmdJson = JSON.stringify(cmd);
         const argsJson = JSON.stringify(args);
         
+        // Get port from portIndex if port is not set
+        let portDisplay = container.port || '-';
+        if (!container.port && container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            const portIndex = parseInt(container.portIndex);
+            if (detailsPorts[portIndex]) {
+                portDisplay = detailsPorts[portIndex].port.toString();
+            }
+        }
+        
         let html = `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
         
         html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
         html += `<td><strong class="text-primary">${containerName}</strong></td>`;
-        html += `<td>${container.port || '-'}</td>`;
+        html += `<td>${portDisplay}</td>`;
         html += `<td><code>${container.imageUrl}</code></td>`;
         html += `<td>Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>VCPUs: ${container.resourceConfig.vcpus || 'N/A'}</td>`;
         
@@ -2001,6 +2031,20 @@ function refreshDetailsContainersTable(instanceId) {
         html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
         html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
         html += `</td>`;
+        
+        // Log button - only show in non-edit mode and if container has log_ocid env var
+        if (!isInEditMode) {
+            const logOcid = envVars.log_ocid;
+            if (logOcid) {
+                html += `<td style="white-space: nowrap;">`;
+                html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
+                html += `<i class="bi bi-file-text"></i> Log`;
+                html += `</button>`;
+                html += `</td>`;
+            }
+            // No else clause - don't add a cell if there's no log_ocid
+        }
+        
         html += '</tr>';
         return html;
     }).join('');
@@ -2286,10 +2330,22 @@ async function saveCIChanges(instanceId) {
             baseFreeformTags.volumes = volumesTag;
         }
         
-        // Add port mappings - use port string directly if available
+        // Add port mappings - resolve from portIndex if port is not set
+        const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
         containers.forEach((container) => {
-            if (container.port) {
-                baseFreeformTags[container.displayName] = container.port;
+            let portValue = container.port;
+            
+            // If port is not set but portIndex is, resolve it from detailsPorts
+            if (!portValue && container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+                const portIndex = parseInt(container.portIndex);
+                if (detailsPorts[portIndex]) {
+                    portValue = detailsPorts[portIndex].port.toString();
+                }
+            }
+            
+            // Add to tags if port is available
+            if (portValue) {
+                baseFreeformTags[container.displayName] = portValue;
             }
         });
         
@@ -2591,50 +2647,50 @@ function getStateBadgeHtml(state) {
 }
 
 
-// Predefined sidecars
-const sidecars = [
-    {
-        id: '1',
-        name: 'OsReader',
-        image: 'mikarinneoracle/ci-sidecar-os:0.1.0',
-        port: '',
-        volumes: [{ name: 'data' }],
-        envs: [
-            { var: 'data_path', value: '/data' },
-            { var: 'os_bucket', value: '***put here your OS bucket name****' },
-            { var: 'reload_delay', value: '30000' }
-        ],
-        mem: '1',
-        ocpu: '1'
-    },
-    {
-        id: '2',
-        name: 'VaultReader',
-        image: 'mikarinneoracle/ci-sidecar-vault:0.1.0',
-        port: '',
-        volumes: [{ name: 'db-config' }],
-        envs: [
-            { var: 'secrets_file', value: '/secrets/connection.txt' },
-            { var: 'secret_ocid', value: '***put here secrets OCID***' }
-        ],
-        mem: '1',
-        ocpu: '1'
-    },
-    {
-        id: '3',
-        name: 'LogWriter',
-        image: 'mikarinneoracle/ci-sidecar-log:0.1.0',
-        port: '',
-        volumes: [{ name: 'logs' }],
-        envs: [
-            { var: 'log_file', value: '/var/log/app.log' },
-            { var: 'log_ocid', value: '***put here log OCID***' },
-            { var: 'log_header', value: '***logs header***' }
-        ],
-        mem: '1',
-        ocpu: '1'
+// Sidecar data storage
+let defaultSidecars = [];
+let customSidecars = [];
+let sidecars = []; // Combined array for backward compatibility
+
+// Load sidecars from JSON and localStorage
+async function loadSidecars() {
+    try {
+        // Load default sidecars from JSON
+        const response = await fetch('/sidecars.json');
+        if (response.ok) {
+            defaultSidecars = await response.json();
+            // Mark as default
+            defaultSidecars.forEach(sidecar => {
+                sidecar.isDefault = true;
+            });
+        } else {
+            console.error('Failed to load sidecars.json');
+            defaultSidecars = [];
+        }
+    } catch (error) {
+        console.error('Error loading sidecars.json:', error);
+        defaultSidecars = [];
     }
-];
+    
+    // Load custom sidecars from localStorage
+    try {
+        const savedCustomSidecars = localStorage.getItem('customSidecars');
+        if (savedCustomSidecars) {
+            customSidecars = JSON.parse(savedCustomSidecars);
+        } else {
+            customSidecars = [];
+        }
+    } catch (error) {
+        console.error('Error loading custom sidecars:', error);
+        customSidecars = [];
+    }
+    
+    // Combine for backward compatibility
+    sidecars = [...defaultSidecars, ...customSidecars];
+}
+
+// Initialize sidecars on page load
+loadSidecars();
 
 // Shape configurations with max resources
 const shapeConfigs = {
@@ -2763,6 +2819,12 @@ function addContainerToTable() {
     document.getElementById('editContainerForm').reset();
     document.getElementById('editContainerIndex').value = '';
     
+    // Set modal title to "Add Container"
+    const modalTitle = document.getElementById('editContainerModalTitle');
+    if (modalTitle) {
+        modalTitle.textContent = 'Add Container';
+    }
+    
     // Update port dropdown
     updateContainerPortDropdown();
     
@@ -2798,6 +2860,12 @@ function addContainerToTable() {
 
 function editContainer(index) {
     const container = containersData[index];
+    
+    // Set modal title to "Edit Container"
+    const modalTitle = document.getElementById('editContainerModalTitle');
+    if (modalTitle) {
+        modalTitle.textContent = 'Edit Container';
+    }
     
     document.getElementById('editContainerIndex').value = index;
     document.getElementById('editContainerName').value = container.displayName || '';
@@ -2975,7 +3043,22 @@ function saveEditedContainer() {
                         actionsCell.style.display = 'table-cell';
                     }
                 });
-            }, 50);
+                // Also ensure the Actions header is visible
+                const table = document.getElementById('detailsContainersTableBody')?.closest('table');
+                if (table) {
+                    const thead = table.querySelector('thead tr');
+                    if (thead) {
+                        const headers = thead.querySelectorAll('th');
+                        if (headers.length > 5) {
+                            const actionsHeader = headers[headers.length - 2];
+                            if (actionsHeader) {
+                                actionsHeader.style.display = 'table-cell';
+                                actionsHeader.style.borderBottom = '1px solid #dee2e6';
+                            }
+                        }
+                    }
+                }
+            }, 100);
         }
     } else {
         // Normal creation flow
@@ -3033,9 +3116,33 @@ function updateContainersTable() {
 }
 
 // Sidecar functions
-function showAddSidecarModal() {
+async function showAddSidecarModal() {
+    await loadSidecars();
+    populateAddSidecarModal();
     const modal = new bootstrap.Modal(document.getElementById('addSidecarModal'));
     modal.show();
+}
+
+function populateAddSidecarModal() {
+    const container = document.getElementById('addSidecarModalBody');
+    if (sidecars.length === 0) {
+        container.innerHTML = '<p class="text-muted">No sidecars available. Please add sidecars in the Sidecar Gallery.</p>';
+        return;
+    }
+    
+    container.innerHTML = sidecars.map((sidecar, index) => `
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title">${sidecar.name}</h6>
+                    <p class="card-text small text-muted">${sidecar.image}</p>
+                    <button type="button" class="btn btn-secondary btn-sm w-100" onclick="addSidecar(${index})">
+                        Add ${sidecar.name}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
 }
 
 function addSidecar(index) {
@@ -3048,24 +3155,73 @@ function addSidecar(index) {
         return;
     }
     
+    // Check for saved defaults (only for default sidecars)
+    let effectiveSidecar = { ...sidecar };
+    if (sidecar.isDefault) {
+        try {
+            const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecar.id}`);
+            if (savedDefaults) {
+                const defaults = JSON.parse(savedDefaults);
+                // Merge defaults with original sidecar (defaults override)
+                effectiveSidecar = {
+                    ...sidecar,
+                    port: defaults.port || sidecar.port || '',
+                    mem: defaults.mem || sidecar.mem || '1',
+                    ocpu: defaults.ocpu || sidecar.ocpu || '1',
+                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
+                };
+            }
+        } catch (error) {
+            console.error('Error loading sidecar defaults:', error);
+        }
+    }
+    
     // Convert envs array to object format
     const environmentVariables = {};
-    if (Array.isArray(sidecar.envs)) {
-        sidecar.envs.forEach(env => {
+    if (Array.isArray(effectiveSidecar.envs)) {
+        effectiveSidecar.envs.forEach(env => {
             if (env.var && env.value !== undefined) {
                 environmentVariables[env.var] = env.value;
             }
         });
     }
     
+    // Handle port: add to ports list if it doesn't exist, then preselect it
+    let portIndex = null;
+    if (effectiveSidecar.port && effectiveSidecar.port.trim()) {
+        const portNum = parseInt(effectiveSidecar.port.trim());
+        if (!isNaN(portNum)) {
+            // Check if port already exists in portsData
+            const existingPortIndex = portsData.findIndex(p => {
+                const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                return pPortNum === portNum;
+            });
+            
+            if (existingPortIndex !== -1) {
+                portIndex = existingPortIndex;
+            } else {
+                // Add port to portsData (name can be empty)
+                const newPort = { port: portNum };
+                portsData.push(newPort);
+                portIndex = portsData.length - 1;
+                
+                // Save ports to localStorage
+                const config = getConfiguration();
+                savePortsAndVolumesForCIName(config.projectName);
+                updatePortsTable();
+            }
+        }
+    }
+    
     const container = {
-        displayName: sidecar.name,
-        imageUrl: sidecar.image,
+        displayName: effectiveSidecar.name,
+        imageUrl: effectiveSidecar.image,
         resourceConfig: {
-            memoryInGBs: parseFloat(sidecar.mem),
-            vcpus: parseFloat(sidecar.ocpu)
+            memoryInGBs: parseFloat(effectiveSidecar.mem || '1'),
+            vcpus: parseFloat(effectiveSidecar.ocpu || '1')
         },
-        environmentVariables: environmentVariables
+        environmentVariables: environmentVariables,
+        portIndex: portIndex !== null ? portIndex.toString() : null
     };
     
     containersData.push(container);
@@ -3076,7 +3232,16 @@ function addSidecar(index) {
 }
 
 // Show sidecar modal for details edit mode
-function showAddSidecarModalToDetails() {
+async function showAddSidecarModalToDetails() {
+    // Ensure we're in edit mode
+    if (!isInEditMode) {
+        isInEditMode = true;
+    }
+    
+    // Load and populate sidecars before showing modal
+    await loadSidecars();
+    populateAddSidecarModal();
+    
     // Store context that we're adding to details
     editingDetailsContext = { type: 'details', instanceId: currentEditingInstance?.id, itemType: 'sidecar' };
     const modal = new bootstrap.Modal(document.getElementById('addSidecarModal'));
@@ -3097,25 +3262,93 @@ function addSidecarToDetails(index) {
     const instanceId = editingDetailsContext.instanceId;
     if (!instanceId) return;
     
+    // Check for saved defaults (only for default sidecars)
+    let effectiveSidecar = { ...sidecar };
+    if (sidecar.isDefault) {
+        try {
+            const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecar.id}`);
+            if (savedDefaults) {
+                const defaults = JSON.parse(savedDefaults);
+                // Merge defaults with original sidecar (defaults override)
+                effectiveSidecar = {
+                    ...sidecar,
+                    port: defaults.port || sidecar.port || '',
+                    mem: defaults.mem || sidecar.mem || '1',
+                    ocpu: defaults.ocpu || sidecar.ocpu || '1',
+                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
+                };
+            }
+        } catch (error) {
+            console.error('Error loading sidecar defaults:', error);
+        }
+    }
+    
     // Convert envs array to object format
     const environmentVariables = {};
-    if (Array.isArray(sidecar.envs)) {
-        sidecar.envs.forEach(env => {
+    if (Array.isArray(effectiveSidecar.envs)) {
+        effectiveSidecar.envs.forEach(env => {
             if (env.var && env.value !== undefined) {
                 environmentVariables[env.var] = env.value;
             }
         });
     }
     
+    // Handle port: add to detailsPorts if it doesn't exist, then preselect it
+    let portIndex = null;
+    if (effectiveSidecar.port && effectiveSidecar.port.trim()) {
+        const portNum = parseInt(effectiveSidecar.port.trim());
+        if (!isNaN(portNum)) {
+            let detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            
+            // Check if port already exists in detailsPorts
+            const existingPortIndex = detailsPorts.findIndex(p => {
+                const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                return pPortNum === portNum;
+            });
+            
+            if (existingPortIndex !== -1) {
+                portIndex = existingPortIndex;
+            } else {
+                // Add port to detailsPorts (name can be empty)
+                const newPort = { port: portNum };
+                detailsPorts.push(newPort);
+                portIndex = detailsPorts.length - 1;
+                window[`detailsPorts_${instanceId}`] = detailsPorts;
+                
+                // Also save to localStorage
+                const config = getConfiguration();
+                if (config.projectName) {
+                    const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+                    volumesData = existingData.volumes || [];
+                    portsData = detailsPorts.map(p => {
+                        const portObj = {
+                            port: typeof p.port === 'number' ? p.port : parseInt(p.port)
+                        };
+                        if (p.name && p.name.trim()) {
+                            portObj.name = p.name.trim();
+                        }
+                        return portObj;
+                    });
+                    savePortsAndVolumesForCIName(config.projectName);
+                    updatePortsTable();
+                }
+                
+                // Update port dropdown
+                updateContainerPortDropdown();
+            }
+        }
+    }
+    
     const container = {
-        displayName: sidecar.name,
-        imageUrl: sidecar.image,
+        displayName: effectiveSidecar.name,
+        imageUrl: effectiveSidecar.image,
         resourceConfig: {
-            memoryInGBs: parseFloat(sidecar.mem),
-            vcpus: parseFloat(sidecar.ocpu)
+            memoryInGBs: parseFloat(effectiveSidecar.mem || '1'),
+            vcpus: parseFloat(effectiveSidecar.ocpu || '1')
         },
         environmentVariables: environmentVariables,
-        lifecycleState: 'ACTIVE'
+        lifecycleState: 'ACTIVE',
+        portIndex: portIndex !== null ? portIndex.toString() : null
     };
     
     const containers = window[`detailsContainers_${instanceId}`] || [];
@@ -3135,7 +3368,22 @@ function addSidecarToDetails(index) {
                     actionsCell.style.display = 'table-cell';
                 }
             });
-        }, 50);
+            // Also ensure the Actions header is visible
+            const table = document.getElementById('detailsContainersTableBody')?.closest('table');
+            if (table) {
+                const thead = table.querySelector('thead tr');
+                if (thead) {
+                    const headers = thead.querySelectorAll('th');
+                    if (headers.length > 5) {
+                        const actionsHeader = headers[headers.length - 2];
+                        if (actionsHeader) {
+                            actionsHeader.style.display = 'table-cell';
+                            actionsHeader.style.borderBottom = '1px solid #dee2e6';
+                        }
+                    }
+                }
+            }
+        }, 100);
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
@@ -3143,6 +3391,425 @@ function addSidecarToDetails(index) {
     
     editingDetailsContext = null;
     // Don't reset isInEditMode - we're still in edit mode
+}
+
+// Sidecar Gallery functions
+async function showSidecarGalleryModal() {
+    await loadSidecars();
+    displaySidecarGallery();
+    const modal = new bootstrap.Modal(document.getElementById('sidecarGalleryModal'));
+    modal.show();
+}
+
+function displaySidecarGallery() {
+    const defaultContainer = document.getElementById('defaultSidecarsContainer');
+    const customContainer = document.getElementById('customSidecarsContainer');
+    
+    // Display stock sidecars
+    if (defaultSidecars.length === 0) {
+        defaultContainer.innerHTML = '<p class="text-muted">No stock sidecars available.</p>';
+    } else {
+        defaultContainer.innerHTML = defaultSidecars.map((sidecar, index) => `
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">${sidecar.name}</h6>
+                        <p class="card-text small text-muted">${sidecar.image}</p>
+                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('default', ${index})">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Display custom sidecars
+    if (customSidecars.length === 0) {
+        customContainer.innerHTML = '<p class="text-muted">No custom sidecars yet. Click "Add Custom Sidecar" to create one.</p>';
+    } else {
+        customContainer.innerHTML = customSidecars.map((sidecar, index) => `
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="card-title">${sidecar.name}</h6>
+                        <p class="card-text small text-muted">${sidecar.image}</p>
+                        <button type="button" class="btn btn-secondary btn-sm w-100" onclick="viewSidecar('custom', ${index})">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+}
+
+function viewSidecar(type, index) {
+    let sidecar;
+    if (type === 'default') {
+        sidecar = defaultSidecars[index];
+    } else {
+        sidecar = customSidecars[index];
+    }
+    if (!sidecar) return;
+    
+    // Populate view modal
+    document.getElementById('viewSidecarId').value = sidecar.id;
+    document.getElementById('viewSidecarIsDefault').value = type === 'default' ? 'true' : 'false';
+    document.getElementById('viewSidecarName').value = sidecar.name || '';
+    document.getElementById('viewSidecarImage').value = sidecar.image || '';
+    // Show "(none)" when port is empty for stock sidecars
+    const portValue = sidecar.port && sidecar.port.trim() ? sidecar.port : (type === 'default' ? '(none)' : '');
+    document.getElementById('viewSidecarPort').value = portValue;
+    document.getElementById('viewSidecarMem').value = sidecar.mem || '';
+    document.getElementById('viewSidecarOcpu').value = sidecar.ocpu || '';
+    
+    // Display environment variables
+    const envsContainer = document.getElementById('viewSidecarEnvs');
+    if (sidecar.envs && sidecar.envs.length > 0) {
+        envsContainer.innerHTML = sidecar.envs.map(env => 
+            `<div class="mb-1"><strong>${env.var}:</strong> ${env.value || ''}</div>`
+        ).join('');
+    } else {
+        envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
+    }
+    
+    // Show/hide buttons based on type
+    const isDefault = type === 'default';
+    document.getElementById('deleteCustomSidecarBtn').style.display = isDefault ? 'none' : 'inline-block';
+    document.getElementById('editCustomSidecarBtn').style.display = isDefault ? 'none' : 'inline-block';
+    document.getElementById('saveDefaultsBtn').style.display = isDefault ? 'inline-block' : 'none';
+    document.getElementById('defaultSidecarDefaultsSection').style.display = isDefault ? 'block' : 'none';
+    
+    // Load saved defaults for default sidecars
+    if (isDefault) {
+        loadSidecarDefaults(sidecar.id);
+    }
+    
+    document.getElementById('viewSidecarModalTitle').textContent = `Sidecar: ${sidecar.name}`;
+    const modal = new bootstrap.Modal(document.getElementById('viewSidecarModal'));
+    modal.show();
+}
+
+function loadSidecarDefaults(sidecarId) {
+    try {
+        const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecarId}`);
+        if (savedDefaults) {
+            const defaults = JSON.parse(savedDefaults);
+            document.getElementById('defaultSidecarPort').value = defaults.port || '';
+            document.getElementById('defaultSidecarMem').value = defaults.mem || '';
+            document.getElementById('defaultSidecarOcpu').value = defaults.ocpu || '';
+            
+            // Display environment variable defaults
+            const envsContainer = document.getElementById('defaultSidecarEnvs');
+            if (defaults.envs && defaults.envs.length > 0) {
+                envsContainer.innerHTML = defaults.envs.map((env, idx) => `
+                    <div class="mb-2">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">${env.var}</span>
+                            <input type="text" class="form-control" id="defaultEnv_${idx}" value="${env.value || ''}" data-var="${env.var}">
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                // Load from original sidecar
+                const sidecar = defaultSidecars.find(s => s.id === sidecarId);
+                if (sidecar && sidecar.envs && sidecar.envs.length > 0) {
+                    envsContainer.innerHTML = sidecar.envs.map((env, idx) => `
+                        <div class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">${env.var}</span>
+                                <input type="text" class="form-control" id="defaultEnv_${idx}" value="${env.value || ''}" data-var="${env.var}">
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
+                }
+            }
+        } else {
+            // Load from original sidecar
+            const sidecar = defaultSidecars.find(s => s.id === sidecarId);
+            if (sidecar) {
+                document.getElementById('defaultSidecarPort').value = sidecar.port || '';
+                document.getElementById('defaultSidecarMem').value = sidecar.mem || '';
+                document.getElementById('defaultSidecarOcpu').value = sidecar.ocpu || '';
+                
+                const envsContainer = document.getElementById('defaultSidecarEnvs');
+                if (sidecar.envs && sidecar.envs.length > 0) {
+                    envsContainer.innerHTML = sidecar.envs.map((env, idx) => `
+                        <div class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">${env.var}</span>
+                                <input type="text" class="form-control" id="defaultEnv_${idx}" value="${env.value || ''}" data-var="${env.var}">
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading sidecar defaults:', error);
+    }
+}
+
+function saveSidecarDefaults() {
+    const sidecarId = document.getElementById('viewSidecarId').value;
+    const defaults = {
+        port: document.getElementById('defaultSidecarPort').value,
+        mem: document.getElementById('defaultSidecarMem').value,
+        ocpu: document.getElementById('defaultSidecarOcpu').value,
+        envs: []
+    };
+    
+    // Collect environment variable defaults
+    const envsContainer = document.getElementById('defaultSidecarEnvs');
+    const envInputs = envsContainer.querySelectorAll('input[data-var]');
+    envInputs.forEach(input => {
+        defaults.envs.push({
+            var: input.getAttribute('data-var'),
+            value: input.value
+        });
+    });
+    
+    try {
+        localStorage.setItem(`sidecarDefaults_${sidecarId}`, JSON.stringify(defaults));
+        showNotification('Default values saved successfully!', 'success');
+        
+        // Close the view modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('viewSidecarModal'));
+        modal.hide();
+    } catch (error) {
+        console.error('Error saving sidecar defaults:', error);
+        showNotification('Error saving defaults', 'error');
+    }
+}
+
+function showAddCustomSidecarModal() {
+    document.getElementById('addEditCustomSidecarForm').reset();
+    document.getElementById('editCustomSidecarId').value = '';
+    document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Add Custom Sidecar';
+    document.getElementById('editCustomSidecarEnvs').innerHTML = '<p class="text-muted mb-2">No environment variables added</p>';
+    
+    const modal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
+    modal.show();
+}
+
+function editCustomSidecar() {
+    const sidecarId = document.getElementById('viewSidecarId').value;
+    const sidecar = customSidecars.find(s => s.id === sidecarId);
+    if (!sidecar) return;
+    
+    // Populate edit form
+    document.getElementById('editCustomSidecarId').value = sidecar.id;
+    document.getElementById('editCustomSidecarName').value = sidecar.name || '';
+    document.getElementById('editCustomSidecarImage').value = sidecar.image || '';
+    document.getElementById('editCustomSidecarPort').value = sidecar.port || '';
+    document.getElementById('editCustomSidecarMem').value = sidecar.mem || '';
+    document.getElementById('editCustomSidecarOcpu').value = sidecar.ocpu || '';
+    
+    // Display environment variables
+    const envsContainer = document.getElementById('editCustomSidecarEnvs');
+    if (sidecar.envs && sidecar.envs.length > 0) {
+        envsContainer.innerHTML = sidecar.envs.map((env, idx) => `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="flex-grow-1 me-2">
+                    <input type="text" class="form-control form-control-sm" placeholder="Variable name" value="${env.var || ''}" data-env-var="${idx}">
+                </div>
+                <div class="flex-grow-1 me-2">
+                    <input type="text" class="form-control form-control-sm" placeholder="Value" value="${env.value || ''}" data-env-value="${idx}">
+                </div>
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeEnvFromCustomSidecar(${idx})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `).join('');
+        window.currentCustomSidecarEnvs = [...sidecar.envs];
+    } else {
+        envsContainer.innerHTML = '<p class="text-muted mb-2">No environment variables added</p>';
+        window.currentCustomSidecarEnvs = [];
+    }
+    
+    document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Edit Custom Sidecar';
+    
+    // Close view modal and open edit modal
+    const viewModal = bootstrap.Modal.getInstance(document.getElementById('viewSidecarModal'));
+    viewModal.hide();
+    
+    const editModal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
+    editModal.show();
+}
+
+function deleteCustomSidecar() {
+    const sidecarId = document.getElementById('viewSidecarId').value;
+    if (!confirm(`Are you sure you want to delete the sidecar "${customSidecars.find(s => s.id === sidecarId)?.name}"?`)) {
+        return;
+    }
+    
+    customSidecars = customSidecars.filter(s => s.id !== sidecarId);
+    try {
+        localStorage.setItem('customSidecars', JSON.stringify(customSidecars));
+        sidecars = [...defaultSidecars, ...customSidecars];
+        showNotification('Sidecar deleted successfully!', 'success');
+        
+        // Close modal and refresh gallery
+        const modal = bootstrap.Modal.getInstance(document.getElementById('viewSidecarModal'));
+        modal.hide();
+        displaySidecarGallery();
+    } catch (error) {
+        console.error('Error deleting sidecar:', error);
+        showNotification('Error deleting sidecar', 'error');
+    }
+}
+
+function addVolumeToCustomSidecar() {
+    const name = prompt('Enter volume name:');
+    if (!name) return;
+    
+    if (!window.currentCustomSidecarVolumes) {
+        window.currentCustomSidecarVolumes = [];
+    }
+    window.currentCustomSidecarVolumes.push({ name: name });
+    
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    volumesContainer.innerHTML = window.currentCustomSidecarVolumes.map((v, idx) => `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span>${v.name || 'Unnamed'}</span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeVolumeFromCustomSidecar(${idx})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function removeVolumeFromCustomSidecar(index) {
+    if (window.currentCustomSidecarVolumes) {
+        window.currentCustomSidecarVolumes.splice(index, 1);
+        const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+        if (window.currentCustomSidecarVolumes.length === 0) {
+            volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
+        } else {
+            volumesContainer.innerHTML = window.currentCustomSidecarVolumes.map((v, idx) => `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>${v.name || 'Unnamed'}</span>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="removeVolumeFromCustomSidecar(${idx})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+    }
+}
+
+function addEnvToCustomSidecar() {
+    if (!window.currentCustomSidecarEnvs) {
+        window.currentCustomSidecarEnvs = [];
+    }
+    window.currentCustomSidecarEnvs.push({ var: '', value: '' });
+    
+    const envsContainer = document.getElementById('editCustomSidecarEnvs');
+    envsContainer.innerHTML = window.currentCustomSidecarEnvs.map((env, idx) => `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="flex-grow-1 me-2">
+                <input type="text" class="form-control form-control-sm" placeholder="Variable name" value="${env.var || ''}" data-env-var="${idx}">
+            </div>
+            <div class="flex-grow-1 me-2">
+                <input type="text" class="form-control form-control-sm" placeholder="Value" value="${env.value || ''}" data-env-value="${idx}">
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeEnvFromCustomSidecar(${idx})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function removeEnvFromCustomSidecar(index) {
+    if (window.currentCustomSidecarEnvs) {
+        window.currentCustomSidecarEnvs.splice(index, 1);
+        const envsContainer = document.getElementById('editCustomSidecarEnvs');
+        if (window.currentCustomSidecarEnvs.length === 0) {
+            envsContainer.innerHTML = '<p class="text-muted mb-2">No environment variables added</p>';
+        } else {
+            envsContainer.innerHTML = window.currentCustomSidecarEnvs.map((env, idx) => `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="flex-grow-1 me-2">
+                        <input type="text" class="form-control form-control-sm" placeholder="Variable name" value="${env.var || ''}" data-env-var="${idx}">
+                    </div>
+                    <div class="flex-grow-1 me-2">
+                        <input type="text" class="form-control form-control-sm" placeholder="Value" value="${env.value || ''}" data-env-value="${idx}">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="removeEnvFromCustomSidecar(${idx})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+    }
+}
+
+function saveCustomSidecar() {
+    const form = document.getElementById('addEditCustomSidecarForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const sidecarId = document.getElementById('editCustomSidecarId').value;
+    const isEdit = sidecarId !== '';
+    
+    // Collect form data
+    const sidecar = {
+        id: isEdit ? sidecarId : `custom_${Date.now()}`,
+        name: document.getElementById('editCustomSidecarName').value,
+        image: document.getElementById('editCustomSidecarImage').value,
+        port: document.getElementById('editCustomSidecarPort').value,
+        mem: document.getElementById('editCustomSidecarMem').value,
+        ocpu: document.getElementById('editCustomSidecarOcpu').value,
+        envs: []
+    };
+    
+    // Collect environment variables
+    const envsContainer = document.getElementById('editCustomSidecarEnvs');
+    const varInputs = envsContainer.querySelectorAll('input[data-env-var]');
+    const valueInputs = envsContainer.querySelectorAll('input[data-env-value]');
+    
+    for (let i = 0; i < varInputs.length; i++) {
+        const varInput = varInputs[i];
+        const valueInput = valueInputs[i];
+        if (varInput.value.trim()) {
+            sidecar.envs.push({
+                var: varInput.value.trim(),
+                value: valueInput.value || ''
+            });
+        }
+    }
+    
+    if (isEdit) {
+        // Update existing sidecar
+        const index = customSidecars.findIndex(s => s.id === sidecarId);
+        if (index !== -1) {
+            customSidecars[index] = sidecar;
+        }
+    } else {
+        // Add new sidecar
+        customSidecars.push(sidecar);
+    }
+    
+    try {
+        localStorage.setItem('customSidecars', JSON.stringify(customSidecars));
+        sidecars = [...defaultSidecars, ...customSidecars];
+        showNotification(isEdit ? 'Sidecar updated successfully!' : 'Sidecar created successfully!', 'success');
+        
+        // Close modal and refresh gallery
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addEditCustomSidecarModal'));
+        modal.hide();
+        displaySidecarGallery();
+    } catch (error) {
+        console.error('Error saving custom sidecar:', error);
+        showNotification('Error saving sidecar', 'error');
+    }
 }
 
 // Volume CRUD functions
