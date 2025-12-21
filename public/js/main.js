@@ -1535,17 +1535,18 @@ function displayContainerInstanceDetails(instance) {
             html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
             
-            // Log button - only show in non-edit mode and if container has log_ocid env var
+            // Log button - only show in non-edit mode, if container has log_ocid env var, and log group is configured
             if (!isInEditMode) {
                 const logOcid = envVars.log_ocid;
-                if (logOcid) {
+                const config = getConfiguration();
+                if (logOcid && config.logGroupId) {
                     html += `<td style="white-space: nowrap;">`;
                     html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                     html += `<i class="bi bi-file-text"></i> Log`;
                     html += `</button>`;
                     html += `</td>`;
                 }
-                // No else clause - don't add a cell if there's no log_ocid
+                // No else clause - don't add a cell if there's no log_ocid or log group
             }
             
             html += '</tr>';
@@ -2173,17 +2174,18 @@ function refreshDetailsContainersTable(instanceId) {
         html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
         html += `</td>`;
         
-        // Log button - only show in non-edit mode and if container has log_ocid env var
+        // Log button - only show in non-edit mode, if container has log_ocid env var, and log group is configured
         if (!isInEditMode) {
             const logOcid = envVars.log_ocid;
-            if (logOcid) {
+            const config = getConfiguration();
+            if (logOcid && config.logGroupId) {
                 html += `<td style="white-space: nowrap;">`;
                 html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                 html += `<i class="bi bi-file-text"></i> Log`;
                 html += `</button>`;
                 html += `</td>`;
             }
-            // No else clause - don't add a cell if there's no log_ocid
+            // No else clause - don't add a cell if there's no log_ocid or log group
         }
         
         html += '</tr>';
