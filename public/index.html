@@ -86,11 +86,10 @@
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-bordered" id="portsTable">
+                                    <table class="table table-sm" id="portsTable">
                                         <thead class="table-light">
                                             <tr>
-                                                <th>Port</th>
-                                                <th>Actions</th>
+                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Port</th>
                                             </tr>
                                         </thead>
                                         <tbody id="portsTableBody">
@@ -116,11 +115,10 @@
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-bordered" id="volumesTable">
+                                    <table class="table table-sm" id="volumesTable">
                                         <thead class="table-light">
                                             <tr>
-                                                <th>Volume</th>
-                                                <th>Actions</th>
+                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Volume</th>
                                             </tr>
                                         </thead>
                                 <tbody id="volumesTableBody">
@@ -256,20 +254,19 @@
                                                     </div>
                                                 </div>
                                                 <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered" id="containersTable">
+                                                    <table class="table table-sm" id="containersTable">
                                                         <thead class="table-light">
                                                             <tr>
-                                                                <th>Name</th>
-                                                                <th>Image</th>
-                                                                <th>Memory (GB)</th>
-                                                                <th>VCPUs</th>
-                                                                <th>Port</th>
-                                                                <th>Actions</th>
+                                                                <th style="border-bottom: 1px solid #dee2e6;">Name</th>
+                                                                <th style="border-bottom: 1px solid #dee2e6;">Image</th>
+                                                                <th style="border-bottom: 1px solid #dee2e6;">Memory (GB)</th>
+                                                                <th style="border-bottom: 1px solid #dee2e6;">VCPUs</th>
+                                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Port</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody id="containersTableBody">
                                                             <tr>
-                                                                <td colspan="6" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td>
+                                                                <td colspan="5" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No containers added yet. Click "Add Container" to add one.</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>
@@ -286,17 +283,16 @@
                                                 </div>
                                                 <p class="text-muted small mb-2">Volumes are accessible to all containers in the deployment via their mounted paths.</p>
                                                 <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered" id="createVolumesTable">
+                                                    <table class="table table-sm" id="createVolumesTable">
                                                         <thead class="table-light">
                                                             <tr>
-                                                                <th>Name</th>
-                                                                <th>Path</th>
-                                                                <th>Actions</th>
+                                                                <th style="border-bottom: 1px solid #dee2e6;">Name</th>
+                                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Path</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody id="createVolumesTableBody">
                                                             <tr>
-                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
+                                                                <td colspan="3" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes added yet. Click "Add Volume" to add one.</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>

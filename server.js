@@ -11,6 +11,7 @@ const objectstorage = require('oci-objectstorage');
 const containerinstances = require('oci-containerinstances');
 const logging = require('oci-logging');
 const loggingsearch = require('oci-loggingsearch');
+const resourcemanager = require('oci-resourcemanager');
 const common = require('oci-common');
 
 const app = express();
@@ -51,6 +52,10 @@ const loggingManagementClient = new logging.LoggingManagementClient({
 });
 
 const logSearchClient = new loggingsearch.LogSearchClient({
+  authenticationDetailsProvider: provider
+});
+
+const resourceManagerClient = new resourcemanager.ResourceManagerClient({
   authenticationDetailsProvider: provider
 });
 
@@ -1196,6 +1201,114 @@ app.get('/api/oci/networking/vnics/:vnicId', async (req, res) => {
   } catch (error) {
     console.error('Error getting VNIC:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Resource Manager - Create Stack
+app.post('/api/oci/resource-manager/stacks', async (req, res) => {
+  try {
+    const {
+      displayName,
+      description,
+      compartmentId,
+      terraformConfig
+    } = req.body;
+
+    if (!displayName || !compartmentId || !terraformConfig) {
+      return res.status(400).json({
+        success: false,
+        error: 'displayName, compartmentId, and terraformConfig are required'
+      });
+    }
+
+    const createStackDetails = {
+      compartmentId: compartmentId,
+      displayName: displayName,
+      description: description || `Container Instance configuration for ${displayName}`,
+      configSource: {
+        configSourceType: 'ZIP_UPLOAD'
+      },
+      terraformVersion: '1.5.x',
+      variables: {},
+      freeformTags: {}
+    };
+
+    // Create a ZIP file with the Terraform configuration
+    const archiver = require('archiver');
+    const stream = require('stream');
+    
+    // Create a readable stream for the ZIP
+    const zipStream = new stream.PassThrough();
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    
+    archive.on('error', (error) => {
+      console.error('Error creating ZIP:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create ZIP file: ' + error.message
+      });
+    });
+    
+    archive.pipe(zipStream);
+    archive.append(terraformConfig, { name: 'main.tf' });
+    archive.finalize();
+
+    // Convert stream to buffer
+    const chunks = [];
+    zipStream.on('data', (chunk) => chunks.push(chunk));
+    zipStream.on('end', async () => {
+      try {
+        const zipBuffer = Buffer.concat(chunks);
+        
+        // Create stack with ZIP_UPLOAD config source
+        const createStackRequest = {
+          createStackDetails: {
+            compartmentId: compartmentId,
+            displayName: displayName,
+            description: description || `Container Instance configuration for ${displayName}`,
+            configSource: {
+              configSourceType: 'ZIP_UPLOAD',
+              zipFileBase64Encoded: zipBuffer.toString('base64')
+            },
+            terraformVersion: '1.5.x',
+            variables: {},
+            freeformTags: {}
+          }
+        };
+
+        const response = await resourceManagerClient.createStack(createStackRequest);
+        
+        res.json({
+          success: true,
+          data: {
+            id: response.stack.id,
+            displayName: response.stack.displayName,
+            lifecycleState: response.stack.lifecycleState,
+            compartmentId: response.stack.compartmentId
+          }
+        });
+      } catch (error) {
+        console.error('Error creating Resource Manager stack:', error);
+        res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+    
+    zipStream.on('error', (error) => {
+      console.error('Error in ZIP stream:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create ZIP file: ' + error.message
+      });
+    });
+  } catch (error) {
+    console.error('Error in Resource Manager stack creation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 

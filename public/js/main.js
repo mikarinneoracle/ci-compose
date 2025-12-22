@@ -712,7 +712,7 @@ async function loadSubnetsForCI(compartmentId) {
 }
 
 // Load subnets for CI details edit mode
-async function loadSubnetsForDetails(compartmentId, currentSubnetId) {
+async function loadSubnetsForDetails(compartmentId, currentSubnetId, providedDefaultSubnetId = null) {
     const subnetSelect = document.getElementById('detailsSubnetId');
     
     if (!subnetSelect) {
@@ -748,10 +748,97 @@ async function loadSubnetsForDetails(compartmentId, currentSubnetId) {
                 subnetSelect.appendChild(option);
             });
             
+            // Ensure default subnet exists as an option
             // Preselect current subnet (the one used when CI was created)
-            // Only use default from config if currentSubnetId is not available
-            if (currentSubnetId) {
-                subnetSelect.value = currentSubnetId;
+            // For failed CIs without subnet, use default subnet from config
+            const config = getConfiguration();
+            const defaultSubnetId = providedDefaultSubnetId || config.defaultSubnetId || config.subnetId;
+            const isFailed = currentEditingInstance?.lifecycleState === 'FAILED';
+            const hasNoSubnet = !currentSubnetId || currentSubnetId === '' || currentSubnetId === null;
+            
+            console.log('loadSubnetsForDetails:', { 
+                isFailed, 
+                hasNoSubnet, 
+                currentSubnetId, 
+                defaultSubnetId: config.defaultSubnetId,
+                lifecycleState: currentEditingInstance?.lifecycleState 
+            });
+            
+            // Ensure default subnet exists as an option if we have one
+            if (defaultSubnetId) {
+                const existingDefault = subnetSelect.querySelector(`option[value="${defaultSubnetId}"]`);
+                if (!existingDefault) {
+                    const opt = document.createElement('option');
+                    opt.value = defaultSubnetId;
+                    opt.textContent = 'Default Subnet (from config)';
+                    subnetSelect.appendChild(opt);
+                    console.log('Added default subnet option:', defaultSubnetId);
+                }
+            }
+            
+            // Set the selected value after options are added
+            let selected = false;
+            if (currentSubnetId && currentSubnetId !== null && currentSubnetId !== '') {
+                const option = subnetSelect.querySelector(`option[value="${currentSubnetId}"]`);
+                if (option) {
+                    subnetSelect.value = currentSubnetId;
+                    selected = true;
+                    console.log('Selected existing subnet:', currentSubnetId);
+                }
+            }
+            
+            // For failed CIs without subnet, preselect default subnet
+            if (!selected && isFailed && hasNoSubnet && defaultSubnetId) {
+                const defaultOption = subnetSelect.querySelector(`option[value="${defaultSubnetId}"]`);
+                if (defaultOption) {
+                    subnetSelect.value = defaultSubnetId;
+                    // Verify the value was set
+                    if (subnetSelect.value === defaultSubnetId) {
+                        selected = true;
+                        console.log('Selected default subnet for failed CI:', defaultSubnetId);
+                    } else {
+                        console.error('Failed to set subnet value, retrying...');
+                        // Retry after a brief delay
+                        setTimeout(() => {
+                            subnetSelect.value = defaultSubnetId;
+                            if (subnetSelect.value === defaultSubnetId) {
+                                console.log('Successfully set subnet value on retry');
+                            }
+                        }, 100);
+                    }
+                } else {
+                    console.warn('Default subnet option not found after adding:', defaultSubnetId);
+                }
+            }
+            
+            // Fallback to default subnet if available and nothing selected
+            if (!selected && defaultSubnetId) {
+                const defaultOption = subnetSelect.querySelector(`option[value="${defaultSubnetId}"]`);
+                if (defaultOption) {
+                    subnetSelect.value = defaultSubnetId;
+                    if (subnetSelect.value === defaultSubnetId) {
+                        selected = true;
+                        console.log('Selected default subnet as fallback:', defaultSubnetId);
+                    }
+                }
+            }
+            
+            // If still nothing selected, disable the placeholder option to force a choice
+            const firstOption = subnetSelect.querySelector('option[value=""]');
+            if (firstOption) {
+                firstOption.disabled = true;
+                firstOption.textContent = 'Select a subnet (required)';
+            }
+            
+            console.log('Final subnet selection:', subnetSelect.value, 'selected:', selected, 'required:', subnetSelect.required);
+            
+            // Force validation - trigger change event to ensure form validation works
+            subnetSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            subnetSelect.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // If nothing selected after all attempts, focus the dropdown
+            if (!subnetSelect.value || subnetSelect.value === '') {
+                subnetSelect.focus();
             }
         } else {
             subnetSelect.innerHTML = '<option value="">No subnets found</option>';
@@ -1026,7 +1113,7 @@ async function displayContainerInstancesWithDetails(instances) {
     }
     html += `</p>`;
     html += '<div class="table-responsive"><table class="table table-hover">';
-    html += '<thead><tr><th>State</th><th>Display Name</th><th>IP Address</th><th>Containers</th><th>Created</th></tr></thead>';
+    html += '<thead class="table-light"><tr><th>State</th><th>Name</th><th>IP Address</th><th>Containers</th><th>Created</th></tr></thead>';
     html += '<tbody>';
     
     instancesWithDetails.forEach(instance => {
@@ -1366,7 +1453,7 @@ function displayContainerInstanceDetails(instance) {
     html += `<dt class="col-5 text-muted">Subnet:</dt>`;
     html += `<dd class="col-7">`;
     html += `<span id="detailsSubnetDisplay">${instance.subnetName || 'N/A'}</span>`;
-    html += `<select class="form-select form-select-sm" id="detailsSubnetId" style="display: none;">`;
+    html += `<select class="form-select form-select-sm" id="detailsSubnetId" style="display: none;" required>`;
     html += `<option value="">Loading subnets...</option>`;
     html += `</select></dd>`;
     html += `<dt class="col-5 text-muted">Shape:</dt><dd class="col-7">${instance.shape || 'N/A'}</dd>`;
@@ -1449,6 +1536,32 @@ function displayContainerInstanceDetails(instance) {
         }
     });
     
+    // Store ports data for this instance - initialize before containers table
+    // First try to load from localStorage (if CI was edited before)
+    let detailsPortsData = [];
+    const config = getConfiguration();
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        detailsPortsData = existingData.ports || [];
+    }
+    
+    // Merge with ports from portMap (tags) - add any missing ports
+    const portsFromTags = new Set();
+    Object.entries(portMap).forEach(([containerName, portNum]) => {
+        portsFromTags.add(parseInt(portNum));
+    });
+    
+    // Add any ports from tags that aren't already in detailsPortsData
+    portsFromTags.forEach(portNum => {
+        const exists = detailsPortsData.some(p => p.port === portNum);
+        if (!exists) {
+            detailsPortsData.push({
+                port: portNum,
+                name: null // We don't have port names in the tags, just numbers
+            });
+        }
+    });
+    
     // Containers Information
     html += '<div class="row">';
     html += '<div class="col-12 mb-4">';
@@ -1491,10 +1604,19 @@ function displayContainerInstanceDetails(instance) {
     const containerInstanceId = instance.id;
     
     if (detailsContainersData.length > 0) {
+        // Check if log column should be shown (need to check at least one container)
+        const config = getConfiguration();
+        const hasLogColumn = !isInEditMode && detailsContainersData.some(container => {
+            const envVars = container.environmentVariables || {};
+            return envVars.log_ocid && config.logGroupId;
+        });
+        
+        // Image header spans 2 columns (Image + Actions/Log) to extend border to right edge
+        // No separate Actions header - Image header covers both Image and Actions/Log columns
+        const imageColspan = (isInEditMode || hasLogColumn) ? 2 : 1;
+        
         html += '<table class="table table-sm" style="width: 100%; table-layout: auto;">';
-        // Actions column header - only show in edit mode
-        const actionsHeader = isInEditMode ? '<th style="width: auto; white-space: nowrap; text-align: right;">Actions</th>' : '';
-        html += `<thead style="border-bottom: 1px solid #dee2e6;"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th style="border-bottom: 1px solid #dee2e6;">Image</th><th style="border-bottom: 1px solid #dee2e6;">Resource Config</th>${actionsHeader ? '<th style="border-bottom: 1px solid #dee2e6; width: auto; white-space: nowrap; text-align: right;">Actions</th>' : ''}</tr></thead>`;
+        html += `<thead class="table-light"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th colspan="${imageColspan}" style="border-bottom: 1px solid #dee2e6;">Image</th></tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1512,25 +1634,29 @@ function displayContainerInstanceDetails(instance) {
             html += `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
             
             // State - first column
-            html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
+            html += `<td style="border-bottom: 1px solid #dee2e6;">${getStateBadgeHtml(container.lifecycleState)}</td>`;
             
             // Container name with text-primary class
-            html += `<td><strong class="text-primary">${containerName}</strong></td>`;
+            html += `<td style="border-bottom: 1px solid #dee2e6;"><strong class="text-primary">${containerName}</strong></td>`;
             
-            // Port
-            html += `<td>${container.port || '-'}</td>`;
+            // Port - show "name(port)" or just "port" if name is empty
+            let portDisplay = '-';
+            if (container.port) {
+                const portNum = parseInt(container.port);
+                const portData = detailsPortsData.find(p => p.port === portNum);
+                if (portData) {
+                    portDisplay = portData.name && portData.name.trim() ? `${portData.name} (${portNum})` : `${portNum}`;
+                } else {
+                    portDisplay = `${portNum}`;
+                }
+            }
+            html += `<td style="border-bottom: 1px solid #dee2e6;">${portDisplay}</td>`;
             
             // Image URL
-            html += `<td><code>${container.imageUrl}</code></td>`;
-            
-            // Resource Config
-            html += `<td>`;
-            html += `Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>`;
-            html += `VCPUs: ${container.resourceConfig.vcpus || 'N/A'}`;
-            html += `</td>`;
+            html += `<td style="border-bottom: 1px solid #dee2e6;"><code>${container.imageUrl}</code></td>`;
             
             // Actions column - only show CRUD buttons in edit mode
-            html += `<td id="containerActions_${idx}" style="display: none; white-space: nowrap; text-align: right;">`;
+            html += `<td id="containerActions_${idx}" style="display: ${isInEditMode ? 'table-cell' : 'none'}; white-space: nowrap; text-align: right; border-bottom: 1px solid #dee2e6;">`;
             html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${containerInstanceId}')">Edit</button>`;
             html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${containerInstanceId}')">Delete</button>`;
             html += `</td>`;
@@ -1540,13 +1666,15 @@ function displayContainerInstanceDetails(instance) {
                 const logOcid = envVars.log_ocid;
                 const config = getConfiguration();
                 if (logOcid && config.logGroupId) {
-                    html += `<td style="white-space: nowrap;">`;
+                    html += `<td style="white-space: nowrap; border-bottom: 1px solid #dee2e6;">`;
                     html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                     html += `<i class="bi bi-file-text"></i> Log`;
                     html += `</button>`;
                     html += `</td>`;
+                } else if (hasLogColumn) {
+                    // Add empty cell to maintain column alignment if log column exists but this container doesn't have logs
+                    html += `<td style="border-bottom: 1px solid #dee2e6;"></td>`;
                 }
-                // No else clause - don't add a cell if there's no log_ocid or log group
             }
             
             html += '</tr>';
@@ -1566,32 +1694,7 @@ function displayContainerInstanceDetails(instance) {
         initializeContainerTooltips();
     }, 100);
     
-    // Store ports data for this instance
-    // First try to load from localStorage (if CI was edited before)
-    let detailsPortsData = [];
-    const config = getConfiguration();
-    if (config.projectName) {
-        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
-        detailsPortsData = existingData.ports || [];
-    }
-    
-    // Merge with ports from portMap (tags) - add any missing ports
-    const portsFromTags = new Set();
-    Object.entries(portMap).forEach(([containerName, portNum]) => {
-        portsFromTags.add(parseInt(portNum));
-    });
-    
-    // Add any ports from tags that aren't already in detailsPortsData
-    portsFromTags.forEach(portNum => {
-        const exists = detailsPortsData.some(p => p.port === portNum);
-        if (!exists) {
-            detailsPortsData.push({
-                port: portNum,
-                name: null // We don't have port names in the tags, just numbers
-            });
-        }
-    });
-    
+    // Store ports data globally for this instance (already initialized above)
     window[`detailsPorts_${containerInstanceId}`] = detailsPortsData;
     
     // Also load volumes from localStorage if available
@@ -1634,18 +1737,17 @@ function displayContainerInstanceDetails(instance) {
     window[`detailsVolumes_${containerInstanceId}`] = detailsVolumesData;
     
     if (detailsVolumesData.length > 0) {
-        html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
-        // Actions column header - only show in edit mode
-        const actionsHeader = isInEditMode ? '<th>Actions</th>' : '';
-        html += `<thead class="table-light"><tr><th>Name</th><th>Path</th>${actionsHeader}</tr></thead>`;
+        html += '<div class="table-responsive"><table class="table table-sm">';
+        // Path header spans over Actions column (always, since Actions column always exists in view mode too)
+        html += `<thead class="table-light"><tr><th style="border-bottom: 1px solid #dee2e6;">Name</th><th colspan="2" style="border-bottom: 1px solid #dee2e6;">Path</th></tr></thead>`;
         html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '">';
         
         detailsVolumesData.forEach((volume, idx) => {
             html += '<tr>';
-            html += `<td>${volume.name || '-'}</td>`;
-            html += `<td><code>${volume.path || 'N/A'}</code></td>`;
+            html += `<td style="border-bottom: 1px solid #dee2e6;">${volume.name || '-'}</td>`;
+            html += `<td style="border-bottom: 1px solid #dee2e6;"><code>${volume.path || 'N/A'}</code></td>`;
             // Actions column - only show CRUD buttons in edit mode
-            html += `<td id="volumeActions_${idx}" style="display: none;">`;
+            html += `<td id="volumeActions_${idx}" style="display: none; border-bottom: 1px solid #dee2e6;">`;
             html += `<button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-pencil"></i></button>`;
             html += `<button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${containerInstanceId}')"><i class="bi bi-trash"></i></button>`;
             html += `</td>`;
@@ -1664,15 +1766,12 @@ function displayContainerInstanceDetails(instance) {
     // Edit, Save, Cancel, Restart, Delete, and Close buttons
     const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const editDisabledAttr = canEdit ? '' : 'disabled';
-    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
+    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED' && instance.lifecycleState !== 'FAILED';
     const restartDisabledAttr = canRestart ? '' : 'disabled';
     const canDelete = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const deleteDisabledAttr = canDelete ? '' : 'disabled';
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
-    html += `<button class="btn btn-warning me-2" id="detailsEditBtn" onclick="isInEditMode = true; enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
-    html += '<i class="bi bi-pencil"></i> Edit';
-    html += '</button>';
     html += `<button class="btn btn-info me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
     html += '<i class="bi bi-arrow-clockwise"></i> Restart';
     html += '</button>';
@@ -1681,6 +1780,9 @@ function displayContainerInstanceDetails(instance) {
     html += '</button>';
     html += `<button class="btn btn-danger me-2" id="detailsDeleteBtn" onclick="deleteContainerInstance('${containerInstanceId}')" ${deleteDisabledAttr}>`;
     html += '<i class="bi bi-trash"></i> Delete';
+    html += '</button>';
+    html += `<button class="btn btn-warning me-2" id="detailsEditBtn" onclick="isInEditMode = true; enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
+    html += '<i class="bi bi-pencil"></i> Edit';
     html += '</button>';
     html += `<button class="btn btn-secondary me-2" id="detailsCloseBtn" onclick="closeDetailsModal()" style="display: inline-block;">`;
     html += 'Close';
@@ -1756,6 +1858,9 @@ function enterEditMode(instanceId) {
     const deleteBtn = document.getElementById('detailsDeleteBtn');
     if (deleteBtn) deleteBtn.style.display = 'none';
     
+    const saveResourceManagerBtn = document.getElementById('detailsSaveResourceManagerBtn');
+    if (saveResourceManagerBtn) saveResourceManagerBtn.style.display = 'none';
+    
     const saveBtn = document.getElementById('detailsSaveBtn');
     if (saveBtn) saveBtn.style.display = 'inline-block';
     
@@ -1779,11 +1884,67 @@ function enterEditMode(instanceId) {
     if (subnetDisplay && subnetSelect) {
         subnetDisplay.style.display = 'none';
         subnetSelect.style.display = 'inline-block';
+        // Make subnet required
+        subnetSelect.setAttribute('required', 'required');
+        // Remove any existing required attribute to avoid duplicates
+        subnetSelect.required = true;
+        
         // Load subnets for the compartment
         const config = getConfiguration();
+        const defaultSubnetId = config.defaultSubnetId || config.subnetId;
         if (config.compartmentId && currentEditingInstance) {
-            loadSubnetsForDetails(config.compartmentId, currentEditingInstance.subnetId);
+            // For failed CIs, pass null as currentSubnetId to trigger default subnet selection
+            const currentSubnetId = currentEditingInstance.lifecycleState === 'FAILED' && !currentEditingInstance.subnetId 
+                ? null 
+                : currentEditingInstance.subnetId;
+            
+            console.log('enterEditMode - calling loadSubnetsForDetails:', {
+                compartmentId: config.compartmentId,
+                currentSubnetId,
+                lifecycleState: currentEditingInstance.lifecycleState,
+                hasSubnetId: !!currentEditingInstance.subnetId
+            });
+            
+            loadSubnetsForDetails(config.compartmentId, currentSubnetId, defaultSubnetId);
         }
+    }
+}
+
+// Helper function to populate VCPU dropdown based on architecture
+function populateContainerVcpuDropdown(architecture, selectedValue = null) {
+    const vcpuSelect = document.getElementById('editContainerVcpus');
+    if (!vcpuSelect) return;
+    
+    vcpuSelect.innerHTML = '';
+    const defaultVcpu = '1';
+    const valueToSelect = selectedValue || defaultVcpu;
+    
+    if (architecture === 'ARM64') {
+        // ARM64: 1-16 OCPU
+        for (let i = 1; i <= 16; i++) {
+            const option = document.createElement('option');
+            option.value = i.toString();
+            option.textContent = `${i} vOCPU`;
+            if (i.toString() === valueToSelect.toString()) {
+                option.selected = true;
+            }
+            vcpuSelect.appendChild(option);
+        }
+    } else {
+        // x86: 1-8 OCPU (current options)
+        for (let i = 1; i <= 8; i++) {
+            const option = document.createElement('option');
+            option.value = i.toString();
+            option.textContent = `${i} vOCPU`;
+            if (i.toString() === valueToSelect.toString()) {
+                option.selected = true;
+            }
+            vcpuSelect.appendChild(option);
+        }
+    }
+    // If no option was selected (value doesn't match), select the first one
+    if (!vcpuSelect.value && vcpuSelect.options.length > 0) {
+        vcpuSelect.selectedIndex = 0;
     }
 }
 
@@ -1850,7 +2011,13 @@ function addContainerToDetails() {
     
     // Populate memory dropdown based on CI architecture
     const architecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
-    populateContainerMemoryDropdown(architecture);
+    
+    // Get CI's memory and OCPU as defaults
+    const ciMemory = currentEditingInstance?.shapeConfig?.memoryInGBs || (architecture === 'ARM64' ? '6' : '16');
+    const ciOcpus = currentEditingInstance?.shapeConfig?.ocpus || '1';
+    
+    populateContainerMemoryDropdown(architecture, ciMemory);
+    populateContainerVcpuDropdown(architecture, ciOcpus);
     
     // Load ports from localStorage for this CI name and update port dropdown
     let detailsPorts = [];
@@ -1948,11 +2115,11 @@ function editContainerInDetails(index, instanceId) {
     // Get architecture from CI to populate memory dropdown correctly
     const architecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
     const memoryValue = container.resourceConfig?.memoryInGBs || (architecture === 'ARM64' ? '6' : '16');
+    const vcpuValue = container.resourceConfig?.vcpus || '1';
     
-    // Update memory dropdown based on architecture
+    // Update memory and VCPU dropdowns based on architecture
     populateContainerMemoryDropdown(architecture, memoryValue);
-    
-    document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '1';
+    populateContainerVcpuDropdown(architecture, vcpuValue);
     
     // Load ports from localStorage for this CI name and update port dropdown
     let detailsPorts = [];
@@ -2106,33 +2273,92 @@ function refreshDetailsContainersTable(instanceId) {
     
     const containers = window[`detailsContainers_${instanceId}`] || [];
     
+    // Check if log column should be shown
+    const config = getConfiguration();
+    const hasLogColumn = !isInEditMode && containers.some(c => {
+        const cEnvVars = c.environmentVariables || {};
+        return cEnvVars.log_ocid && config.logGroupId;
+    });
+    
     // Get instance state from currentEditingInstance
     const instanceCanEdit = currentEditingInstance && currentEditingInstance.id === instanceId
         ? (currentEditingInstance.lifecycleState !== 'UPDATING' && currentEditingInstance.lifecycleState !== 'CREATING' && currentEditingInstance.lifecycleState !== 'DELETING')
         : true; // Default to true if we can't determine state
     
     if (containers.length === 0) {
-        // 5 base columns + 1 conditional column (Actions in edit mode)
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No containers</td></tr>';
+        // 4 base columns (State, Name, Port, Image) + 1 conditional column (Actions/Log in edit/view mode)
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No containers</td></tr>';
         return;
     }
     
-    // Show/hide Actions column header
+    // Detect overlapping ports
+    const portMap = new Map(); // port number -> array of container indices
+    const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+    
+    containers.forEach((container, idx) => {
+        let portNum = null;
+        if (container.port) {
+            portNum = parseInt(container.port);
+        } else if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const portIndex = parseInt(container.portIndex);
+            if (detailsPorts[portIndex]) {
+                const port = detailsPorts[portIndex];
+                portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+            }
+        }
+        
+        if (portNum !== null && !isNaN(portNum)) {
+            if (!portMap.has(portNum)) {
+                portMap.set(portNum, []);
+            }
+            portMap.get(portNum).push(idx);
+        }
+    });
+    
+    // Find containers with overlapping ports
+    const overlappingIndices = new Set();
+    let hasOverlapping = false;
+    portMap.forEach((indices, portNum) => {
+        if (indices.length > 1) {
+            hasOverlapping = true;
+            indices.forEach(idx => overlappingIndices.add(idx));
+        }
+    });
+    
+    // Show notification if overlapping ports detected
+    if (hasOverlapping) {
+        showNotification('Warning: Some containers have overlapping port numbers. Please ensure each container uses a unique port.', 'warning', 5000);
+    }
+    
+    // Ensure table doesn't have table-bordered class (we only want horizontal borders)
     const table = tbody.closest('table');
     if (table) {
-        const thead = table.querySelector('thead tr');
-        if (thead) {
-            const headers = thead.querySelectorAll('th');
-            // Actions header is last
-            if (headers.length > 5) {
-                const actionsHeader = headers[headers.length - 1]; // Last
-                if (actionsHeader) {
-                    actionsHeader.style.display = isInEditMode ? 'table-cell' : 'none';
-                    // Ensure border is maintained when visible
-                    if (isInEditMode) {
-                        actionsHeader.style.borderBottom = '1px solid #dee2e6';
-                    }
-                }
+        if (table.classList.contains('table-bordered')) {
+            table.classList.remove('table-bordered');
+        }
+        
+        // Ensure thead has table-light class for light gray background
+        const thead = table.querySelector('thead');
+        if (thead && !thead.classList.contains('table-light')) {
+            thead.classList.add('table-light');
+        }
+        
+        // Show/hide Actions column header and ensure horizontal borders only
+        const theadRow = table.querySelector('thead tr');
+        if (theadRow) {
+            const headers = theadRow.querySelectorAll('th');
+            headers.forEach(header => {
+                header.style.borderBottom = '1px solid #dee2e6';
+                header.style.borderLeft = 'none';
+                header.style.borderRight = 'none';
+                header.style.borderTop = 'none';
+            });
+            
+            // Update Image header colspan based on whether Actions/Log column exists
+            const imageHeader = Array.from(headers).find(h => h.textContent.includes('Image'));
+            if (imageHeader) {
+                const hasActionsOrLog = isInEditMode || hasLogColumn;
+                imageHeader.setAttribute('colspan', hasActionsOrLog ? '2' : '1');
             }
         }
     }
@@ -2150,26 +2376,52 @@ function refreshDetailsContainersTable(instanceId) {
         const argsJson = JSON.stringify(args);
         
         // Get port from portIndex if port is not set
-        let portDisplay = container.port || '-';
-        if (!container.port && container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+        // Get port display - show "name(port)" or just "port" if name is empty
+        let portDisplay = '-';
+        if (container.port) {
+            const portNum = parseInt(container.port);
+            const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            const portData = detailsPorts.find(p => {
+                const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                return pPortNum === portNum;
+            });
+            if (portData) {
+                portDisplay = portData.name && portData.name.trim() ? `${portData.name} (${portNum})` : `${portNum}`;
+            } else {
+                portDisplay = `${portNum}`;
+            }
+        } else if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
             const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
             const portIndex = parseInt(container.portIndex);
             if (detailsPorts[portIndex]) {
-                portDisplay = detailsPorts[portIndex].port.toString();
+                const port = detailsPorts[portIndex];
+                const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+                portDisplay = port.name && port.name.trim() ? `${port.name} (${portNum})` : `${portNum}`;
             }
         }
         
-        let html = `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
+        // Check if log column should be shown
+        const config = getConfiguration();
+        const hasLogColumn = !isInEditMode && containers.some(c => {
+            const cEnvVars = c.environmentVariables || {};
+            return cEnvVars.log_ocid && config.logGroupId;
+        });
         
-        html += `<td>${getStateBadgeHtml(container.lifecycleState)}</td>`;
-        html += `<td><strong class="text-primary">${containerName}</strong></td>`;
-        html += `<td>${portDisplay}</td>`;
-        html += `<td><code>${container.imageUrl}</code></td>`;
-        html += `<td>Memory: ${container.resourceConfig.memoryInGBs || 'N/A'} GB<br>VCPUs: ${container.resourceConfig.vcpus || 'N/A'}</td>`;
+        // Apply red background if port overlaps
+        const isOverlapping = overlappingIndices.has(idx);
+        const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        
+        let html = `<tr class="container-row-hover" style="${rowStyle}" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
+        
+        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${getStateBadgeHtml(container.lifecycleState)}</td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><strong class="text-primary">${containerName}</strong></td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl}</code></td>`;
         
         // Actions column - visibility controlled by edit mode
         const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
-        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay}; white-space: nowrap; text-align: right;">`;
+        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay}; white-space: nowrap; text-align: right; border-bottom: 1px solid #dee2e6; ${cellStyle}">`;
         html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
         html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
         html += `</td>`;
@@ -2177,15 +2429,16 @@ function refreshDetailsContainersTable(instanceId) {
         // Log button - only show in non-edit mode, if container has log_ocid env var, and log group is configured
         if (!isInEditMode) {
             const logOcid = envVars.log_ocid;
-            const config = getConfiguration();
             if (logOcid && config.logGroupId) {
-                html += `<td style="white-space: nowrap;">`;
+                html += `<td style="white-space: nowrap; border-bottom: 1px solid #dee2e6; ${cellStyle}">`;
                 html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                 html += `<i class="bi bi-file-text"></i> Log`;
                 html += `</button>`;
                 html += `</td>`;
+            } else if (hasLogColumn) {
+                // Add empty cell to maintain column alignment if log column exists but this container doesn't have logs
+                html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"></td>`;
             }
-            // No else clause - don't add a cell if there's no log_ocid or log group
         }
         
         html += '</tr>';
@@ -2338,11 +2591,12 @@ function refreshDetailsVolumesTable(instanceId) {
         }
         
         // Create table structure
+        // Path header spans over Actions column (always, since Actions column always exists)
         const tableHtml = `
             <div class="table-responsive">
-                <table class="table table-sm table-bordered">
+                <table class="table table-sm">
                     <thead class="table-light">
-                        <tr><th>Name</th><th>Path</th><th id="volumesActionsHeader" style="display: none;">Actions</th></tr>
+                        <tr><th style="border-bottom: 1px solid #dee2e6;">Name</th><th colspan="2" style="border-bottom: 1px solid #dee2e6;">Path</th></tr>
                     </thead>
                     <tbody id="detailsVolumesTableBody_${instanceId}"></tbody>
                 </table>
@@ -2366,31 +2620,37 @@ function refreshDetailsVolumesTable(instanceId) {
         return;
     }
     
+    // Path header always spans 2 columns (over Actions column)
+    const table = tbody.closest('table');
+    if (table) {
+        const thead = table.querySelector('thead');
+        if (thead) {
+            const pathHeader = thead.querySelector('th:nth-child(2)'); // Path is the 2nd header
+            if (pathHeader) {
+                pathHeader.setAttribute('colspan', '2');
+            }
+        }
+    }
+    
     // Get instance state from currentEditingInstance
     const canEditVolumesRefresh = currentEditingInstance && currentEditingInstance.id === instanceId 
         ? (currentEditingInstance.lifecycleState !== 'UPDATING' && currentEditingInstance.lifecycleState !== 'CREATING' && currentEditingInstance.lifecycleState !== 'DELETING')
         : true; // Default to true if we can't determine state
     
     if (volumes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No volumes</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes</td></tr>';
         return;
     }
     
     // Actions column visibility controlled by edit mode
     const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
     
-    // Show/hide Actions column header
-    const actionsHeader = document.getElementById('volumesActionsHeader');
-    if (actionsHeader) {
-        actionsHeader.style.display = actionsDisplay;
-    }
-    
     tbody.innerHTML = volumes.map((volume, idx) => {
         return `
             <tr>
-                <td>${volume.name || '-'}</td>
-                <td><code>${volume.path || 'N/A'}</code></td>
-                <td id="volumeActions_${idx}" style="display: ${actionsDisplay};">
+                <td style="border-bottom: 1px solid #dee2e6;">${volume.name || '-'}</td>
+                <td style="border-bottom: 1px solid #dee2e6;"><code>${volume.path || 'N/A'}</code></td>
+                <td id="volumeActions_${idx}" style="display: ${actionsDisplay}; border-bottom: 1px solid #dee2e6;">
                     <button class="btn btn-success btn-sm me-1" onclick="editVolumeInDetails(${idx}, '${instanceId}')"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-danger btn-sm" onclick="deleteVolumeInDetails(${idx}, '${instanceId}')"><i class="bi bi-trash"></i></button>
                 </td>
@@ -2406,12 +2666,35 @@ async function saveCIChanges(instanceId) {
         return;
     }
     
+    // Validate subnet before showing confirmation (mandatory field)
+    const subnetSelect = document.getElementById('detailsSubnetId');
+    if (subnetSelect) {
+        // Check HTML5 validation
+        if (!subnetSelect.checkValidity()) {
+            showNotification('Error: Subnet is required. Please select a subnet from the dropdown.', 'error');
+            subnetSelect.focus();
+            subnetSelect.reportValidity();
+            return;
+        }
+        
+        // Double-check value is not empty
+        if (!subnetSelect.value || subnetSelect.value === '' || subnetSelect.value === null) {
+            showNotification('Error: Subnet is required. Please select a subnet from the dropdown.', 'error');
+            subnetSelect.focus();
+            return;
+        }
+    } else {
+        showNotification('Error: Subnet dropdown not found. Please refresh and try again.', 'error');
+        return;
+    }
+    
     // Confirm with user that delete/create will happen
     if (!confirm('Warning: This will delete the current container instance and create a new one with the same name. All changes will be saved. Continue?')) {
         return;
     }
     
     try {
+        const config = getConfiguration();
         // Get updated containers and volumes
         const containers = window[`detailsContainers_${instanceId}`] || [];
         const volumes = window[`detailsVolumes_${instanceId}`] || [];
@@ -2509,13 +2792,35 @@ async function saveCIChanges(instanceId) {
         }
         
         // Get required fields with fallbacks for failed CIs
-        const config = getConfiguration();
         const displayName = currentEditingInstance.displayName || document.getElementById('ciName')?.value || config.projectName || 'CI';
         const compartmentId = currentEditingInstance.compartmentId || config.compartmentId;
-        const subnetId = (() => {
-            const subnetSelect = document.getElementById('detailsSubnetId');
-            return subnetSelect && subnetSelect.value ? subnetSelect.value : currentEditingInstance.subnetId || config.defaultSubnetId;
-        })();
+        
+        // Get subnet - validate it's selected (required field)
+        const subnetSelect = document.getElementById('detailsSubnetId');
+        let subnetId = null;
+        
+        // Subnet is mandatory - must be selected from dropdown
+        if (!subnetSelect) {
+            showNotification('Error: Subnet dropdown not found. Please refresh and try again.', 'error');
+            return;
+        }
+        
+        // Check if subnet is selected (empty string or null means not selected)
+        if (!subnetSelect.value || subnetSelect.value === '' || subnetSelect.value === null) {
+            showNotification('Error: Subnet is required. Please select a subnet from the dropdown.', 'error');
+            // Focus the subnet dropdown to help user
+            subnetSelect.focus();
+            return;
+        }
+        
+        subnetId = subnetSelect.value;
+        
+        // Final validation - ensure we have a subnet ID
+        if (!subnetId) {
+            showNotification('Error: Subnet is required. Please select a subnet from the dropdown.', 'error');
+            subnetSelect.focus();
+            return;
+        }
         
         // Determine shape from architecture tag or instance shape, with fallback
         let shape = currentEditingInstance.shape;
@@ -2526,12 +2831,11 @@ async function saveCIChanges(instanceId) {
         }
         
         // Validate required fields
-        if (!displayName || !compartmentId || !shape || !subnetId) {
+        if (!displayName || !compartmentId || !shape) {
             const missingFields = [];
             if (!displayName) missingFields.push('displayName');
             if (!compartmentId) missingFields.push('compartmentId');
             if (!shape) missingFields.push('shape');
-            if (!subnetId) missingFields.push('subnetId');
             throw new Error(`Missing required fields: ${missingFields.join(', ')}. Please ensure the container instance has all required information or check your configuration.`);
         }
         
@@ -2646,6 +2950,9 @@ function exitEditMode() {
     
     const closeBtn = document.getElementById('detailsCloseBtn');
     if (closeBtn) closeBtn.style.display = 'inline-block';
+    
+    const saveResourceManagerBtn = document.getElementById('detailsSaveResourceManagerBtn');
+    if (saveResourceManagerBtn) saveResourceManagerBtn.style.display = 'inline-block';
     
     const saveBtn = document.getElementById('detailsSaveBtn');
     if (saveBtn) saveBtn.style.display = 'none';
@@ -2798,6 +3105,183 @@ async function stopContainerInstance(instanceId) {
     } catch (error) {
         console.error('Error stopping container instance:', error);
         showNotification(`Error stopping container instance: ${error.message}`, 'error');
+    }
+}
+
+// Save to Resource Manager
+async function saveToResourceManager(instanceId) {
+    if (!currentEditingInstance || currentEditingInstance.id !== instanceId) {
+        showNotification('Error: Instance data not available', 'error');
+        return;
+    }
+    
+    try {
+        // Get current instance data
+        const containers = window[`detailsContainers_${instanceId}`] || [];
+        const volumes = window[`detailsVolumes_${instanceId}`] || [];
+        const ports = window[`detailsPorts_${instanceId}`] || [];
+        
+        // Build Terraform configuration
+        const config = getConfiguration();
+        const architecture = currentEditingInstance.freeformTags?.architecture || 'x86';
+        const shape = architecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
+        
+        // Get shape config
+        const memorySelect = document.getElementById('detailsShapeMemory');
+        const ocpusSelect = document.getElementById('detailsShapeOcpus');
+        const shapeMemory = memorySelect ? memorySelect.value : (currentEditingInstance.shapeConfig?.memoryInGBs || '16');
+        const shapeOcpus = ocpusSelect ? ocpusSelect.value : (currentEditingInstance.shapeConfig?.ocpus || '1');
+        
+        // Get subnet
+        const subnetSelect = document.getElementById('detailsSubnetId');
+        const subnetId = subnetSelect && subnetSelect.value ? subnetSelect.value : currentEditingInstance.subnetId;
+        
+        // Build containers configuration
+        const containersConfig = containers.map((container, idx) => {
+            const containerConfig = {
+                display_name: container.displayName,
+                image_url: container.imageUrl,
+                resource_config: {
+                    memory_in_gbs: container.resourceConfig?.memoryInGBs || 16,
+                    vcpus: container.resourceConfig?.vcpus || 1
+                }
+            };
+            
+            if (container.environmentVariables && Object.keys(container.environmentVariables).length > 0) {
+                containerConfig.environment_variables = container.environmentVariables;
+            }
+            
+            if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+                containerConfig.command = container.command;
+            }
+            
+            if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+                containerConfig.arguments = container.arguments;
+            }
+            
+            // Add volume mounts
+            if (volumes.length > 0) {
+                containerConfig.volume_mounts = volumes.map((v, volIdx) => ({
+                    mount_path: v.path,
+                    volume_name: v.name || `volume-${volIdx}`
+                }));
+            }
+            
+            return containerConfig;
+        });
+        
+        // Build volumes configuration
+        const volumesConfig = volumes.map((v, idx) => ({
+            name: v.name || `volume-${idx}`,
+            volume_type: 'EMPTYDIR',
+            backing_store: 'EPHEMERAL_STORAGE'
+        }));
+        
+        // Get availability domain - use data source to get first AD
+        // In Terraform, we'll use a data source to get availability domains
+        const terraformConfig = `# Terraform configuration for Container Instance: ${currentEditingInstance.displayName}
+# Generated by CI Compose
+
+terraform {
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = "~> 5.0"
+    }
+  }
+}
+
+# Get availability domains
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = "${currentEditingInstance.compartmentId}"
+}
+
+resource "oci_container_instances_container_instance" "this" {
+  compartment_id     = "${currentEditingInstance.compartmentId}"
+  display_name       = "${currentEditingInstance.displayName}"
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  shape              = "${shape}"
+  
+  shape_config {
+    memory_in_gbs = ${shapeMemory}
+    ocpus         = ${shapeOcpus}
+  }
+  
+  ${architecture !== 'x86' ? `architecture = "${architecture}"` : ''}
+  
+  vnics {
+    subnet_id = "${subnetId}"
+  }
+  
+  container_restart_policy = "${currentEditingInstance.containerRestartPolicy || 'NEVER'}"
+  
+${containersConfig.map((container, idx) => {
+    let containerBlock = `  containers {
+    display_name = "${container.display_name}"
+    image_url    = "${container.image_url}"
+    
+    resource_config {
+      memory_in_gbs = ${container.resource_config.memory_in_gbs}
+      vcpus         = ${container.resource_config.vcpus}
+    }`;
+    
+    if (container.environment_variables && Object.keys(container.environment_variables).length > 0) {
+        containerBlock += `\n    environment_variables = {\n${Object.entries(container.environment_variables).map(([k, v]) => `      "${k}" = "${String(v).replace(/"/g, '\\"')}"`).join('\n')}\n    }`;
+    }
+    
+    if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+        containerBlock += `\n    command = ${JSON.stringify(container.command)}`;
+    }
+    
+    if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+        containerBlock += `\n    arguments = ${JSON.stringify(container.arguments)}`;
+    }
+    
+    if (container.volume_mounts && container.volume_mounts.length > 0) {
+        containerBlock += `\n    volume_mounts = [\n${container.volume_mounts.map(vm => `      {\n        mount_path  = "${vm.mount_path}"\n        volume_name = "${vm.volume_name}"\n      }`).join(',\n')}\n    ]`;
+    }
+    
+    containerBlock += `\n  }`;
+    return containerBlock;
+}).join('\n\n')}
+${volumesConfig.length > 0 ? volumesConfig.map(vol => `  volumes {
+    name         = "${vol.name}"
+    volume_type  = "${vol.volume_type}"
+    backing_store = "${vol.backing_store}"
+  }`).join('\n\n') : ''}
+  
+  freeform_tags = {
+${Object.entries(currentEditingInstance.freeformTags || {}).map(([k, v]) => `    "${k}" = "${String(v).replace(/"/g, '\\"')}"`).join('\n')}
+  }
+}
+`;
+        
+        // Send to backend to create Resource Manager stack
+        showNotification('Creating Resource Manager stack...', 'info');
+        
+        const response = await fetch('/api/oci/resource-manager/stacks', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                displayName: `${currentEditingInstance.displayName}-stack`,
+                description: `Container Instance configuration stack for ${currentEditingInstance.displayName}`,
+                compartmentId: currentEditingInstance.compartmentId,
+                terraformConfig: terraformConfig
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`Resource Manager stack created successfully! Stack ID: ${data.data.id}`, 'success');
+        } else {
+            throw new Error(data.error || 'Failed to create Resource Manager stack');
+        }
+    } catch (error) {
+        console.error('Error saving to Resource Manager:', error);
+        showNotification(`Error saving to Resource Manager: ${error.message}`, 'error');
     }
 }
 
@@ -3142,7 +3626,13 @@ function addContainerToTable() {
     // Populate memory dropdown based on CI architecture
     const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
     const architecture = archRadio ? archRadio.value : 'x86';
-    populateContainerMemoryDropdown(architecture);
+    
+    // Get CI's memory and OCPU as defaults
+    const ciMemory = document.getElementById('ciShapeMemory')?.value || (architecture === 'ARM64' ? '6' : '16');
+    const ciOcpus = document.getElementById('ciShapeOcpus')?.value || '1';
+    
+    populateContainerMemoryDropdown(architecture, ciMemory);
+    populateContainerVcpuDropdown(architecture, ciOcpus);
     
     // Update port dropdown
     updateContainerPortDropdown();
@@ -3194,9 +3684,10 @@ function editContainer(index) {
     const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
     const architecture = archRadio ? archRadio.value : 'x86';
     const memoryValue = container.resourceConfig?.memoryInGBs || (architecture === 'ARM64' ? '6' : '16');
-    populateContainerMemoryDropdown(architecture, memoryValue);
+    const vcpuValue = container.resourceConfig?.vcpus || '1';
     
-    document.getElementById('editContainerVcpus').value = container.resourceConfig?.vcpus || '';
+    populateContainerMemoryDropdown(architecture, memoryValue);
+    populateContainerVcpuDropdown(architecture, vcpuValue);
     
     // Update port dropdown
     updateContainerPortDropdown();
@@ -3406,32 +3897,70 @@ function updateContainersTable() {
     const tbody = document.getElementById('containersTableBody');
     
     if (containersData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No containers added yet. Click "Add Container" to add one.</td></tr>';
         return;
+    }
+    
+    // Detect overlapping ports
+    const portMap = new Map(); // port number -> array of container indices
+    containersData.forEach((container, index) => {
+        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+            const portIndex = parseInt(container.portIndex);
+            if (portsData[portIndex]) {
+                const port = portsData[portIndex];
+                const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+                if (!isNaN(portNum)) {
+                    if (!portMap.has(portNum)) {
+                        portMap.set(portNum, []);
+                    }
+                    portMap.get(portNum).push(index);
+                }
+            }
+        }
+    });
+    
+    // Find containers with overlapping ports
+    const overlappingIndices = new Set();
+    let hasOverlapping = false;
+    portMap.forEach((indices, portNum) => {
+        if (indices.length > 1) {
+            hasOverlapping = true;
+            indices.forEach(idx => overlappingIndices.add(idx));
+        }
+    });
+    
+    // Show notification if overlapping ports detected
+    if (hasOverlapping) {
+        showNotification('Warning: Some containers have overlapping port numbers. Please ensure each container uses a unique port.', 'warning', 5000);
     }
     
     tbody.innerHTML = containersData.map((container, index) => {
         const memory = container.resourceConfig?.memoryInGBs || 'N/A';
         const vcpus = container.resourceConfig?.vcpus || 'N/A';
         
-        // Get port display text
+        // Get port display text - show "name(port)" or just "port" if name is empty
         let portDisplay = '-';
         if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
             const portIndex = parseInt(container.portIndex);
             if (portsData[portIndex]) {
                 const port = portsData[portIndex];
-                portDisplay = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+                portDisplay = port.name && port.name.trim() ? `${port.name} (${port.port})` : `${port.port}`;
             }
         }
         
+        // Apply red background if port overlaps
+        const isOverlapping = overlappingIndices.has(index);
+        const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        
         return `
-            <tr>
-                <td>${container.displayName || 'N/A'}</td>
-                <td><code>${container.imageUrl || 'N/A'}</code></td>
-                <td>${memory}</td>
-                <td>${vcpus}</td>
-                <td>${portDisplay}</td>
-                <td>
+            <tr style="${rowStyle}">
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${container.displayName || 'N/A'}</td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl || 'N/A'}</code></td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${memory}</td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${vcpus}</td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">
                     <button type="button" class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
                 </td>
@@ -4331,7 +4860,7 @@ function updateVolumesTable() {
     const tbody = document.getElementById('volumesTableBody');
     if (tbody) {
         if (volumesData.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
         } else {
             // Dispose of existing tooltips before updating
             const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
@@ -4350,15 +4879,15 @@ function updateVolumesTable() {
                 
                 return `
                     <tr>
-                        <td>
+                        <td style="border-bottom: 1px solid #dee2e6;">
                             <span 
                                 data-bs-toggle="tooltip" 
                                 data-bs-placement="top" 
                                 data-bs-title="${escapedPath}"
-                                style="cursor: help;"
+                                style="cursor: default;"
                             >${escapeHtml(displayText)}</span>
                         </td>
-                        <td>
+                        <td style="border-bottom: 1px solid #dee2e6;">
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
                         </td>
@@ -4376,14 +4905,14 @@ function updateVolumesTable() {
     const createTbody = document.getElementById('createVolumesTableBody');
     if (createTbody) {
         if (volumesData.length === 0) {
-            createTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+            createTbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
         } else {
             createTbody.innerHTML = volumesData.map((volume, index) => {
                 return `
                     <tr>
-                        <td>${escapeHtml(volume.name || '-')}</td>
-                        <td><code>${escapeHtml(volume.path || 'N/A')}</code></td>
-                        <td>
+                        <td style="border-bottom: 1px solid #dee2e6;">${escapeHtml(volume.name || '-')}</td>
+                        <td style="border-bottom: 1px solid #dee2e6;"><code>${escapeHtml(volume.path || 'N/A')}</code></td>
+                        <td style="border-bottom: 1px solid #dee2e6;">
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
                         </td>
@@ -4527,7 +5056,7 @@ function updatePortsTable() {
     const tbody = document.getElementById('portsTableBody');
     
     if (portsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No ports added yet. Click "Add Port" to add one.</td></tr>';
         return;
     }
     
@@ -4540,8 +5069,8 @@ function updatePortsTable() {
         
         return `
             <tr>
-                <td>${displayText}</td>
-                <td>
+                <td style="border-bottom: 1px solid #dee2e6;">${displayText}</td>
+                <td style="border-bottom: 1px solid #dee2e6;">
                     <button type="button" class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>
                 </td>
@@ -4614,13 +5143,13 @@ function showCISummaryModal() {
         const memory = container.resourceConfig?.memoryInGBs || 'N/A';
         const vcpus = container.resourceConfig?.vcpus || 'N/A';
         
-        // Get port display text
+        // Get port display text - show "name(port)" or just "port" if name is empty
         let portDisplay = '-';
         if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
             const portIndex = parseInt(container.portIndex);
             if (portsData[portIndex]) {
                 const port = portsData[portIndex];
-                portDisplay = port.name ? `${port.name} (${port.port})` : `Port ${port.port}`;
+                portDisplay = port.name && port.name.trim() ? `${port.name} (${port.port})` : `${port.port}`;
             }
         }
         
