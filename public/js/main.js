@@ -7,6 +7,17 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Helper function to escape JSON for HTML attributes
+function escapeHtmlAttribute(jsonString) {
+    if (!jsonString) return '';
+    return String(jsonString)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // Helper function to throttle API calls - process in batches with delays
 async function throttleApiCalls(items, batchSize, delayMs, asyncFn) {
     const results = [];
@@ -50,11 +61,26 @@ function initializeContainerTooltips() {
             }
             
             // Get data from attributes
-            const envVarsJson = newRow.getAttribute('data-env-vars');
-            const cmdJson = newRow.getAttribute('data-cmd');
-            const argsJson = newRow.getAttribute('data-args');
+            let envVarsJson = newRow.getAttribute('data-env-vars');
+            let cmdJson = newRow.getAttribute('data-cmd');
+            let argsJson = newRow.getAttribute('data-args');
             
             if (!envVarsJson && !cmdJson && !argsJson) return;
+            
+            // Unescape HTML entities
+            function unescapeHtmlAttribute(str) {
+                if (!str) return str;
+                return String(str)
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'")
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&amp;/g, '&');
+            }
+            
+            if (envVarsJson) envVarsJson = unescapeHtmlAttribute(envVarsJson);
+            if (cmdJson) cmdJson = unescapeHtmlAttribute(cmdJson);
+            if (argsJson) argsJson = unescapeHtmlAttribute(argsJson);
             
             // Parse JSON data
             let envVars = {};
@@ -1627,11 +1653,11 @@ function displayContainerInstanceDetails(instance) {
             const cmd = container.command || [];
             const args = container.arguments || [];
             
-            const envVarsJson = JSON.stringify(envVars);
-            const cmdJson = JSON.stringify(cmd);
-            const argsJson = JSON.stringify(args);
+            const envVarsJson = escapeHtmlAttribute(JSON.stringify(envVars));
+            const cmdJson = escapeHtmlAttribute(JSON.stringify(cmd));
+            const argsJson = escapeHtmlAttribute(JSON.stringify(args));
             
-            html += `<tr class="container-row-hover" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
+            html += `<tr class="container-row-hover" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">`;
             
             // State - first column
             html += `<td style="border-bottom: 1px solid #dee2e6;">${getStateBadgeHtml(container.lifecycleState)}</td>`;
@@ -1772,6 +1798,9 @@ function displayContainerInstanceDetails(instance) {
     const deleteDisabledAttr = canDelete ? '' : 'disabled';
     html += '<div class="row mt-4">';
     html += '<div class="col-12 text-end">';
+    html += `<button class="btn btn-success me-2" id="detailsSaveResourceManagerBtn" onclick="saveToResourceManager('${containerInstanceId}')" style="display: inline-block;">`;
+    html += '<i class="bi bi-cloud-upload"></i> Save in Resource Manager';
+    html += '</button>';
     html += `<button class="btn btn-info me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
     html += '<i class="bi bi-arrow-clockwise"></i> Restart';
     html += '</button>';
@@ -2371,9 +2400,9 @@ function refreshDetailsContainersTable(instanceId) {
         const cmd = container.command || [];
         const args = container.arguments || [];
         
-        const envVarsJson = JSON.stringify(envVars);
-        const cmdJson = JSON.stringify(cmd);
-        const argsJson = JSON.stringify(args);
+        const envVarsJson = escapeHtmlAttribute(JSON.stringify(envVars));
+        const cmdJson = escapeHtmlAttribute(JSON.stringify(cmd));
+        const argsJson = escapeHtmlAttribute(JSON.stringify(args));
         
         // Get port from portIndex if port is not set
         // Get port display - show "name(port)" or just "port" if name is empty
@@ -2412,7 +2441,7 @@ function refreshDetailsContainersTable(instanceId) {
         const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
         const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
         
-        let html = `<tr class="container-row-hover" style="${rowStyle}" data-env-vars='${envVarsJson}' data-cmd='${cmdJson}' data-args='${argsJson}'>`;
+        let html = `<tr class="container-row-hover" style="${rowStyle}" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">`;
         
         html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${getStateBadgeHtml(container.lifecycleState)}</td>`;
         html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><strong class="text-primary">${containerName}</strong></td>`;
@@ -3126,6 +3155,20 @@ async function saveToResourceManager(instanceId) {
         const architecture = currentEditingInstance.freeformTags?.architecture || 'x86';
         const shape = architecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
         
+        // Get region from config or extract from subnet OCID
+        let region = config.region || '';
+        if (!region && currentEditingInstance.subnetId) {
+            // Extract region from subnet OCID (format: ocid1.subnet.oc1.<region>...)
+            const subnetMatch = currentEditingInstance.subnetId.match(/ocid1\.subnet\.oc1\.([^.]+)/);
+            if (subnetMatch) {
+                region = subnetMatch[1];
+            }
+        }
+        // Fallback to common regions if still not found
+        if (!region) {
+            region = 'us-ashburn-1'; // Default fallback
+        }
+        
         // Get shape config
         const memorySelect = document.getElementById('detailsShapeMemory');
         const ocpusSelect = document.getElementById('detailsShapeOcpus');
@@ -3142,9 +3185,10 @@ async function saveToResourceManager(instanceId) {
                 display_name: container.displayName,
                 image_url: container.imageUrl,
                 resource_config: {
-                    memory_in_gbs: container.resourceConfig?.memoryInGBs || 16,
-                    vcpus: container.resourceConfig?.vcpus || 1
-                }
+                    memory_limit_in_gbs: container.resourceConfig?.memoryInGBs || 16,
+                    vcpus_limit: container.resourceConfig?.vcpus || 1
+                },
+                is_resource_principal_disabled: "false"
             };
             
             if (container.environmentVariables && Object.keys(container.environmentVariables).length > 0) {
@@ -3159,7 +3203,7 @@ async function saveToResourceManager(instanceId) {
                 containerConfig.arguments = container.arguments;
             }
             
-            // Add volume mounts
+            // Add volume mounts (will be generated as blocks in Terraform)
             if (volumes.length > 0) {
                 containerConfig.volume_mounts = volumes.map((v, volIdx) => ({
                     mount_path: v.path,
@@ -3182,25 +3226,23 @@ async function saveToResourceManager(instanceId) {
         const terraformConfig = `# Terraform configuration for Container Instance: ${currentEditingInstance.displayName}
 # Generated by CI Compose
 
-terraform {
-  required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "~> 5.0"
-    }
-  }
+# Provider configuration for OCI Resource Manager
+# Uses instance principal authentication (automatic in Resource Manager)
+provider "oci" {
+  region = var.region
 }
 
-# Get availability domains
-data "oci_identity_availability_domains" "ads" {
+# Get availability domain
+data "oci_identity_availability_domain" "oci_ad" {
   compartment_id = "${currentEditingInstance.compartmentId}"
+  ad_number      = 1
 }
 
 resource "oci_container_instances_container_instance" "this" {
-  compartment_id     = "${currentEditingInstance.compartmentId}"
-  display_name       = "${currentEditingInstance.displayName}"
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-  shape              = "${shape}"
+  availability_domain = data.oci_identity_availability_domain.oci_ad.name
+  compartment_id      = "${currentEditingInstance.compartmentId}"
+  display_name        = "${currentEditingInstance.displayName}"
+  shape               = "${shape}"
   
   shape_config {
     memory_in_gbs = ${shapeMemory}
@@ -3215,14 +3257,20 @@ resource "oci_container_instances_container_instance" "this" {
   
   container_restart_policy = "${currentEditingInstance.containerRestartPolicy || 'NEVER'}"
   
+  graceful_shutdown_timeout_in_seconds = "10"
+  
+  state = "ACTIVE"
+  
 ${containersConfig.map((container, idx) => {
     let containerBlock = `  containers {
-    display_name = "${container.display_name}"
     image_url    = "${container.image_url}"
+    display_name = "${container.display_name}"
+    
+    is_resource_principal_disabled = "${container.is_resource_principal_disabled}"
     
     resource_config {
-      memory_in_gbs = ${container.resource_config.memory_in_gbs}
-      vcpus         = ${container.resource_config.vcpus}
+      memory_limit_in_gbs = "${container.resource_config.memory_limit_in_gbs}"
+      vcpus_limit         = "${container.resource_config.vcpus_limit}"
     }`;
     
     if (container.environment_variables && Object.keys(container.environment_variables).length > 0) {
@@ -3238,7 +3286,7 @@ ${containersConfig.map((container, idx) => {
     }
     
     if (container.volume_mounts && container.volume_mounts.length > 0) {
-        containerBlock += `\n    volume_mounts = [\n${container.volume_mounts.map(vm => `      {\n        mount_path  = "${vm.mount_path}"\n        volume_name = "${vm.volume_name}"\n      }`).join(',\n')}\n    ]`;
+        containerBlock += `\n${container.volume_mounts.map(vm => `    volume_mounts {\n      mount_path  = "${vm.mount_path}"\n      volume_name = "${vm.volume_name}"\n    }`).join('\n')}`;
     }
     
     containerBlock += `\n  }`;
@@ -3253,6 +3301,13 @@ ${volumesConfig.length > 0 ? volumesConfig.map(vol => `  volumes {
   freeform_tags = {
 ${Object.entries(currentEditingInstance.freeformTags || {}).map(([k, v]) => `    "${k}" = "${String(v).replace(/"/g, '\\"')}"`).join('\n')}
   }
+}
+
+# Variable for region (required by provider)
+variable "region" {
+  type        = string
+  default     = "${region}"
+  description = "OCI region"
 }
 `;
         
@@ -3953,8 +4008,16 @@ function updateContainersTable() {
         const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
         const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
         
+        // Prepare tooltip data attributes
+        const envVars = container.environmentVariables || {};
+        const cmd = container.command || [];
+        const args = container.arguments || [];
+        const envVarsJson = escapeHtmlAttribute(JSON.stringify(envVars));
+        const cmdJson = escapeHtmlAttribute(JSON.stringify(cmd));
+        const argsJson = escapeHtmlAttribute(JSON.stringify(args));
+        
         return `
-            <tr style="${rowStyle}">
+            <tr class="container-row-hover" style="${rowStyle}" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${container.displayName || 'N/A'}</td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl || 'N/A'}</code></td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${memory}</td>
@@ -3967,6 +4030,11 @@ function updateContainersTable() {
             </tr>
         `;
     }).join('');
+    
+    // Initialize hover tooltips for container rows
+    setTimeout(() => {
+        initializeContainerTooltips();
+    }, 100);
 }
 
 // Sidecar functions
@@ -5028,6 +5096,30 @@ function saveEditedPort() {
         // Update port dropdown in container edit modal if it's open
         updateContainerPortDropdown();
         
+        // If container edit modal is open and container has no port, pre-select the newly created port
+        setTimeout(() => {
+            const containerModal = document.getElementById('editContainerModal');
+            if (containerModal && containerModal.classList.contains('show')) {
+                const containerPortSelect = document.getElementById('editContainerPort');
+                if (containerPortSelect && (!containerPortSelect.value || containerPortSelect.value === '')) {
+                    // Find the newly created port by port number in the dropdown options
+                    const portNumber = port.port;
+                    for (let i = 0; i < containerPortSelect.options.length; i++) {
+                        const option = containerPortSelect.options[i];
+                        if (option.value !== '') {
+                            // Check if this option matches the port number
+                            // Format can be "Port 8080" or "name (8080)"
+                            const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
+                            if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === portNumber)) {
+                                containerPortSelect.value = option.value;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }, 50);
+        
         editingDetailsContext = null;
         // Don't set isInEditMode = false here, we're still in edit mode
     } else {
@@ -5046,6 +5138,30 @@ function saveEditedPort() {
         
         // Update port dropdown in container edit modal if it's open
         updateContainerPortDropdown();
+        
+        // If container edit modal is open and container has no port, pre-select the newly created port
+        setTimeout(() => {
+            const containerModal = document.getElementById('editContainerModal');
+            if (containerModal && containerModal.classList.contains('show')) {
+                const containerPortSelect = document.getElementById('editContainerPort');
+                if (containerPortSelect && (!containerPortSelect.value || containerPortSelect.value === '')) {
+                    // Find the newly created port by port number in the dropdown options
+                    const portNumber = port.port;
+                    for (let i = 0; i < containerPortSelect.options.length; i++) {
+                        const option = containerPortSelect.options[i];
+                        if (option.value !== '') {
+                            // Check if this option matches the port number
+                            // Format can be "Port 8080" or "name (8080)"
+                            const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
+                            if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === portNumber)) {
+                                containerPortSelect.value = option.value;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }, 50);
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editPortModal'));
