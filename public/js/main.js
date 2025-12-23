@@ -66,13 +66,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.addEventListener('hidden.bs.modal', (event) => {
-        // Clean up stacked classes on close
-        event.target.classList.remove('modal-level-2');
-        event.target.classList.remove('modal-level-3');
-        document.querySelectorAll('.modal-backdrop').forEach(b => {
-            b.classList.remove('modal-backdrop-level-2');
-            b.classList.remove('modal-backdrop-level-3');
-        });
+        const closedModal = event.target;
+        
+        // Clean up classes from the closed modal
+        closedModal.classList.remove('modal-level-2', 'modal-level-3');
+        
+        // Find and remove the backdrop that belongs to this modal (the last one before it was removed)
+        // Bootstrap removes the backdrop when modal closes, but we need to re-evaluate remaining modals
+        setTimeout(() => {
+            // Re-evaluate remaining open modals and assign correct levels
+            const openModals = document.querySelectorAll('.modal.show');
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            
+            openModals.forEach((modal, index) => {
+                // Normalize classes first
+                modal.classList.remove('modal-level-2', 'modal-level-3');
+                
+                // Find corresponding backdrop (backdrops are in same order as modals)
+                const backdrop = backdrops[index];
+                
+                if (backdrop) {
+                    backdrop.classList.remove('modal-backdrop-level-2', 'modal-backdrop-level-3');
+                }
+                
+                // Assign correct level based on how many modals are before this one
+                if (index === 0) {
+                    // First modal - no level classes needed (base level)
+                } else if (index === 1) {
+                    // Second modal - level-2
+                    modal.classList.add('modal-level-2');
+                    if (backdrop) backdrop.classList.add('modal-backdrop-level-2');
+                } else if (index >= 2) {
+                    // Third+ modal - level-3
+                    modal.classList.add('modal-level-3');
+                    if (backdrop) backdrop.classList.add('modal-backdrop-level-3');
+                }
+            });
+        }, 0);
     });
 });
 
