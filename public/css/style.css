@@ -107,18 +107,37 @@ body {
     font-style: italic;
 }
 
-/* Port modal z-index to appear above container edit modal */
-#editPortModal.modal {
-    z-index: 1060 !important;
+/* Modal stacking: backdrop directly behind modal; nested modals get bumped */
+.modal-backdrop {
+    z-index: 1055 !important; /* below modal */
 }
 
-#editPortModal.modal.show {
-    z-index: 1060 !important;
+.modal {
+    z-index: 1060 !important; /* above backdrop */
 }
 
-body.modal-open #editPortModal.modal {
-    z-index: 1060 !important;
+.modal-dialog {
+    z-index: inherit;
 }
+
+/* Nested/back-to-back modals */
+.modal-backdrop.modal-backdrop-level-2 {
+    z-index: 1065 !important;
+}
+
+.modal.modal-level-2 {
+    z-index: 1070 !important;
+}
+
+/* Third-level for deep nesting (e.g., add/edit port opened from container modal inside CI modal) */
+.modal-backdrop.modal-backdrop-level-3 {
+    z-index: 1075 !important;
+}
+
+.modal.modal-level-3 {
+    z-index: 1080 !important;
+}
+
 
 /* Container logs modal positioned at rightmost edge */
 .modal-dialog-right {

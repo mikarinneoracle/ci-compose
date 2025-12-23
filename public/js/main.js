@@ -39,6 +39,43 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Handle modal stacking so nested modals/backdrops overlay correctly
+document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('show.bs.modal', (event) => {
+        const modal = event.target;
+        const openCount = document.querySelectorAll('.modal.show').length; // modals already open before this one
+        
+        // Defer to ensure backdrop is in DOM
+        setTimeout(() => {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            const latestBackdrop = backdrops[backdrops.length - 1];
+
+            // Normalize classes
+            modal.classList.remove('modal-level-2', 'modal-level-3');
+            if (latestBackdrop) latestBackdrop.classList.remove('modal-backdrop-level-2', 'modal-backdrop-level-3');
+
+            // If another modal is already open, bump the new modal/backdrop; 2 levels => level-3
+            if (openCount === 1) {
+                modal.classList.add('modal-level-2');
+                if (latestBackdrop) latestBackdrop.classList.add('modal-backdrop-level-2');
+            } else if (openCount >= 2) {
+                modal.classList.add('modal-level-3');
+                if (latestBackdrop) latestBackdrop.classList.add('modal-backdrop-level-3');
+            }
+        }, 0);
+    });
+    
+    document.addEventListener('hidden.bs.modal', (event) => {
+        // Clean up stacked classes on close
+        event.target.classList.remove('modal-level-2');
+        event.target.classList.remove('modal-level-3');
+        document.querySelectorAll('.modal-backdrop').forEach(b => {
+            b.classList.remove('modal-backdrop-level-2');
+            b.classList.remove('modal-backdrop-level-3');
+        });
+    });
+});
+
 // Initialize hover tooltips for container rows
 function initializeContainerTooltips() {
     // Remove existing tooltip if any
@@ -2491,6 +2528,8 @@ function addVolumeToDetails(instanceId) {
     // Reset edit form
     document.getElementById('editVolumeForm').reset();
     document.getElementById('editVolumeIndex').value = '';
+    const volumeModalTitle = document.querySelector('#editVolumeModal .modal-title');
+    if (volumeModalTitle) volumeModalTitle.textContent = 'Add Volume';
     
     const modalElement = document.getElementById('editVolumeModal');
     const modal = new bootstrap.Modal(modalElement);
@@ -2521,6 +2560,8 @@ function editVolumeInDetails(index, instanceId) {
     document.getElementById('editVolumeIndex').value = index;
     document.getElementById('editVolumeName').value = volume.name || '';
     document.getElementById('editVolumePath').value = volume.path || '';
+    const volumeModalTitle = document.querySelector('#editVolumeModal .modal-title');
+    if (volumeModalTitle) volumeModalTitle.textContent = 'Edit Volume';
     
     const modalElement = document.getElementById('editVolumeModal');
     const modal = new bootstrap.Modal(modalElement);
@@ -2578,6 +2619,8 @@ function addPortToDetails(instanceId) {
     // Reset edit form
     document.getElementById('editPortForm').reset();
     document.getElementById('editPortIndex').value = '';
+    const portModalTitle = document.querySelector('#editPortModal .modal-title');
+    if (portModalTitle) portModalTitle.textContent = 'Add Port';
     
     const modalElement = document.getElementById('editPortModal');
     const modal = new bootstrap.Modal(modalElement);
@@ -4799,6 +4842,8 @@ function saveCustomSidecar() {
 function addVolumeToTable() {
     document.getElementById('editVolumeForm').reset();
     document.getElementById('editVolumeIndex').value = '';
+    const volumeModalTitle = document.querySelector('#editVolumeModal .modal-title');
+    if (volumeModalTitle) volumeModalTitle.textContent = 'Add Volume';
     
     const modalElement = document.getElementById('editVolumeModal');
     const modal = new bootstrap.Modal(modalElement);
@@ -4820,6 +4865,8 @@ function editVolume(index) {
     document.getElementById('editVolumeIndex').value = index;
     document.getElementById('editVolumeName').value = volume.name || '';
     document.getElementById('editVolumePath').value = volume.path || '';
+    const volumeModalTitle = document.querySelector('#editVolumeModal .modal-title');
+    if (volumeModalTitle) volumeModalTitle.textContent = 'Edit Volume';
     
     const modalElement = document.getElementById('editVolumeModal');
     const modal = new bootstrap.Modal(modalElement);
@@ -5010,8 +5057,11 @@ function showAddPortFromContainerEdit() {
 function addPortToTable() {
     document.getElementById('editPortForm').reset();
     document.getElementById('editPortIndex').value = '';
+    const portModalTitle = document.querySelector('#editPortModal .modal-title');
+    if (portModalTitle) portModalTitle.textContent = 'Add Port';
     
-    const modal = new bootstrap.Modal(document.getElementById('editPortModal'));
+    const modalElement = document.getElementById('editPortModal');
+    const modal = new bootstrap.Modal(modalElement);
     modal.show();
 }
 
@@ -5021,8 +5071,11 @@ function editPort(index) {
     document.getElementById('editPortIndex').value = index;
     document.getElementById('editPortName').value = port.name || '';
     document.getElementById('editPortNumber').value = port.port || '';
+    const portModalTitle = document.querySelector('#editPortModal .modal-title');
+    if (portModalTitle) portModalTitle.textContent = 'Edit Port';
     
-    const modal = new bootstrap.Modal(document.getElementById('editPortModal'));
+    const modalElement = document.getElementById('editPortModal');
+    const modal = new bootstrap.Modal(modalElement);
     modal.show();
 }
 
