@@ -9,7 +9,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Create and manage OCI Container Instances
 - Configure containers with custom images, resource limits, and environment variables
 - Manage sidecars from the Sidecar Gallery (stock and custom sidecars)
-- Configure networking with port mappings and subnet selection
+- Configure networking with port mappings and subnet selection. Subnet security lists are not modified automatically and must be updated manually as required.
 - Manage volumes and volume mounts
 - View container logs (using OCI Logging sidecar) and instance details
 - Edit, restart, stop, and delete container instances
@@ -76,9 +76,11 @@ Once the application is running, access the Configuration menu to set up your en
 
 2. **Compartment:** Select the OCI compartment where you want to create and manage your container instances.
 
-3. **Default Subnet:** Choose the default subnet for your container instances. This subnet will be preselected when creating new instances, but can be changed per instance if needed.
+3. **Default Subnet:** Choose the default subnet for your container instances. This subnet is preselected during instance creation but can be overridden on a per-instance basis if required.
 
-4. **Default Log Group (Optional):** If you plan to use OCI Logging for container logs, select a default log group. This is optional and only required if you want to view container logs through the OCI Logging service.
+   When using a private subnet for container instance creation, access must be provided through an OCI API Gateway or Load Balancer, with the corresponding security rules configured manually. Using a private subnet is generally recommended as a best practice for improved security.
+
+4. **Default Log Group (Optional):** Select a default log group if you want to view container logs through the web interface using the OCI Logging sidecar. This configuration is optional.
 
 5. **Additional Settings:** Configure other settings such as:
    - OCI Config File Path (default: `~/.oci/config`)
