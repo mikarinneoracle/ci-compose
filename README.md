@@ -40,8 +40,6 @@ Before you begin, ensure you have:
 
 - **Node.js** installed (version 14 or higher recommended)
 - **Oracle Cloud Infrastructure (OCI) CLI** properly configured with valid credentials
-- Access to an OCI tenancy with the appropriate permissions to use Container Instances, Networking, Logging, Vault, and Object Storage services, where applicable
-- OCI SDK credentials configured (via `~/.oci/config` or environment variables)
 
 ### Installation
 
@@ -93,5 +91,5 @@ After completing the configuration, you can start creating and managing containe
 ## Requirements
 
 - Node.js
+- Access to an OCI tenancy with the appropriate permissions to use Container Instances, Networking, Logging, Vault, and Object Storage services, where applicable
 - OCI SDK credentials configured (via `~/.oci/config` or environment variables)
-- Access to Oracle Cloud Infrastructure with appropriate permissions for Container Instances
