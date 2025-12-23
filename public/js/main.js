@@ -2986,7 +2986,7 @@ async function saveCIChanges(instanceId) {
                 detailsModal.hide();
             }
             
-            showNotification('Container instance updated successfully!', 'success');
+            showNotification('Container Instance edit submitted succesfully!', 'success');
             
             // Exit edit mode
             exitEditMode();
@@ -3429,7 +3429,7 @@ async function deleteContainerInstance(instanceId) {
         const data = await response.json();
         
         if (data.success) {
-            showNotification('Container instance deletion initiated successfully!', 'success');
+            showNotification('Container Instance delete submitted succesfully!', 'success');
             
             // Close the details modal
             const modalElement = document.getElementById('containerInstanceModal');
@@ -5570,7 +5570,7 @@ async function confirmCreateContainerInstance() {
             createModal.hide();
             
             // Show success notification
-            showNotification('Container instance created successfully!', 'success');
+            showNotification('Container Instance create submitted succesfully!', 'success');
             
             // Reload container instances
             await loadContainerInstances();
