@@ -13,7 +13,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Manage volumes and volume mounts
 - View container logs (using OCI Logging sidecar) and instance details
 - Edit, restart, stop, and delete container instances
-- Export container instance configurations to OCI Resource Manager (Terraform)
+- Export Container Instances configurations to OCI Resource Manager (Terraform)
 
 ## Custom Sidecars
 
