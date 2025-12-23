@@ -7,10 +7,10 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 ## Features
 
 - Create and manage OCI Container Instances
-- Configure containers with custom images, resource limits, and environment variables
+- Configure containers with custom images, sidecars, resource limits, and environment variables
 - Manage sidecars from the Sidecar Gallery (stock and custom sidecars)
 - Configure networking with port mappings and subnet selection. Subnet security lists are not modified automatically and must be updated manually as required.
-- Manage volumes and volume mounts
+- Manage volumes and volume mounts shared between containers for data exchange
 - View container logs (using OCI Logging sidecar) and instance details
 - Edit, restart, stop, and delete container instances
 - Export Container Instances configurations to OCI Resource Manager (Terraform)
@@ -40,7 +40,7 @@ Before you begin, ensure you have:
 
 - **Node.js** installed (version 14 or higher recommended)
 - **Oracle Cloud Infrastructure (OCI) CLI** properly configured with valid credentials
-- Access to an OCI tenancy with appropriate permissions for Container Instances, Networking, and Logging services
+- Access to an OCI tenancy with the appropriate permissions to use Container Instances, Networking, Logging, Vault, and Object Storage services, where applicable.
 - OCI SDK credentials configured (via `~/.oci/config` or environment variables)
 
 ### Installation
