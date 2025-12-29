@@ -1238,10 +1238,10 @@ async function displayContainerInstancesWithDetails(instances) {
                 // Look for port in freeformTags using container name as key
                 const port = freeformTags[containerName];
                 if (port && /^\d+$/.test(port)) {
-                    containersList.push(`${containerName}:${port}`);
+                    containersList.push({ name: containerName, port: port });
                 } else {
                     // If no port found in tags, just show container name
-                    containersList.push(containerName);
+                    containersList.push({ name: containerName, port: null });
                 }
             });
         }
@@ -1252,20 +1252,39 @@ async function displayContainerInstancesWithDetails(instances) {
             // Skip 'volumes' tag, only process container name -> port mappings
             if (key !== 'volumes' && typeof value === 'string' && /^\d+$/.test(value)) {
                 // Only add if not already in list (avoid duplicates)
-                const containerWithPort = `${key}:${value}`;
-                if (!containersList.includes(containerWithPort) && !containersList.some(c => c.startsWith(key + ':'))) {
-                    containersList.push(containerWithPort);
+                const exists = containersList.some(c => c.name === key);
+                if (!exists) {
+                    containersList.push({ name: key, port: value });
                 }
             }
         });
         
-        const containersDisplay = containersList.length > 0 ? containersList.join(', ') : 'N/A';
+        // Build containers display with links when public IP and port exist
+        let containersDisplay = 'N/A';
+        if (containersList.length > 0) {
+            const hasPublicIp = publicIp !== 'N/A' && publicIp && publicIp.trim() !== '';
+            const containerElements = containersList.map(container => {
+                const containerName = escapeHtml(container.name);
+                if (hasPublicIp && container.port) {
+                    // Create link in form http://public_ip:port
+                    const url = `http://${publicIp}:${container.port}`;
+                    return `<a href="${url}" target="_blank" onclick="event.stopPropagation();" class="text-decoration-none">${containerName}:${container.port}</a>`;
+                } else if (container.port) {
+                    // Has port but no public IP, show as text
+                    return `${containerName}:${container.port}`;
+                } else {
+                    // No port, just show name
+                    return containerName;
+                }
+            });
+            containersDisplay = containerElements.join(', ');
+        }
         
         html += '<tr style="cursor: pointer;" onclick="showContainerInstanceDetails(\'' + instance.id + '\')">';
         html += `<td>${getStateBadgeHtml(instance.lifecycleState)}</td>`;
         html += `<td><strong>${instance.displayName || 'N/A'}</strong></td>`;
         html += `<td>${ipDisplay}</td>`;
-        html += `<td><small>${escapeHtml(containersDisplay)}</small></td>`;
+        html += `<td><small>${containersDisplay}</small></td>`;
         html += `<td>${instance.timeCreated ? new Date(instance.timeCreated).toLocaleString() : 'N/A'}</td>`;
         html += '</tr>';
     });
@@ -4214,9 +4233,9 @@ function updateContainersTable() {
             <tr class="container-row-hover" style="${rowStyle}" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${container.displayName || 'N/A'}</td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl || 'N/A'}</code></td>
+                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${memory}</td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${vcpus}</td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>
                 <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">
                     <button type="button" class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
@@ -5577,7 +5596,7 @@ function showCISummaryModal() {
     html += '<div class="col-12">';
     html += '<h5 class="border-bottom pb-2 mb-3">Containers</h5>';
     html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
-    html += '<thead class="table-light"><tr><th>Name</th><th>Image</th><th>Memory (GB)</th><th>VCPUs</th><th>Port</th></tr></thead>';
+    html += '<thead class="table-light"><tr><th>Name</th><th>Image</th><th>Port</th><th>Memory (GB)</th><th>VCPUs</th></tr></thead>';
     html += '<tbody>';
     
     containersData.forEach(container => {
@@ -5597,9 +5616,9 @@ function showCISummaryModal() {
         html += `<tr>`;
         html += `<td><strong>${container.displayName || 'N/A'}</strong></td>`;
         html += `<td><code>${container.imageUrl || 'N/A'}</code></td>`;
+        html += `<td>${portDisplay}</td>`;
         html += `<td>${memory}</td>`;
         html += `<td>${vcpus}</td>`;
-        html += `<td>${portDisplay}</td>`;
         html += `</tr>`;
         
         // Show environment variables, command, and arguments if not empty
