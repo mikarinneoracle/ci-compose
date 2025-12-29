@@ -28,6 +28,9 @@
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showSidecarGalleryModal()">Sidecar Gallery</button>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link text-white text-decoration-none" href="labs.html" target="_blank" rel="noopener noreferrer">Labs</a>
+                    </li>
+                    <li class="nav-item">
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showAboutModal()">About</button>
                     </li>
                 </ul>
@@ -643,12 +646,13 @@
                         <h5 class="mb-3">Features</h5>
                         <ul>
                             <li>Create and manage OCI Container Instances</li>
-                            <li>Configure containers with custom images, resource limits, and environment variables</li>
+                            <li>Configure containers with custom images, sidecars, resource limits, and environment variables</li>
                             <li>Manage sidecars from the Sidecar Gallery (stock and custom sidecars)</li>
-                            <li>Configure networking with port mappings and subnet selection</li>
-                            <li>Manage volumes and volume mounts</li>
+                            <li>Configure networking with port mappings and subnet selection. Subnet security lists are not modified automatically and must be updated manually as required.</li>
+                            <li>Manage volumes and volume mounts shared between containers for data exchange</li>
                             <li>View container logs (using OCI Logging sidecar) and instance details</li>
-                            <li>Edit, restart, and delete container instances</li>
+                            <li>Edit, restart, stop, and delete container instances</li>
+                            <li>Export Container Instances configurations to OCI Resource Manager (Terraform)</li>
                         </ul>
                     </div>
                     
