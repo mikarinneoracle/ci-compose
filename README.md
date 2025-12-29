@@ -93,3 +93,7 @@ After completing the configuration, you can start creating and managing containe
 - Node.js
 - Access to an OCI tenancy with the appropriate permissions to use Container Instances, Networking, Logging, Vault, and Object Storage services, where applicable
 - OCI SDK credentials configured (via `~/.oci/config` or environment variables)
+
+## Labs
+
+For experimental features and labs, see [Labs](labs/index.htm).
