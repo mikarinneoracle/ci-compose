@@ -96,4 +96,4 @@ After completing the configuration, you can start creating and managing containe
 
 ## Labs
 
-For experimental features and labs, see [Labs](labs/index.htm).
+For experimental features and labs, see [Labs](labs/README.md).
