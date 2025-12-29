@@ -3690,6 +3690,20 @@ function updateContainerPortDropdown() {
     const portSelect = document.getElementById('editContainerPort');
     if (!portSelect) return;
     
+    // Save current selection before rebuilding (by port number if possible)
+    let currentSelection = portSelect.value;
+    let currentPortNumber = null;
+    if (currentSelection && currentSelection !== '') {
+        const selectedOption = portSelect.options[portSelect.selectedIndex];
+        if (selectedOption && selectedOption.textContent) {
+            // Try to extract port number from selected option text
+            const portMatch = selectedOption.textContent.match(/\((\d+)\)|Port (\d+)/);
+            if (portMatch) {
+                currentPortNumber = parseInt(portMatch[1] || portMatch[2]);
+            }
+        }
+    }
+    
     // Clear existing options except "No port"
     portSelect.innerHTML = '<option value="">No port</option>';
     
@@ -3729,6 +3743,7 @@ function updateContainerPortDropdown() {
     }
     
     // Add options for each port
+    let restoredIndex = -1;
     portsToUse.forEach((port, index) => {
         const option = document.createElement('option');
         option.value = index.toString();
@@ -3736,7 +3751,40 @@ function updateContainerPortDropdown() {
         const displayText = port.name ? `${port.name} (${portNum})` : `Port ${portNum}`;
         option.textContent = displayText;
         portSelect.appendChild(option);
+        
+        // If we had a selection, try to restore it by matching port number
+        if (currentPortNumber !== null && portNum === currentPortNumber) {
+            restoredIndex = index;
+        }
     });
+    
+    // Restore selection if we had one
+    if (restoredIndex >= 0) {
+        portSelect.value = restoredIndex.toString();
+        portSelect.selectedIndex = restoredIndex + 1; // +1 because of "No port" option
+    } else if (currentSelection && currentSelection !== '') {
+        // Try to restore by index if port number didn't match
+        const indexNum = parseInt(currentSelection);
+        if (!isNaN(indexNum) && indexNum >= 0 && indexNum < portsToUse.length) {
+            portSelect.value = currentSelection;
+            portSelect.selectedIndex = indexNum + 1; // +1 because of "No port" option
+        }
+    }
+    
+    // Also check for data-selected-port attribute and restore selection
+    const selectedPortAttr = portSelect.getAttribute('data-selected-port');
+    if (selectedPortAttr) {
+        const targetPortNum = parseInt(selectedPortAttr);
+        for (let i = 0; i < portsToUse.length; i++) {
+            const port = portsToUse[i];
+            const portNum = typeof port.port === 'number' ? port.port : parseInt(port.port);
+            if (portNum === targetPortNum) {
+                portSelect.value = i.toString();
+                portSelect.selectedIndex = i + 1; // +1 because of "No port" option
+                break;
+            }
+        }
+    }
 }
 
 // Container CRUD functions
@@ -3903,9 +3951,51 @@ function saveEditedContainer() {
     };
     
     // Store selected port index
-    const portIndex = document.getElementById('editContainerPort').value;
-    if (portIndex && portIndex !== '') {
+    // Store selected port index - handle 0 as valid index
+    const portSelect = document.getElementById('editContainerPort');
+    let portIndex = '';
+    
+    // First, try to get from editing context (set when port was added)
+    if (editingDetailsContext && editingDetailsContext.selectedPortIndex !== undefined) {
+        portIndex = editingDetailsContext.selectedPortIndex.toString();
+        // Clear it after using
+        delete editingDetailsContext.selectedPortIndex;
+    }
+    
+    // If not in context, try reading from dropdown
+    if ((!portIndex || portIndex === '') && portSelect) {
+        // Try value first
+        portIndex = portSelect.value;
+        // If value is empty but selectedIndex is set, use that
+        if ((!portIndex || portIndex === '') && portSelect.selectedIndex > 0) {
+            portIndex = portSelect.options[portSelect.selectedIndex].value;
+        }
+        // If still empty, try to find by data-selected-port attribute
+        if ((!portIndex || portIndex === '') && portSelect.hasAttribute('data-selected-port')) {
+            const selectedPortNum = parseInt(portSelect.getAttribute('data-selected-port'));
+            // Find the port in the dropdown by port number
+            for (let i = 0; i < portSelect.options.length; i++) {
+                const option = portSelect.options[i];
+                if (option.value !== '') {
+                    const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
+                    if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === selectedPortNum)) {
+                        portIndex = option.value;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    if (portIndex !== '' && portIndex !== null && portIndex !== undefined && !isNaN(parseInt(portIndex))) {
         container.portIndex = parseInt(portIndex);
+    } else {
+        container.portIndex = null;
+    }
+    
+    // Clear the data attribute after reading
+    if (portSelect) {
+        portSelect.removeAttribute('data-selected-port');
     }
     
     // Parse environment variables (comma-separated KEY=VALUE pairs)
@@ -3946,17 +4036,48 @@ function saveEditedContainer() {
         const containers = window[`detailsContainers_${instanceId}`] || [];
         
         // Add port info from details ports - use portIndex if set, otherwise keep existing port
-        if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '') {
+        // Use the same merged ports array logic as updateContainerPortDropdown
+        if (container.portIndex !== undefined && container.portIndex !== null) {
             const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
-            if (detailsPorts[container.portIndex]) {
-                container.port = detailsPorts[container.portIndex].port.toString();
+            let portsToUse = detailsPorts;
+            
+            // Merge with localStorage ports (same logic as dropdown)
+            const config = getConfiguration();
+            if (config.projectName) {
+                const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+                const localStoragePorts = existingData.ports || [];
+                const mergedPorts = [...detailsPorts];
+                localStoragePorts.forEach(localPort => {
+                    const portNum = typeof localPort.port === 'number' ? localPort.port : parseInt(localPort.port);
+                    const exists = mergedPorts.some(p => {
+                        const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                        return pPortNum === portNum;
+                    });
+                    if (!exists) {
+                        mergedPorts.push({
+                            port: portNum,
+                            name: localPort.name || null
+                        });
+                    }
+                });
+                portsToUse = mergedPorts;
+            }
+            
+            // Use the merged array to look up the port by index
+            const portIndex = parseInt(container.portIndex);
+            if (portsToUse[portIndex]) {
+                container.port = portsToUse[portIndex].port.toString();
+                // Preserve portIndex for saveCIChanges
+                container.portIndex = portIndex;
             } else {
-                // If portIndex doesn't match, clear port
+                // If portIndex doesn't match, clear port and portIndex
                 container.port = null;
+                container.portIndex = null;
             }
         } else {
-            // If no portIndex selected, clear port
+            // If no portIndex selected, clear port and portIndex
             container.port = null;
+            container.portIndex = null;
         }
         
         // Preserve lifecycleState
@@ -5168,42 +5289,129 @@ function saveEditedPort() {
             });
             savePortsAndVolumesForCIName(config.projectName);
             
-            // Reload from localStorage to ensure consistency
-            loadPortsAndVolumesForCIName(config.projectName);
+            // Don't reload from localStorage - we just saved and portsData is already updated
+            // Reloading might cause timing issues or overwrite the new port
             
             // Update index page tables
             updatePortsTable();
             updateVolumesTable();
         }
         
+        // If container edit modal is open, store the port number to select BEFORE updating dropdown
+        const portNumber = port.port;
+        const containerModal = document.getElementById('editContainerModal');
+        if (containerModal && containerModal.classList.contains('show')) {
+            const containerPortSelect = document.getElementById('editContainerPort');
+            if (containerPortSelect) {
+                // Store the port number to select in a data attribute BEFORE dropdown update
+                containerPortSelect.setAttribute('data-selected-port', portNumber.toString());
+            }
+        }
+        
         // Update port dropdown in container edit modal if it's open
+        // This will restore the selection from the data attribute
         updateContainerPortDropdown();
         
-        // If container edit modal is open and container has no port, pre-select the newly created port
-        setTimeout(() => {
+        // Also explicitly select the port after dropdown update and store in editing context
+        // Calculate the port index in the merged array that will be used by the dropdown
+        let calculatedPortIndex = -1;
+        if (editingDetailsContext && editingDetailsContext.type === 'details') {
+            const instanceId = editingDetailsContext.instanceId;
+            const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+            const config = getConfiguration();
+            let mergedPorts = [...detailsPorts];
+            
+            // Merge with localStorage ports (same logic as updateContainerPortDropdown)
+            if (config.projectName) {
+                const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+                const localStoragePorts = existingData.ports || [];
+                localStoragePorts.forEach(localPort => {
+                    const portNum = typeof localPort.port === 'number' ? localPort.port : parseInt(localPort.port);
+                    const exists = mergedPorts.some(p => {
+                        const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                        return pPortNum === portNum;
+                    });
+                    if (!exists) {
+                        mergedPorts.push({
+                            port: portNum,
+                            name: localPort.name || null
+                        });
+                    }
+                });
+            }
+            
+            // Find the index of the newly added port in the merged array
+            const portNumber = port.port;
+            for (let i = 0; i < mergedPorts.length; i++) {
+                const p = mergedPorts[i];
+                const pPortNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                if (pPortNum === portNumber) {
+                    calculatedPortIndex = i;
+                    break;
+                }
+            }
+            
+            // Store in editing context for save function to use
+            if (calculatedPortIndex >= 0) {
+                editingDetailsContext.selectedPortIndex = calculatedPortIndex;
+            }
+        }
+        
+        const selectPort = () => {
             const containerModal = document.getElementById('editContainerModal');
             if (containerModal && containerModal.classList.contains('show')) {
                 const containerPortSelect = document.getElementById('editContainerPort');
-                if (containerPortSelect && (!containerPortSelect.value || containerPortSelect.value === '')) {
-                    // Find the newly created port by port number in the dropdown options
-                    const portNumber = port.port;
-                    for (let i = 0; i < containerPortSelect.options.length; i++) {
-                        const option = containerPortSelect.options[i];
-                        if (option.value !== '') {
-                            // Check if this option matches the port number
-                            // Format can be "Port 8080" or "name (8080)"
-                            const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
-                            if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === portNumber)) {
-                                containerPortSelect.value = option.value;
-                                break;
+                if (containerPortSelect) {
+                    // Get the port number to select from data attribute
+                    const portToSelect = containerPortSelect.getAttribute('data-selected-port');
+                    if (portToSelect) {
+                        const targetPortNum = parseInt(portToSelect);
+                        
+                        // Find the port by port number in the dropdown options
+                        for (let i = 0; i < containerPortSelect.options.length; i++) {
+                            const option = containerPortSelect.options[i];
+                            if (option.value !== '') {
+                                // Check if this option matches the port number
+                                // Format can be "Port 8080" or "name (8080)"
+                                const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
+                                if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === targetPortNum)) {
+                                    const portIndexValue = option.value;
+                                    containerPortSelect.value = portIndexValue;
+                                    containerPortSelect.selectedIndex = i;
+                                    // Also set the option as selected
+                                    option.selected = true;
+                                    
+                                    // Update editing context with the actual index from dropdown
+                                    if (editingDetailsContext && editingDetailsContext.type === 'details') {
+                                        editingDetailsContext.selectedPortIndex = parseInt(portIndexValue);
+                                    }
+                                    
+                                    // Trigger change event to ensure the value is properly set
+                                    containerPortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                    return true; // Found and selected
+                                }
                             }
                         }
                     }
                 }
             }
+            return false; // Not found yet
+        };
+        
+        // Try immediately, then with delays to ensure selection
+        setTimeout(() => {
+            if (!selectPort()) {
+                setTimeout(() => {
+                    selectPort();
+                }, 100);
+            }
         }, 50);
         
-        editingDetailsContext = null;
+        // Don't clear editingDetailsContext here - we need it for container save
+        // Only clear the itemType since we're done with port editing
+        if (editingDetailsContext) {
+            editingDetailsContext.itemType = null;
+        }
         // Don't set isInEditMode = false here, we're still in edit mode
     } else {
         // Normal creation flow
@@ -5222,29 +5430,63 @@ function saveEditedPort() {
         // Update port dropdown in container edit modal if it's open
         updateContainerPortDropdown();
         
-        // If container edit modal is open and container has no port, pre-select the newly created port
-        setTimeout(() => {
+        // If container edit modal is open, pre-select the newly created port
+        // Store the port number in a data attribute so it persists across dropdown updates
+        const portNumber = port.port;
+        const containerModal = document.getElementById('editContainerModal');
+        if (containerModal && containerModal.classList.contains('show')) {
+            const containerPortSelect = document.getElementById('editContainerPort');
+            if (containerPortSelect) {
+                // Store the port number to select in a data attribute
+                containerPortSelect.setAttribute('data-selected-port', portNumber.toString());
+            }
+        }
+        
+        // Update and select the port
+        const selectPort = () => {
             const containerModal = document.getElementById('editContainerModal');
             if (containerModal && containerModal.classList.contains('show')) {
                 const containerPortSelect = document.getElementById('editContainerPort');
-                if (containerPortSelect && (!containerPortSelect.value || containerPortSelect.value === '')) {
-                    // Find the newly created port by port number in the dropdown options
-                    const portNumber = port.port;
+                if (containerPortSelect) {
+                    // Get the port number to select from data attribute or use the new port
+                    const portToSelect = containerPortSelect.getAttribute('data-selected-port') || portNumber.toString();
+                    const targetPortNum = parseInt(portToSelect);
+                    
+                    // Find the port by port number in the dropdown options
                     for (let i = 0; i < containerPortSelect.options.length; i++) {
                         const option = containerPortSelect.options[i];
                         if (option.value !== '') {
                             // Check if this option matches the port number
                             // Format can be "Port 8080" or "name (8080)"
                             const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
-                            if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === portNumber)) {
+                            if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === targetPortNum)) {
                                 containerPortSelect.value = option.value;
-                                break;
+                                containerPortSelect.selectedIndex = i;
+                                // Also set the option as selected
+                                option.selected = true;
+                                // Keep the data attribute
+                                containerPortSelect.setAttribute('data-selected-port', targetPortNum.toString());
+                                // Trigger change event to ensure the value is properly set
+                                containerPortSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                return true; // Found and selected
                             }
                         }
                     }
                 }
             }
-        }, 50);
+            return false; // Not found yet
+        };
+        
+        // Try immediately, then with delays
+        if (!selectPort()) {
+            setTimeout(() => {
+                if (!selectPort()) {
+                    setTimeout(() => {
+                        selectPort();
+                    }, 100);
+                }
+            }, 100);
+        }
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('editPortModal'));
@@ -5736,4 +5978,8 @@ if (dataForm) {
     }
     });
 }
+
+
+
+
 
