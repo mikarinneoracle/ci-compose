@@ -5688,6 +5688,48 @@ function showCISummaryModal() {
     summaryModal.show();
 }
 
+// Go back to create CI modal from summary
+function goBackToCreateCI() {
+    // Close summary modal
+    const summaryModalElement = document.getElementById('ciSummaryModal');
+    const summaryModal = bootstrap.Modal.getInstance(summaryModalElement);
+    
+    if (summaryModal) {
+        // Remove backdrop if it exists
+        const backdrop = document.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.remove();
+        }
+        
+        // Hide the modal
+        summaryModal.hide();
+        
+        // Wait for modal to be fully hidden, then show create modal
+        summaryModalElement.addEventListener('hidden.bs.modal', function onHidden() {
+            summaryModalElement.removeEventListener('hidden.bs.modal', onHidden);
+            
+            // Remove any remaining backdrop
+            const remainingBackdrop = document.querySelector('.modal-backdrop');
+            if (remainingBackdrop) {
+                remainingBackdrop.remove();
+            }
+            
+            // Remove modal-open class from body if present
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+            
+            // Reopen create modal
+            const createModal = new bootstrap.Modal(document.getElementById('createContainerInstanceModal'));
+            createModal.show();
+        }, { once: true });
+    } else {
+        // If no modal instance, just show create modal directly
+        const createModal = new bootstrap.Modal(document.getElementById('createContainerInstanceModal'));
+        createModal.show();
+    }
+}
+
 // Create container instance (called from summary modal)
 async function confirmCreateContainerInstance() {
     const config = getConfiguration();
