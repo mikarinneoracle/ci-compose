@@ -1312,6 +1312,18 @@ app.post('/api/oci/resource-manager/stacks', async (req, res) => {
   }
 });
 
+// Serve labs HTML files
+app.get('/labs.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'labs', 'labs.html'));
+});
+
+app.get('/nginx.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'labs', 'nginx.html'));
+});
+
+// Serve labs images
+app.use('/images', express.static(path.join(__dirname, 'labs', 'images')));
+
 // Static files middleware - serve after all API routes
 app.use(express.static(path.join(__dirname, 'public')));
 

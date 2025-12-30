@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGINX Lab - CI Compose Labs</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .header-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 3rem;
+            border-radius: 0.5rem;
+        }
+        .step-card {
+            margin-bottom: 2rem;
+            border-left: 4px solid #667eea;
+        }
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .highlight-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section text-center">
+            <h1 class="display-4 mb-3"><i class="bi bi-globe2"></i> NGINX Lab</h1>
+            <p class="lead">Deploy NGINX with Object Storage and Logging Integration</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <!-- Introduction -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Lab Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>This lab demonstrates how to deploy an NGINX web server using OCI Container Instances with Object Storage integration for content delivery and centralized logging. You'll learn how to:</p>
+                        <ul>
+                            <li>Configure OCI resources (VCN, Object Storage, Logging)</li>
+                            <li>Set up a container instance with NGINX</li>
+                            <li>Integrate Object Storage for web content</li>
+                            <li>Configure centralized logging</li>
+                            <li>Access your deployed application</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Prerequisites -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Prerequisites</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="mb-0">
+                            <li>Have OCI CLI configured</li>
+                            <li>Have a compartment configured in your tenancy</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Step 1: OCI Setup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">1</span>
+                            OCI Infrastructure Setup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Create VCN with Public Subnet</h6>
+                        <p>Create a Virtual Cloud Network (VCN) with a public subnet and configure security rules to allow traffic to port 80.</p>
+                        <div class="code-block">
+                            <strong>Action:</strong> Create VCN with public subnet<br>
+                            <strong>Security Rule:</strong> Allow inbound traffic to port 80
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create Object Storage Bucket</h6>
+                        <p>Create an OCI Object Storage bucket named <code>www-data</code>.</p>
+                        <div class="code-block">
+                            <strong>Bucket Name:</strong> www-data
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Add HTML Content to Bucket</h6>
+                        <p>Upload an HTML page named <code>index.html</code> to the <code>www-data</code> bucket with some sample content.</p>
+                        <div class="code-block">
+                            <strong>Object Name:</strong> index.html<br>
+                            <strong>Bucket:</strong> www-data<br>
+                            <strong>Content:</strong> Any HTML content (e.g., "Hello from Object Storage!")
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create OCI Log</h6>
+                        <p>Create an OCI log in the default Log Group for storing NGINX access logs.</p>
+                        <div class="code-block">
+                            <strong>Location:</strong> Default Log Group<br>
+                            <strong>Purpose:</strong> Store NGINX access logs
+                        </div>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the Log OCID (e.g., <code>ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa</code>) as you'll need it in Step 3.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Configure CI Compose -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">2</span>
+                            Configure CI Compose
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                <strong>Set CI Name:</strong> <code>nginx</code>
+                            </li>
+                            <li class="mb-3">
+                                <strong>Set Compartment:</strong> Select your configured compartment
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Subnet:</strong> Choose the public subnet created in Step 1
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Default Log Group:</strong> Choose your default Log Group
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 3: Create Container Instance -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <span class="step-number">3</span>
+                            Create Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"+ Create"</strong> on the Container Instances table header
+                            </li>
+                            <li class="mb-3">
+                                Configure Instance Resources:
+                                <ul class="mt-2">
+                                    <li><strong>Memory:</strong> 32 GB</li>
+                                    <li><strong>OCPUs:</strong> 2</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 4: Add Container -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">4</span>
+                            Add NGINX Container
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> nginx<br>
+                                    <strong>Image:</strong> nginx:latest<br>
+                                    <strong>Port:</strong> 80 (name "http" optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 5: Add OsReader Sidecar -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">5</span>
+                            Add OsReader Sidecar
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>OsReader</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the OsReader sidecar by editing it:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    data_path=/usr/share/nginx/html<br>
+                                    os_bucket=www-data<br>
+                                    reload_delay=30000
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The OsReader sidecar will retrieve content from the Object Storage bucket and make it available to NGINX.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 6: Add LogWriter Sidecar -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">6</span>
+                            Add LogWriter Sidecar
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>LogWriter</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the LogWriter sidecar by editing it:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    log_file=/var/log/nginx/access.log<br>
+                                    log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa<br>
+                                    log_header=nginx-access-log
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>log_ocid</code> with the actual OCID of the log created in Step 1.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 7: Add Volumes -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">7</span>
+                            Add Volumes
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Volume 1: Web Content</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /usr/share/nginx/html<br>
+                                    <strong>Name:</strong> www-data (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Volume 2: Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /var/log/nginx<br>
+                                    <strong>Name:</strong> logs (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 8: Deploy -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">8</span>
+                            Deploy Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Next"</strong> button to review the summary
+                            </li>
+                            <li class="mb-3">
+                                Review the configuration summary
+                            </li>
+                            <li class="mb-3">
+                                Click the <strong>"Create"</strong> button
+                            </li>
+                            <li class="mb-3">
+                                Wait for the Container Instance deployment <strong>"nginx 1"</strong> to become green (running)
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Container Instances Table</h6>
+                            <img src="/images/nginx-container-instances.png" alt="Container Instances table showing nginx deployment with nginx:80, OsReader, and LogWriter containers" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instances table showing the deployed nginx instance with containers and port mapping.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 9: Verify Deployment -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">9</span>
+                            Verify Deployment
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Access the Web Application</h6>
+                        <ol>
+                            <li class="mb-3">
+                                In the Container Instances table, click the <strong>"nginx:80"</strong> link
+                            </li>
+                            <li class="mb-3">
+                                A new window should open displaying the web page stored in the Object Storage bucket <code>www-data</code> (index.html) served by the NGINX container
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">View Container Instance Details</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"nginx 1"</strong> container from the table to open the Container Instance Details modal
+                            </li>
+                        </ol>
+                        <div class="mt-4 mb-4">
+                            <h6>Screenshot: Container Instance Details</h6>
+                            <img src="/images/nginx-instance-details.png" alt="Container Instance Details modal showing nginx 1 with containers, volumes, and network information" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instance Details modal showing the nginx instance configuration, containers (nginx, OsReader, LogWriter), volumes (logs, www-data), and network information.</p>
+                        </div>
+
+                        <h6 class="mt-4 mb-3">View Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Logs"</strong> button next to the LogWriter container
+                            </li>
+                            <li class="mb-3">
+                                Select <strong>"Logs: LogWriter"</strong> to see the NGINX access logs
+                            </li>
+                            <li class="mb-3">
+                                You should see log entries similar to:
+                                <div class="code-block mt-2">
+                                    91.155.180.147 - - [30/Dec/2025:10:23:04 +0000] "GET / HTTP/1.1" 200 146 "http://localhost:3000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" "-"
+                                </div>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 10: Cleanup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">10</span>
+                            Cleanup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Delete"</strong> button to delete the Container Instance deployment
+                            </li>
+                            <li class="mb-3">
+                                Wait for the deletion to complete
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Note:</strong> Remember to clean up other OCI resources (VCN, Object Storage bucket, Log) if they are no longer needed.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <div class="text-center mt-4 mb-4">
+                    <a href="/labs.html" class="btn btn-outline-primary me-2">
+                        <i class="bi bi-arrow-left"></i> Back to Labs
+                    </a>
+                    <a href="/" class="btn btn-outline-secondary">
+                        <i class="bi bi-house"></i> Back to Main Application
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

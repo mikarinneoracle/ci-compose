@@ -4,7 +4,7 @@ Experimental features and advanced container instance configurations
 
 ## Lab Configurations
 
-### NGINX with Object Storage and Logs
+### [NGINX with Object Storage and Logs](../nginx.html)
 
 A high-performance web server configuration with Object Storage integration and centralized logging capabilities.
 
