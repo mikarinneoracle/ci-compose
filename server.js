@@ -1321,6 +1321,10 @@ app.get('/nginx.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'labs', 'nginx.html'));
 });
 
+app.get('/26ai-ords.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'labs', '26ai-ords.html'));
+});
+
 // Serve labs images
 app.use('/images', express.static(path.join(__dirname, 'labs', 'images')));
 

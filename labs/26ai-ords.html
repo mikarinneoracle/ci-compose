@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NGINX Lab - CI Compose Labs</title>
+    <title>26ai ORDS Lab - CI Compose Labs</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
@@ -13,7 +13,7 @@
             padding-bottom: 2rem;
         }
         .header-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
             color: white;
             padding: 3rem 0;
             margin-bottom: 3rem;
@@ -21,10 +21,10 @@
         }
         .step-card {
             margin-bottom: 2rem;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #dc3545;
         }
         .step-number {
-            background: #667eea;
+            background: #dc3545;
             color: white;
             width: 40px;
             height: 40px;
@@ -67,25 +67,25 @@
 <body>
     <div class="container">
         <div class="header-section text-center">
-            <h1 class="display-4 mb-3"><i class="bi bi-globe2"></i> NGINX Lab</h1>
-            <p class="lead">Deploy NGINX with Object Storage and Logging Integration</p>
+            <h1 class="display-4 mb-3"><i class="bi bi-cpu"></i> 26ai ORDS Lab</h1>
+            <p class="lead">Deploy Oracle Database with ORDS and SQL CLI</p>
         </div>
 
         <div class="row">
             <div class="col-lg-10 mx-auto">
                 <!-- Introduction -->
                 <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header bg-danger text-white">
                         <h5 class="mb-0"><i class="bi bi-info-circle"></i> Lab Overview</h5>
                     </div>
                     <div class="card-body">
-                        <p>This lab demonstrates how to deploy an NGINX web server using OCI Container Instances with Object Storage integration for content delivery and centralized logging. You'll learn how to:</p>
+                        <p>This lab demonstrates how to deploy Oracle Database with Oracle REST Data Services (ORDS) using OCI Container Instances. This lab is based on the blog by Anders Swanson at <a href="https://andersswanson.dev/2025/12/12/oracle-rest-data-services-ords-with-docker-compose/" target="_blank" class="text-decoration-none">https://andersswanson.dev/2025/12/12/oracle-rest-data-services-ords-with-docker-compose/</a> with small modifications.</p>
+                        <p>You'll learn how to:</p>
                         <ul>
-                            <li>Configure OCI resources (VCN, Object Storage, Logging)</li>
-                            <li>Set up a container instance with NGINX</li>
-                            <li>Integrate Object Storage for web content</li>
-                            <li>Configure centralized logging</li>
-                            <li>Access your deployed application</li>
+                            <li>Configure OCI resources (VCN, Object Storage)</li>
+                            <li>Set up Oracle Database with ORDS</li>
+                            <li>Use SQL CLI for database initialization</li>
+                            <li>Integrate Object Storage for SQL scripts</li>
                         </ul>
                     </div>
                 </div>
@@ -113,34 +113,34 @@
                     </div>
                     <div class="card-body">
                         <h6 class="mt-3 mb-3">Create VCN with Public Subnet</h6>
-                        <p>Create a Virtual Cloud Network (VCN) with a public subnet using Cloud UI and configure security rules to allow traffic to port 80.</p>
+                        <p>Create a Virtual Cloud Network (VCN) with a public subnet using Cloud UI and configure security rules to allow traffic to port 8080.</p>
                         <div class="code-block">
                             <strong>Action:</strong> Create VCN with Public Subnet using Cloud UI<br>
-                            <strong>Security Rule:</strong> Allow inbound traffic to port 80 from tenancy
+                            <strong>Security Rule:</strong> Allow inbound traffic to port 8080 from tenancy
                         </div>
 
                         <h6 class="mt-4 mb-3">Create Object Storage Bucket</h6>
-                        <p>Create an OCI Object Storage bucket named <code>www-data</code>.</p>
+                        <p>Create an OCI Object Storage bucket named <code>oracledb</code>.</p>
                         <div class="code-block">
-                            <strong>Bucket Name:</strong> www-data
+                            <strong>Bucket Name:</strong> oracledb
                         </div>
 
-                        <h6 class="mt-4 mb-3">Add HTML Content to Bucket</h6>
-                        <p>Upload an HTML page named <code>index.html</code> to the <code>www-data</code> bucket with some sample content.</p>
+                        <h6 class="mt-4 mb-3">Add SQL Initialization File to Bucket</h6>
+                        <p>Upload a file named <code>ords_sql.init</code> to the <code>oracledb</code> bucket with the following content:</p>
                         <div class="code-block">
-                            <strong>Object Name:</strong> index.html<br>
-                            <strong>Bucket:</strong> www-data<br>
-                            <strong>Content:</strong> Any HTML content (e.g., "Hello from Object Storage!")
-                        </div>
+                            <strong>Object Name:</strong> ords_sql.init<br>
+                            <strong>Bucket:</strong> oracledb<br>
+                            <strong>Content:</strong><br>
+                            <pre>-- Set as appropriate for your database.
+alter session set container = freepdb1;
 
-                        <h6 class="mt-4 mb-3">Create OCI Log</h6>
-                        <p>Create an OCI log in the default Log Group for storing NGINX access logs.</p>
-                        <div class="code-block">
-                            <strong>Location:</strong> Default Log Group<br>
-                            <strong>Purpose:</strong> Store NGINX access logs
+create user testuser identified by testpwd;
+grant create session to testuser;
+grant unlimited tablespace to testuser;
+grant connect, resource to testuser;</pre>
                         </div>
-                        <div class="warning-box">
-                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the Log OCID (e.g., <code>ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa</code>) as you'll need it in Step 3.
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> This SQL script is based on <a href="https://github.com/anders-swanson/oracle-database-code-samples/blob/main/ords-docker-compose/oracle/ords_init.sql" target="_blank" class="text-decoration-none">https://github.com/anders-swanson/oracle-database-code-samples/blob/main/ords-docker-compose/oracle/ords_init.sql</a>
                         </div>
                     </div>
                 </div>
@@ -156,16 +156,13 @@
                     <div class="card-body">
                         <ol>
                             <li class="mb-3">
-                                <strong>Set CI Name:</strong> <code>nginx</code>
+                                <strong>Set CI Name:</strong> <code>ords</code>
                             </li>
                             <li class="mb-3">
                                 <strong>Set Compartment:</strong> Select your configured compartment
                             </li>
                             <li class="mb-3">
                                 <strong>Select Subnet:</strong> Choose the public subnet created in Step 1
-                            </li>
-                            <li class="mb-3">
-                                <strong>Select Default Log Group:</strong> Choose your default Log Group
                             </li>
                         </ol>
                     </div>
@@ -195,12 +192,12 @@
                     </div>
                 </div>
 
-                <!-- Step 4: Add Container -->
+                <!-- Step 4: Add Oracle Database Container -->
                 <div class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-primary text-white">
                         <h5 class="mb-0">
                             <span class="step-number">4</span>
-                            Add NGINX Container
+                            Add Oracle Database Container
                         </h5>
                     </div>
                     <div class="card-body">
@@ -211,9 +208,10 @@
                             <li class="mb-3">
                                 Configure the container:
                                 <div class="code-block mt-2">
-                                    <strong>Name:</strong> nginx<br>
-                                    <strong>Image:</strong> nginx:latest<br>
-                                    <strong>Port:</strong> 80 (name "http" optional)
+                                    <strong>Name:</strong> oracledb<br>
+                                    <strong>Image:</strong> gvenzl/oracle-free:23.26.0-slim-faststart<br>
+                                    <strong>Environment Variables:</strong><br>
+                                    ORACLE_PASSWORD=Welcome12345
                                 </div>
                             </li>
                             <li class="mb-3">
@@ -223,11 +221,42 @@
                     </div>
                 </div>
 
-                <!-- Step 5: Add OsReader Sidecar -->
+                <!-- Step 5: Add ORDS Container -->
                 <div class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-info text-white">
                         <h5 class="mb-0">
                             <span class="step-number">5</span>
+                            Add ORDS Container
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> ords<br>
+                                    <strong>Image:</strong> container-registry.oracle.com/database/ords:25.4.0<br>
+                                    <strong>Port:</strong> 8080 (name "http" optional)<br>
+                                    <strong>Environment Variables:</strong><br>
+                                    CONN_STRING=jdbc:oracle:thin:@127.0.0.1:1521/freepdb1<br>
+                                    ORACLE_PWD=Welcome12345
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 6: Add OsReader Sidecar -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">6</span>
                             Add OsReader Sidecar
                         </h5>
                     </div>
@@ -237,12 +266,14 @@
                                 Click <strong>"Add Sidecar"</strong> and select <strong>OsReader</strong>
                             </li>
                             <li class="mb-3">
-                                Configure the OsReader sidecar by editing it:
+                                Click to edit the OsReader sidecar
+                            </li>
+                            <li class="mb-3">
+                                Set environment variables:
                                 <div class="code-block mt-2">
-                                    <strong>Environment Variables:</strong><br>
-                                    data_path=/usr/share/nginx/html<br>
-                                    os_bucket=www-data<br>
-                                    reload_delay=30000
+                                    data_path=/container-entrypoint-initdb.d<br>
+                                    os_bucket=oracledb<br>
+                                    reload_delay=0
                                 </div>
                             </li>
                             <li class="mb-3">
@@ -250,70 +281,54 @@
                             </li>
                         </ol>
                         <div class="highlight-box">
-                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The OsReader sidecar will retrieve content from the Object Storage bucket and make it available to NGINX.
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The OsReader sidecar will retrieve the SQL initialization script from Object Storage and make it available to the Oracle Database container.
                         </div>
                     </div>
                 </div>
 
-                <!-- Step 6: Add LogWriter Sidecar -->
-                <div class="card mb-4 shadow-sm step-card">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0">
-                            <span class="step-number">6</span>
-                            Add LogWriter Sidecar
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <ol>
-                            <li class="mb-3">
-                                Click <strong>"Add Sidecar"</strong> and select <strong>LogWriter</strong>
-                            </li>
-                            <li class="mb-3">
-                                Configure the LogWriter sidecar by editing it:
-                                <div class="code-block mt-2">
-                                    <strong>Environment Variables:</strong><br>
-                                    log_file=/var/log/nginx/access.log<br>
-                                    log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa<br>
-                                    log_header=nginx-access-log
-                                </div>
-                                <div class="warning-box mt-2">
-                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>log_ocid</code> with the actual OCID of the log created in Step 1.
-                                </div>
-                            </li>
-                            <li class="mb-3">
-                                Click <strong>"Save"</strong>
-                            </li>
-                        </ol>
-                    </div>
-                </div>
-
-                <!-- Step 7: Add Volumes -->
+                <!-- Step 7: Add SQL CLI Container -->
                 <div class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-dark text-white">
                         <h5 class="mb-0">
                             <span class="step-number">7</span>
-                            Add Volumes
+                            Add SQL CLI Container
                         </h5>
                     </div>
                     <div class="card-body">
-                        <h6 class="mt-3 mb-3">Volume 1: Web Content</h6>
                         <ol>
                             <li class="mb-3">
-                                Click <strong>"Add Volume"</strong>
+                                Click <strong>"Add Container"</strong>
                             </li>
                             <li class="mb-3">
-                                Configure:
+                                Configure the container:
                                 <div class="code-block mt-2">
-                                    <strong>Path:</strong> /usr/share/nginx/html<br>
-                                    <strong>Name:</strong> www-data (optional)
+                                    <strong>Name:</strong> sqlcli<br>
+                                    <strong>Image:</strong> container-registry.oracle.com/database/sqlcl:latest<br>
+                                    <strong>Command:</strong> (Important! - not env vars here)<br>
+                                    bash<br>
+                                    -c<br>
+                                    sleep 45 && echo 'EXECUTE ORDS.ENABLE_SCHEMA; COMMIT;' | sql -s testuser/testpwd@127.0.0.1:1521/freepdb1
                                 </div>
                             </li>
                             <li class="mb-3">
                                 Click <strong>"Save"</strong>
                             </li>
                         </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> The command must be entered as separate lines (bash, -c, and the full command) in the Command field, not as environment variables.
+                        </div>
+                    </div>
+                </div>
 
-                        <h6 class="mt-4 mb-3">Volume 2: Logs</h6>
+                <!-- Step 8: Add Volume -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">8</span>
+                            Add Volume
+                        </h5>
+                    </div>
+                    <div class="card-body">
                         <ol>
                             <li class="mb-3">
                                 Click <strong>"Add Volume"</strong>
@@ -321,8 +336,8 @@
                             <li class="mb-3">
                                 Configure:
                                 <div class="code-block mt-2">
-                                    <strong>Path:</strong> /var/log/nginx<br>
-                                    <strong>Name:</strong> logs (optional)
+                                    <strong>Path:</strong> /container-entrypoint-initdb.d<br>
+                                    <strong>Name:</strong> oracledb (optional)
                                 </div>
                             </li>
                             <li class="mb-3">
@@ -332,11 +347,11 @@
                     </div>
                 </div>
 
-                <!-- Step 8: Deploy -->
+                <!-- Step 9: Deploy -->
                 <div class="card mb-4 shadow-sm step-card">
-                    <div class="card-header bg-success text-white">
+                    <div class="card-header bg-primary text-white">
                         <h5 class="mb-0">
-                            <span class="step-number">8</span>
+                            <span class="step-number">9</span>
                             Deploy Container Instance
                         </h5>
                     </div>
@@ -352,71 +367,59 @@
                                 Click the <strong>"Create"</strong> button
                             </li>
                             <li class="mb-3">
-                                Wait for the Container Instance deployment <strong>"nginx 1"</strong> to become green (running)
+                                Wait for the Container Instance deployment <strong>"ords 1"</strong> to become green (running)
                             </li>
                         </ol>
                         <div class="mt-4">
-                            <h6>Screenshot: Container Instances Table</h6>
-                            <img src="/images/nginx-container-instances.png" alt="Container Instances table showing nginx deployment with nginx:80, OsReader, and LogWriter containers" class="img-fluid border rounded shadow-sm mb-3">
-                            <p class="text-muted small">The Container Instances table showing the deployed nginx instance with containers and port mapping.</p>
+                            <h6>Screenshot: Container Instance Summary</h6>
+                            <img src="/images/ords-ci-summary.png" alt="Container Instance summary showing ords deployment configuration" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instance summary showing the ords deployment configuration before creation.</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Step 9: Verify Deployment -->
+                <!-- Step 10: Verify Deployment -->
                 <div class="card mb-4 shadow-sm step-card">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header bg-success text-white">
                         <h5 class="mb-0">
-                            <span class="step-number">9</span>
+                            <span class="step-number">10</span>
                             Verify Deployment
                         </h5>
                     </div>
                     <div class="card-body">
-                        <h6 class="mt-3 mb-3">Access the Web Application</h6>
                         <ol>
                             <li class="mb-3">
-                                In the Container Instances table, click the <strong>"nginx:80"</strong> link
+                                Wait a minute or two for the deployment setup to complete
                             </li>
                             <li class="mb-3">
-                                A new window should open displaying the web page stored in the Object Storage bucket <code>www-data</code> (index.html) served by the NGINX container
-                            </li>
-                        </ol>
-
-                        <h6 class="mt-4 mb-3">View Container Instance Details</h6>
-                        <ol>
-                            <li class="mb-3">
-                                Click the <strong>"nginx 1"</strong> container from the table to open the Container Instance Details modal
-                            </li>
-                        </ol>
-                        <div class="mt-4 mb-4">
-                            <h6>Screenshot: Container Instance Details</h6>
-                            <img src="/images/nginx-instance-details.png" alt="Container Instance Details modal showing nginx 1 with containers, volumes, and network information" class="img-fluid border rounded shadow-sm mb-3">
-                            <p class="text-muted small">The Container Instance Details modal showing the nginx instance configuration, containers (nginx, OsReader, LogWriter), volumes (logs, www-data), and network information.</p>
-                        </div>
-
-                        <h6 class="mt-4 mb-3">View Logs</h6>
-                        <ol>
-                            <li class="mb-3">
-                                Click the <strong>"Logs"</strong> button next to the LogWriter container
+                                In the Container Instances table, click the <strong>"ords:8080"</strong> link
                             </li>
                             <li class="mb-3">
-                                Select <strong>"Logs: LogWriter"</strong> to see the NGINX access logs
-                            </li>
-                            <li class="mb-3">
-                                You should see log entries similar to:
+                                Test ORDS by logging in with:
                                 <div class="code-block mt-2">
-                                    91.155.180.147 - - [30/Dec/2025:10:23:04 +0000] "GET / HTTP/1.1" 200 146 "http://localhost:3000/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" "-"
+                                    <strong>Username:</strong> testuser<br>
+                                    <strong>Password:</strong> testpwd
                                 </div>
                             </li>
                         </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Container Instances Table</h6>
+                            <img src="/images/ords-container-instances.png" alt="Container Instances table showing ords deployment" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instances table showing the deployed ords instance with containers.</p>
+                        </div>
+                        <div class="mt-4">
+                            <h6>Screenshot: ORDS Login</h6>
+                            <img src="/images/ords-login.png" alt="ORDS login page" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The ORDS login page where you can test the deployment with testuser/testpwd credentials.</p>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Step 10: Cleanup -->
+                <!-- Step 11: Cleanup -->
                 <div class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-danger text-white">
                         <h5 class="mb-0">
-                            <span class="step-number">10</span>
+                            <span class="step-number">11</span>
                             Cleanup
                         </h5>
                     </div>
@@ -429,11 +432,11 @@
                                 Wait for the deletion to complete
                             </li>
                             <li class="mb-3">
-                                Delete VCN/subnet with access allowed to port 80 from tenancy using Cloud UI
+                                Delete VCN/subnet with access allowed to port 8080 from tenancy using Cloud UI
                             </li>
                         </ol>
                         <div class="warning-box">
-                            <strong><i class="bi bi-exclamation-triangle"></i> Note:</strong> Remember to clean up other OCI resources (Object Storage bucket, Log) if they are no longer needed.
+                            <strong><i class="bi bi-exclamation-triangle"></i> Note:</strong> Remember to clean up other OCI resources (Object Storage bucket) if they are no longer needed.
                         </div>
                     </div>
                 </div>
