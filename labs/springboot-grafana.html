@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spring Boot Grafana Lab - CI Compose Labs</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .header-section {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 3rem;
+            border-radius: 0.5rem;
+        }
+        .step-card {
+            margin-bottom: 2rem;
+            border-left: 4px solid #28a745;
+        }
+        .step-number {
+            background: #28a745;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .highlight-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section text-center">
+            <h1 class="display-4 mb-3"><i class="bi bi-graph-up"></i> Spring Boot with Grafana Lab</h1>
+            <p class="lead">Deploy Java Spring Boot Application with Prometheus and Grafana Monitoring</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <!-- Introduction -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Lab Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>This lab is based on the example at <a href="https://github.com/mikarinneoracle/ci-grafana-prometheus" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/ci-grafana-prometheus</a> with small modifications.</p>
+                        <p>This lab demonstrates how to deploy a Java Spring Boot application with comprehensive monitoring using Prometheus and Grafana. You'll learn how to:</p>
+                        <ul>
+                            <li>Configure OCI resources (VCN, Logging)</li>
+                            <li>Set up a container instance with Spring Boot, Prometheus, and Grafana</li>
+                            <li>Integrate Node Exporter for system metrics</li>
+                            <li>Configure centralized logging</li>
+                            <li>Access monitoring dashboards</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Prerequisites -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Prerequisites</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="mb-0">
+                            <li>Have OCI CLI configured</li>
+                            <li>Have a compartment configured in your tenancy</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Step 1: OCI Setup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">1</span>
+                            OCI Infrastructure Setup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Create VCN with Public Subnet</h6>
+                        <p>Create a Virtual Cloud Network (VCN) with a public subnet using Cloud UI and configure security rules to allow traffic to ports 8080 and 3000.</p>
+                        <div class="code-block">
+                            <strong>Action:</strong> Create VCN with Public Subnet using Cloud UI<br>
+                            <strong>Security Rules:</strong><br>
+                            - Allow inbound traffic to port 8080 from tenancy (for Spring Boot app)<br>
+                            - Allow inbound traffic to port 3000 from tenancy (for Grafana)
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create OCI Log</h6>
+                        <p>Create an OCI log in the default Log Group for storing application logs.</p>
+                        <div class="code-block">
+                            <strong>Location:</strong> Default Log Group<br>
+                            <strong>Purpose:</strong> Store Spring Boot application logs
+                        </div>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the Log OCID (e.g., <code>ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa</code>) as you'll need it in a later step.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Prepare and Build Custom Containers -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">2</span>
+                            Prepare and Build Custom Containers
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Fork the Repository</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Fork the repository <a href="https://github.com/mikarinneoracle/ci-grafana-prometheus" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/ci-grafana-prometheus</a> to your GitHub account
+                            </li>
+                            <li class="mb-3">
+                                Clone your forked repository to your local machine (optional, if you need to make changes)
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Setup GitHub Actions Secrets</h6>
+                        <p>Configure the following secrets in your GitHub repository for the CI/CD pipeline:</p>
+                        <ol>
+                            <li class="mb-3">
+                                Go to your forked repository on GitHub
+                            </li>
+                            <li class="mb-3">
+                                Navigate to <strong>Settings</strong> → <strong>Secrets and variables</strong> → <strong>Actions</strong>
+                            </li>
+                            <li class="mb-3">
+                                Add the following secrets:
+                                <div class="code-block mt-2">
+                                    <strong>DOCKER_USERNAME</strong> - Your OCI registry username<br>
+                                    <strong>AUTH_TOKEN</strong> - OCI authentication token for registry access<br>
+                                    <strong>TENANCY_NAMESPACE</strong> - Your OCI tenancy namespace
+                                </div>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The GitHub Actions pipeline uses the <code>FRA</code> region for OCIR by default (registry: <code>fra.ocir.io</code>). If you're using a different region, you may need to modify the workflow file.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Build and Push Containers</h6>
+                        <ol>
+                            <li class="mb-3">
+                                The repository includes a GitHub Actions workflow file (<code>.github/workflows/containers.yml</code>) that builds and pushes the Spring Boot application container
+                            </li>
+                            <li class="mb-3">
+                                Push a commit to your repository or manually trigger the workflow to start the build process
+                            </li>
+                            <li class="mb-3">
+                                Monitor the workflow execution in the <strong>Actions</strong> tab of your GitHub repository
+                            </li>
+                            <li class="mb-3">
+                                Once the workflow completes successfully, the Spring Boot container image will be available in your OCI Container Registry (OCIR)
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the full image path from OCIR (e.g., <code>fra.ocir.io/&lt;tenancy-namespace&gt;/&lt;image-name&gt;:&lt;tag&gt;</code>) as you'll need it when adding the Spring Boot container in a later step.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Create Object Storage Bucket with Configurations -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">3</span>
+                            Create Object Storage Bucket with Configurations
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Create Object Storage Bucket</h6>
+                        <p>Create an OCI Object Storage bucket named <code>prometheus-grafana</code> to store Prometheus and Grafana configuration files.</p>
+                        <div class="code-block">
+                            <strong>Bucket Name:</strong> prometheus-grafana<br>
+                            <strong>Purpose:</strong> Store Prometheus and Grafana configuration files
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create Directory Structure</h6>
+                        <p>Create the following directory structure in your Object Storage bucket:</p>
+                        <div class="code-block">
+                            ├── grafana/<br>
+                            │   └── provisioning/<br>
+                            │       ├── dashboards/<br>
+                            │       └── datasources/<br>
+                            └── prometheus/
+                        </div>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> You can create these directories using the OCI Console or OCI CLI. In the OCI Console, navigate to Object Storage → Buckets → Your Bucket, and create folders as needed.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Upload Configuration Files</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Navigate to the <code>object-storage</code> directory in your forked repository: <a href="https://github.com/mikarinneoracle/ci-grafana-prometheus/tree/main/object-storage" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/ci-grafana-prometheus/tree/main/object-storage</a>
+                            </li>
+                            <li class="mb-3">
+                                Upload the configuration files to the corresponding directories in your Object Storage bucket:
+                                <ul class="mt-2">
+                                    <li>Upload files from <code>grafana/provisioning/dashboards/</code> to <code>grafana/provisioning/dashboards/</code> in the bucket</li>
+                                    <li>Upload files from <code>grafana/provisioning/datasources/</code> to <code>grafana/provisioning/datasources/</code> in the bucket</li>
+                                    <li>Upload files from <code>prometheus/</code> to <code>prometheus/</code> in the bucket</li>
+                                </ul>
+                            </li>
+                            <li class="mb-3">
+                                Ensure all configuration files are uploaded maintaining the directory structure
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Remember to change the <code>username</code> and <code>password</code> in <code>grafana.ini</code> before uploading to ensure secure access to Grafana.
+                        </div>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The OsReader sidecar will pull these configurations from Object Storage at 30-second intervals and make them available to the Prometheus and Grafana containers via a shared volume.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Configure CI Compose -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">4</span>
+                            Configure CI Compose
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                <strong>Set CI Name:</strong> <code>springboot</code>
+                            </li>
+                            <li class="mb-3">
+                                <strong>Set Compartment:</strong> Select your configured compartment
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Subnet:</strong> Choose the public subnet created in Step 1
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Default Log Group:</strong> Choose your default Log Group
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 5: Create Container Instance -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <span class="step-number">5</span>
+                            Create Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"+ Create"</strong> on the Container Instances table header
+                            </li>
+                            <li class="mb-3">
+                                Configure Instance Resources:
+                                <ul class="mt-2">
+                                    <li><strong>Memory:</strong> 32 GB</li>
+                                    <li><strong>OCPUs:</strong> 2</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 6: Add Containers -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">6</span>
+                            Add Containers
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Add Java Spring Boot Container</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> java-springboot<br>
+                                    <strong>Image:</strong> fra.ocir.io/&lt;tenancy-namespace&gt;/prometheusjavademo:1.0.0<br>
+                                    <strong>Port:</strong> 8080 (name "http" optional)
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>&lt;tenancy-namespace&gt;</code> with your actual OCI tenancy namespace.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Add Node Exporter Container</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> node-exporter<br>
+                                    <strong>Image:</strong> quay.io/prometheus/node-exporter:latest
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Add Prometheus Container</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> prometheus<br>
+                                    <strong>Image:</strong> prom/prometheus:main<br>
+                                    <strong>Args:</strong><br>
+                                    --config.file=/etc/prometheus/prometheus.yml, --enable-feature=auto-reload-config, --config.auto-reload-interval=60s<br>
+                                    <strong>Cmd:</strong><br>
+                                    /bin/sh, -c, while [ ! -f /etc/prometheus/prometheus.yml ]; do echo "Waiting for config file..."; sleep 2; done; /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Args and Cmd must be entered in the Args and Cmd fields, not as environment variables.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Add Grafana Container</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> grafana<br>
+                                    <strong>Image:</strong> grafana/grafana:latest<br>
+                                    <strong>Port:</strong> 3000 (name "grafana" optional)<br>
+                                    <strong>Cmd:</strong><br>
+                                    /bin/sh, -c, while [ ! -f /etc/grafana/grafana.ini ]; do echo "Waiting for config file..."; sleep 2; done; /usr/share/grafana/bin/grafana server --config /etc/grafana/grafana.ini
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Cmd must be entered in the Cmd field, not as environment variables.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 7: Add Sidecars -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">7</span>
+                            Add Sidecars
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Add OsReader Sidecar</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>OsReader</strong>
+                            </li>
+                            <li class="mb-3">
+                                Click to edit the OsReader sidecar and configure:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    data_path=/etc<br>
+                                    os_bucket=prometheus-grafana<br>
+                                    reload_delay=30
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The OsReader sidecar will pull configuration files from Object Storage at 30-second intervals and make them available to Prometheus and Grafana containers.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Add LogWriter Sidecar</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>LogWriter</strong>
+                            </li>
+                            <li class="mb-3">
+                                Click to edit the LogWriter sidecar and configure:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    log_file=/var/log/app.log<br>
+                                    log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa<br>
+                                    log_header=java-springboot-log
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>log_ocid</code> with the actual OCID of the log created in Step 1.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 8: Add Volumes -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">8</span>
+                            Add Volumes
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Volume 1: Prometheus and Grafana Configuration</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /etc<br>
+                                    <strong>Name:</strong> prometheus-grafana (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Volume 2: Application Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /var/log<br>
+                                    <strong>Name:</strong> logs (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 9: Deploy Container Instance -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">9</span>
+                            Deploy Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Next"</strong> button to review the summary
+                            </li>
+                            <li class="mb-3">
+                                Review the configuration summary
+                            </li>
+                            <li class="mb-3">
+                                Click the <strong>"Create"</strong> button
+                            </li>
+                            <li class="mb-3">
+                                Wait for the Container Instance deployment <strong>"springboot 1"</strong> to become green (running)
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 10: Verify Deployment -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">10</span>
+                            Verify Deployment
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Access the Spring Boot Application</h6>
+                        <ol>
+                            <li class="mb-3">
+                                In the Container Instances table, click the <strong>"java-springboot:8080"</strong> link
+                            </li>
+                            <li class="mb-3">
+                                A new window should open displaying the sample Java Spring Boot application
+                            </li>
+                            <li class="mb-3">
+                                Reload the page a few times to generate some activity
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Container Instances Table</h6>
+                            <img src="/images/java-springboot-container-instances.png" alt="Container Instances table showing springboot deployment with java-springboot:8080, grafana:3000, and other containers" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instances table showing the deployed springboot instance with containers and port mappings.</p>
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Access Grafana</h6>
+                        <ol>
+                            <li class="mb-3">
+                                In the Container Instances table, click the <strong>"grafana:3000"</strong> link
+                            </li>
+                            <li class="mb-3">
+                                A new window should open displaying the Grafana login page
+                            </li>
+                            <li class="mb-3">
+                                Login with the Grafana credentials set earlier in <code>grafana.ini</code> (Grafana default is <code>admin</code>/<code>admin</code>)
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Grafana Login</h6>
+                            <img src="/images/java-springboot-grafana-login.png" alt="Grafana login page" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">Grafana login page for accessing the monitoring dashboard.</p>
+                        </div>
+                        <ol start="4">
+                            <li class="mb-3">
+                                Select the default dashboard to see monitoring graphs
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Grafana Dashboard</h6>
+                            <img src="/images/java-springboot-grafana-dashboard.png" alt="Grafana dashboard showing monitoring graphs for Spring Boot application" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">Grafana dashboard displaying monitoring metrics for the Spring Boot application.</p>
+                        </div>
+
+                        <h6 class="mt-4 mb-3">View Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Logs"</strong> button next to the LogWriter container
+                            </li>
+                            <li class="mb-3">
+                                Select <strong>"Logs: LogWriter"</strong> to see the Java Spring Boot application logs
+                            </li>
+                            <li class="mb-3">
+                                You should see log entries from the Spring Boot application
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Application Logs</h6>
+                            <img src="/images/java-springboot-logs.png" alt="Java Spring Boot application logs from LogWriter" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">Application logs showing Spring Boot application activity.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 11: Cleanup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">11</span>
+                            Cleanup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Delete"</strong> button to delete the Container Instance deployment
+                            </li>
+                            <li class="mb-3">
+                                Wait for the deletion to complete
+                            </li>
+                            <li class="mb-3">
+                                Delete VCN/subnet with access allowed to ports 8080 and 3000 from tenancy using Cloud UI
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Note:</strong> Remember to clean up other OCI resources (Object Storage bucket, Log) if they are no longer needed.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <div class="text-center mt-4 mb-4">
+                    <a href="/labs.html" class="btn btn-outline-primary me-2">
+                        <i class="bi bi-arrow-left"></i> Back to Labs
+                    </a>
+                    <a href="/" class="btn btn-outline-secondary">
+                        <i class="bi bi-house"></i> Back to Main Application
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

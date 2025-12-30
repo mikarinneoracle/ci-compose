@@ -1325,6 +1325,10 @@ app.get('/26ai-ords.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'labs', '26ai-ords.html'));
 });
 
+app.get('/springboot-grafana.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'labs', 'springboot-grafana.html'));
+});
+
 // Serve labs images
 app.use('/images', express.static(path.join(__dirname, 'labs', 'images')));
 
