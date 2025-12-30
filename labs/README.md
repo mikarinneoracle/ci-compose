@@ -24,6 +24,7 @@ A database-driven application stack with Oracle REST Data Services and Object St
 **Components:**
 - **26ai Database** - Database system
 - **ORDS** - Oracle REST Data Services
+- **SQLcli** - Executes SQL scripts for final setup
 - **Object Storage Sidecar** - SQL retrieval for database configuration
 
 **Technologies:** Database, ORDS, Object Storage
