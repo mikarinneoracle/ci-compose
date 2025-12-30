@@ -54,7 +54,7 @@ A secure RESTful API built with Node.js, featuring API documentation, PostgreSQL
 **Components:**
 - **NodeJS Swagger API** - RESTful API with OpenAPI documentation
 - **PostgreSQL** - Relational database, OCI managed
-- **Vault Sidecar** - Secrets management and secure storage for PostgreSQL connection string
+- **Vault Sidecar** - Secure storage retrieval for PostgreSQL connection string
 - **Logs Sidecar** - API and application logging
 
 **Technologies:** Node.js, PostgreSQL, Vault, API
