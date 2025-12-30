@@ -2,18 +2,17 @@
 
 Experimental features and advanced container instance configurations
 
+## Getting Started
+
+To access CI Compose Labs:
+
+1. **Install CI Compose** - Follow the installation instructions in the [main README](../README.md#getting-started)
+2. **Start the application** - Run `npm run dev` or `npm run prod` as described in the [Installation section](../README.md#installation)
+3. **Access Labs** - Once the application is running, click on **"Labs"** in the navigation menu at the top of the page
+
+The Labs page provides access to experimental container instance configurations and step-by-step lab guides.
+
 ## Lab Configurations
-
-### [NGINX with Object Storage and Logs](../nginx.html)
-
-A high-performance web server configuration with Object Storage integration and centralized logging capabilities.
-
-**Components:**
-- **NGINX** - Web server and reverse proxy
-- **Object Storage Sidecar** - Site content retrieval
-- **Logs Sidecar** - Centralized log collection and monitoring
-
-**Technologies:** Web Server, Object Storage, Logging
 
 ---
 
