@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NodeJS PostgreSQL Vault Lab - CI Compose Labs</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .header-section {
+            background: linear-gradient(135deg, #f0ad4e 0%, #f39c12 100%);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 3rem;
+            border-radius: 0.5rem;
+        }
+        .step-card {
+            margin-bottom: 2rem;
+            border-left: 4px solid #f0ad4e;
+        }
+        .step-number {
+            background: #f0ad4e;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+        .highlight-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #0d6efd;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        .warning-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0.25rem;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-section text-center">
+            <h1 class="display-4 mb-3"><i class="bi bi-code-slash"></i> NodeJS with PostgreSQL and Vault Lab</h1>
+            <p class="lead">Deploy NodeJS Swagger API with OCI PostgreSQL and Vault Secrets Management</p>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <!-- Introduction -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Lab Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>This lab is based on the example at <a href="https://github.com/mikarinneoracle/cars-api-pg-prometheus" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/cars-api-pg-prometheus</a> with small modifications.</p>
+                        <p>This lab demonstrates how to deploy a NodeJS Swagger API application using OCI Container Instances with OCI PostgreSQL database and Vault for secrets management. You'll learn how to:</p>
+                        <ul>
+                            <li>Configure OCI resources (VCN, PostgreSQL, Vault, Logging)</li>
+                            <li>Set up a PostgreSQL database instance</li>
+                            <li>Configure Vault for secure secret storage</li>
+                            <li>Deploy a NodeJS application with Vault integration</li>
+                            <li>Access and test the Swagger API</li>
+                            <li>This lab does not contain the Prometheus-Grafana part but that can be added later on top (see the separate lab for Prometheus-Grafana)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Prerequisites -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Prerequisites</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="mb-0">
+                            <li>Have OCI CLI configured</li>
+                            <li>Have a compartment configured in your tenancy</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Step 1: OCI Infrastructure Setup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">1</span>
+                            OCI Infrastructure Setup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Create VCN with Public and Private Subnets</h6>
+                        <p>Create a Virtual Cloud Network (VCN) with both public and private subnets using Cloud UI and configure security rules:</p>
+                        <div class="code-block">
+                            <strong>Action:</strong> Create VCN with Public and Private Subnets using Cloud UI<br>
+                            <strong>Security Rules:</strong><br>
+                            - Allow inbound traffic to port 3000 from tenancy (for NodeJS application)<br>
+                            - Allow inbound traffic from public subnet to private port 5432 (for PostgreSQL access)
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create OCI PostgreSQL Instance</h6>
+                        <p>Create an OCI PostgreSQL PaaS instance in the private subnet.</p>
+                        <div class="code-block">
+                            <strong>Location:</strong> Private Subnet<br>
+                            <strong>Purpose:</strong> Database for NodeJS application<br>
+                            <strong>Credentials:</strong> Note the admin username and password (e.g., <code>pgadmin</code>/<code>WelcomeFolks123!</code>)
+                        </div>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the PostgreSQL instance IP address in the private subnet (e.g., <code>10.0.1.95</code>) as you'll need it for database setup and Vault configuration.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create VM Jump Host</h6>
+                        <p>Create a VM instance in the public subnet to access the PostgreSQL database for setup.</p>
+                        <div class="code-block">
+                            <strong>Location:</strong> Public Subnet<br>
+                            <strong>Purpose:</strong> Access PostgreSQL database for initial setup
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Setup PostgreSQL Database</h6>
+                        <p>On the VM jump host, install the psql utility and set up the database:</p>
+                        <ol>
+                            <li class="mb-3">
+                                Install psql utility on the VM
+                            </li>
+                            <li class="mb-3">
+                                Connect to PostgreSQL using:
+                                <div class="code-block mt-2">
+                                    psql postgresql://pgadmin:'WelcomeFolks123!'@10.0.1.95:5432/postgres
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>10.0.1.95</code> with the actual IP address of your PostgreSQL instance in the private subnet.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Create the cars table:
+                                <div class="code-block mt-2">
+                                    CREATE TABLE cars (<br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;id INTEGER PRIMARY KEY,<br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;name VARCHAR(255) NOT NULL,<br>
+                                    &nbsp;&nbsp;&nbsp;&nbsp;price REAL NOT NULL<br>
+                                    );
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Insert sample data:
+                                <div class="code-block mt-2">
+                                    insert into cars(id, name, price) values(1, 'Toyota', 20500);<br>
+                                    insert into cars(id, name, price) values(2, 'BMW', 47000);<br>
+                                    insert into cars(id, name, price) values(3, 'Volvo', 52100);<br>
+                                    insert into cars(id, name, price) values(4, 'Tesla', 63900);<br>
+                                    insert into cars(id, name, price) values(5, 'Renault', 39900);
+                                </div>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Create OCI Vault</h6>
+                        <p>Create an OCI Vault to store the PostgreSQL connection string as a secret.</p>
+                        <div class="code-block">
+                            <strong>Secret Value:</strong> postgresql://pgadmin:WelcomeFolks123!@10.0.1.95:5432/postgres<br>
+                            <strong>Purpose:</strong> Store PostgreSQL connection string securely
+                        </div>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>10.0.1.95</code> with the actual IP address of your PostgreSQL instance. Note the Secret OCID (e.g., <code>ocid1.vaultsecret.oc1.eu-frankfurt-1.amaaaaaa....hnono25nwq</code>) as you'll need it in a later step.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Create OCI Log</h6>
+                        <p>Create an OCI log in the default Log Group for storing application logs.</p>
+                        <div class="code-block">
+                            <strong>Location:</strong> Default Log Group<br>
+                            <strong>Purpose:</strong> Store NodeJS application logs
+                        </div>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the Log OCID (e.g., <code>ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa</code>) as you'll need it in a later step.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Prepare and Build Custom Container -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">2</span>
+                            Prepare and Build Custom Container
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Fork the Repository</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Fork the repository <a href="https://github.com/mikarinneoracle/cars-api-pg-prometheus" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/cars-api-pg-prometheus</a> to your GitHub account
+                            </li>
+                            <li class="mb-3">
+                                Clone your forked repository to your local machine (optional, if you need to make changes)
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Setup GitHub Actions Secrets</h6>
+                        <p>Configure the following secrets in your GitHub repository for the CI/CD pipeline:</p>
+                        <ol>
+                            <li class="mb-3">
+                                Go to your forked repository on GitHub
+                            </li>
+                            <li class="mb-3">
+                                Navigate to <strong>Settings</strong> → <strong>Secrets and variables</strong> → <strong>Actions</strong>
+                            </li>
+                            <li class="mb-3">
+                                Add the following secrets:
+                                <div class="code-block mt-2">
+                                    <strong>DOCKER_USERNAME</strong> - Your OCI registry username<br>
+                                    <strong>AUTH_TOKEN</strong> - OCI authentication token for registry access<br>
+                                    <strong>TENANCY_NAMESPACE</strong> - Your OCI tenancy namespace
+                                </div>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The GitHub Actions pipeline uses the <code>FRA</code> region for OCIR by default (registry: <code>fra.ocir.io</code>). If you're using a different region, you may need to modify the workflow file.
+                        </div>
+
+                        <h6 class="mt-4 mb-3">Build and Push Container</h6>
+                        <ol>
+                            <li class="mb-3">
+                                The repository includes a GitHub Actions workflow file that builds and pushes the NodeJS application container
+                            </li>
+                            <li class="mb-3">
+                                Push a commit to your repository or manually trigger the workflow to start the build process
+                            </li>
+                            <li class="mb-3">
+                                Monitor the workflow execution in the <strong>Actions</strong> tab of your GitHub repository
+                            </li>
+                            <li class="mb-3">
+                                Once the workflow completes successfully, the NodeJS container image will be available in your OCI Container Registry (OCIR)
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Note the full image path from OCIR (e.g., <code>fra.ocir.io/&lt;tenancy-namespace&gt;/cars-api-pg:1.0.0</code>) as you'll need it when adding the NodeJS container in a later step.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Configure CI Compose -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">3</span>
+                            Configure CI Compose
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                <strong>Set CI Name:</strong> <code>nodejs</code>
+                            </li>
+                            <li class="mb-3">
+                                <strong>Set Compartment:</strong> Select your configured compartment
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Subnet:</strong> Choose the public subnet created in Step 1
+                            </li>
+                            <li class="mb-3">
+                                <strong>Select Default Log Group:</strong> Choose your default Log Group
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 4: Create Container Instance -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <span class="step-number">4</span>
+                            Create Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"+ Create"</strong> on the Container Instances table header
+                            </li>
+                            <li class="mb-3">
+                                Configure Instance Resources:
+                                <ul class="mt-2">
+                                    <li><strong>Memory:</strong> 32 GB</li>
+                                    <li><strong>OCPUs:</strong> 2</li>
+                                </ul>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 5: Add Container -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">5</span>
+                            Add NodeJS Container
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Container"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure the container:
+                                <div class="code-block mt-2">
+                                    <strong>Name:</strong> nodejs<br>
+                                    <strong>Image:</strong> fra.ocir.io/&lt;tenancy-namespace&gt;/cars-api-pg:1.0.0<br>
+                                    <strong>Port:</strong> 3000 (name "http" optional)
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>&lt;tenancy-namespace&gt;</code> with your actual OCI tenancy namespace.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 6: Add VaultReader Sidecar -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">6</span>
+                            Add VaultReader Sidecar
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>VaultReader</strong>
+                            </li>
+                            <li class="mb-3">
+                                Click to edit the VaultReader sidecar and configure:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    secrets_file=/secrets/connection.txt<br>
+                                    secret_ocid=ocid1.vaultsecret.oc1.eu-frankfurt-1.amaaaaaa....hnono25nwq
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>secret_ocid</code> with the actual OCID of the secret created in Step 1.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The VaultReader sidecar will retrieve the PostgreSQL connection string from OCI Vault and make it available to the NodeJS application.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 7: Add LogWriter Sidecar -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">7</span>
+                            Add LogWriter Sidecar
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Sidecar"</strong> and select <strong>LogWriter</strong>
+                            </li>
+                            <li class="mb-3">
+                                Click to edit the LogWriter sidecar and configure:
+                                <div class="code-block mt-2">
+                                    <strong>Environment Variables:</strong><br>
+                                    log_file=/var/log/app.log<br>
+                                    log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa<br>
+                                    log_header=nodejs-swagger-log
+                                </div>
+                                <div class="warning-box mt-2">
+                                    <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>log_ocid</code> with the actual OCID of the log created in Step 1.
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 8: Add Volumes -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">8</span>
+                            Add Volumes
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Volume 1: Secrets</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /secrets<br>
+                                    <strong>Name:</strong> secrets (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">Volume 2: Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click <strong>"Add Volume"</strong>
+                            </li>
+                            <li class="mb-3">
+                                Configure:
+                                <div class="code-block mt-2">
+                                    <strong>Path:</strong> /var/log<br>
+                                    <strong>Name:</strong> logs (optional)
+                                </div>
+                            </li>
+                            <li class="mb-3">
+                                Click <strong>"Save"</strong>
+                            </li>
+                        </ol>
+                        <div class="highlight-box">
+                            <strong><i class="bi bi-lightbulb"></i> Note:</strong> The logs volume is shared with the LogWriter sidecar to enable centralized logging.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 9: Deploy -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">9</span>
+                            Deploy Container Instance
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Next"</strong> button to review the summary
+                            </li>
+                            <li class="mb-3">
+                                Review the configuration summary
+                            </li>
+                            <li class="mb-3">
+                                Click the <strong>"Create"</strong> button
+                            </li>
+                            <li class="mb-3">
+                                Wait for the Container Instance deployment <strong>"nodejs 1"</strong> to become green (running)
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Container Instance Summary</h6>
+                            <img src="/images/nodejs-ci-summary.png" alt="Container Instance summary showing nodejs configuration with containers, volumes, and network information" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instance summary showing the nodejs configuration before deployment.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 10: Verify Deployment -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">10</span>
+                            Verify Deployment
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="mt-3 mb-3">Access the NodeJS Application</h6>
+                        <ol>
+                            <li class="mb-3">
+                                In the Container Instances table, click the <strong>"nodejs:3000"</strong> link
+                            </li>
+                            <li class="mb-3">
+                                A new window should open displaying the NodeJS application
+                            </li>
+                            <li class="mb-3">
+                                Append <code>/docs</code> to the browser URL (e.g., <code>http://130.61.42.77:3000/docs</code>) and press Enter
+                            </li>
+                            <li class="mb-3">
+                                The Swagger documentation page should appear
+                            </li>
+                            <li class="mb-3">
+                                Search for "cars" in the Swagger UI to see the Cars APIs
+                            </li>
+                            <li class="mb-3">
+                                Test the Cars APIs using the Swagger interface
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Container Instances Table</h6>
+                            <img src="/images/nodejs-container-instances.png" alt="Container Instances table showing nodejs deployment with nodejs:3000, VaultReader, and LogWriter containers" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Container Instances table showing the deployed nodejs instance with containers and port mapping.</p>
+                        </div>
+                        <div class="mt-4">
+                            <h6>Screenshot: Swagger API Documentation</h6>
+                            <img src="/images/nodejs-swagger.png" alt="Swagger API documentation page showing Cars APIs" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">The Swagger API documentation page displaying the Cars APIs for testing.</p>
+                        </div>
+
+                        <h6 class="mt-4 mb-3">View Container Instance Details</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"nodejs 1"</strong> container from the table to open the Container Instance Details modal
+                            </li>
+                        </ol>
+
+                        <h6 class="mt-4 mb-3">View Logs</h6>
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Logs"</strong> button next to the LogWriter container
+                            </li>
+                            <li class="mb-3">
+                                Select <strong>"Logs: LogWriter"</strong> to see the NodeJS application logs
+                            </li>
+                            <li class="mb-3">
+                                You should see log entries from the NodeJS application
+                            </li>
+                        </ol>
+                        <div class="mt-4">
+                            <h6>Screenshot: Application Logs</h6>
+                            <img src="/images/nodejs-logs.png" alt="NodeJS application logs from LogWriter" class="img-fluid border rounded shadow-sm mb-3">
+                            <p class="text-muted small">Application logs showing NodeJS application activity.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 11: Cleanup -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <span class="step-number">11</span>
+                            Cleanup
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <ol>
+                            <li class="mb-3">
+                                Click the <strong>"Delete"</strong> button to delete the Container Instance deployment
+                            </li>
+                            <li class="mb-3">
+                                Wait for the deletion to complete
+                            </li>
+                            <li class="mb-3">
+                                Delete Vault with Secret using Cloud UI
+                            </li>
+                            <li class="mb-3">
+                                Delete PostgreSQL instance using Cloud UI
+                            </li>
+                            <li class="mb-3">
+                                Delete VCN/subnet with access allowed to ports 3000 and 5432 from tenancy using Cloud UI
+                            </li>
+                        </ol>
+                        <div class="warning-box">
+                            <strong><i class="bi bi-exclamation-triangle"></i> Note:</strong> Remember to clean up other OCI resources (VM jump host, Log) if they are no longer needed.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <div class="text-center mt-4 mb-4">
+                    <a href="/labs.html" class="btn btn-outline-primary me-2">
+                        <i class="bi bi-arrow-left"></i> Back to Labs
+                    </a>
+                    <a href="/" class="btn btn-outline-secondary">
+                        <i class="bi bi-house"></i> Back to Main Application
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

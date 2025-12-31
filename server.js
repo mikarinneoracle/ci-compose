@@ -1329,6 +1329,10 @@ app.get('/springboot-grafana.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'labs', 'springboot-grafana.html'));
 });
 
+app.get('/nodejs-postgresql-vault.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'labs', 'nodejs-postgresql-vault.html'));
+});
+
 // Serve labs images
 app.use('/images', express.static(path.join(__dirname, 'labs', 'images')));
 
