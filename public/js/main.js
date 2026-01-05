@@ -474,8 +474,9 @@ async function saveConfiguration() {
     // Always reload container instances table if we have valid config
     // Force refresh by clearing previous states and reloading
     if (config.compartmentId && config.projectName) {
-        previousInstanceStates.clear();
-        await loadContainerInstances();
+        // Show spinner when config has changed (CI name or compartment changed)
+        const showSpinner = ciNameChanged || compartmentChanged;
+        await loadContainerInstances(showSpinner);
     } else {
         // If config is invalid, show message
         document.getElementById('containerInstancesContent').innerHTML = 
@@ -1017,7 +1018,7 @@ function buildQueryString(additionalParams = {}) {
 }
 
 // Load and display container instances
-async function loadContainerInstances() {
+async function loadContainerInstances(showSpinner = false) {
     const contentDiv = document.getElementById('containerInstancesContent');
     const config = getConfiguration();
     
@@ -1029,6 +1030,11 @@ async function loadContainerInstances() {
     if (!config.projectName) {
         contentDiv.innerHTML = '<p class="text-muted">CI name is required. Please configure it first.</p>';
         return;
+    }
+    
+    // Show spinner if requested
+    if (showSpinner) {
+        contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="text-muted mt-2">Loading container instances...</p></div>';
     }
     
     try {
@@ -1093,10 +1099,8 @@ async function loadContainerInstances() {
                 // If no state change, silently skip the update to avoid unnecessary DOM manipulation
             } else {
                 containerInstancesCount = 0;
-                // Only update if content div is empty or shows error
-                if (contentDiv.innerHTML.includes('No container instances found matching CI name') === false) {
-                    contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
-                }
+                // Always update the message with the current CI name
+                contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
             }
         } else {
             containerInstancesCount = 0;
