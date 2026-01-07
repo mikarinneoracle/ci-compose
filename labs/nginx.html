@@ -240,9 +240,7 @@
                                 Configure the OsReader sidecar by editing it:
                                 <div class="code-block mt-2">
                                     <strong>Environment Variables:</strong><br>
-                                    data_path=/usr/share/nginx/html<br>
-                                    os_bucket=www-data<br>
-                                    reload_delay=30000
+                                    data_path=/usr/share/nginx/html, os_bucket=www-data, reload_delay=30000
                                 </div>
                             </li>
                             <li class="mb-3">
@@ -272,9 +270,7 @@
                                 Configure the LogWriter sidecar by editing it:
                                 <div class="code-block mt-2">
                                     <strong>Environment Variables:</strong><br>
-                                    log_file=/var/log/nginx/access.log<br>
-                                    log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa<br>
-                                    log_header=nginx-access-log
+                                    log_file=/var/log/nginx/access.log, log_ocid=ocid1.log.oc1.eu-frankfurt-1.amaaaaaau...5bh43r2sssa, log_header=nginx-access-log
                                 </div>
                                 <div class="warning-box mt-2">
                                     <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Replace <code>log_ocid</code> with the actual OCID of the log created in Step 1.
