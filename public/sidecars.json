@@ -2,7 +2,7 @@
     {
         "id": "1",
         "name": "OsReader",
-        "image": "mikarinneoracle/ci-sidecar-os:0.1.0",
+        "image": "mikarinneoracle/ci-sidecar-os:0.1.1",
         "port": "",
         "volumes": [
             {
@@ -30,7 +30,7 @@
     {
         "id": "2",
         "name": "VaultReader",
-        "image": "mikarinneoracle/ci-sidecar-vault:0.1.0",
+        "image": "mikarinneoracle/ci-sidecar-vault:0.1.1",
         "port": "",
         "volumes": [
             {
@@ -54,7 +54,7 @@
     {
         "id": "3",
         "name": "LogWriter",
-        "image": "mikarinneoracle/ci-sidecar-log:0.1.0",
+        "image": "mikarinneoracle/ci-sidecar-log:0.1.1",
         "port": "",
         "volumes": [
             {
@@ -82,7 +82,7 @@
     {
         "id": "4",
         "name": "OsReader",
-        "image": "mikarinneoracle/ci-sidecar-os:0.1.0-arm",
+        "image": "mikarinneoracle/ci-sidecar-os:0.1.1-arm",
         "port": "",
         "volumes": [
             {
@@ -110,7 +110,7 @@
     {
         "id": "5",
         "name": "VaultReader",
-        "image": "mikarinneoracle/ci-sidecar-vault:0.1.0-arm",
+        "image": "mikarinneoracle/ci-sidecar-vault:0.1.1-arm",
         "port": "",
         "volumes": [
             {
@@ -134,7 +134,7 @@
     {
         "id": "6",
         "name": "LogWriter",
-        "image": "mikarinneoracle/ci-sidecar-log:0.1.0-arm",
+        "image": "mikarinneoracle/ci-sidecar-log:0.1.1-arm",
         "port": "",
         "volumes": [
             {
