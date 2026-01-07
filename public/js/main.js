@@ -4273,20 +4273,32 @@ function populateAddSidecarModal() {
     let selectedArchitecture = 'x86'; // default
     if (editingDetailsContext && editingDetailsContext.type === 'details') {
         // In CI edit mode, get architecture from currentEditingInstance
-        selectedArchitecture = currentEditingInstance?.freeformTags?.architecture || 'x86';
+        // First try freeformTags, then fall back to shape
+        selectedArchitecture = currentEditingInstance?.freeformTags?.architecture;
+        if (!selectedArchitecture && currentEditingInstance?.shape) {
+            // Determine architecture from shape: CI.Standard.A1.Flex is ARM64, others are x86
+            selectedArchitecture = currentEditingInstance.shape === 'CI.Standard.A1.Flex' ? 'ARM64' : 'x86';
+        }
+        selectedArchitecture = selectedArchitecture || 'x86';
     } else {
         // In CI create mode, get architecture from radio buttons
         const archRadio = document.querySelector('input[name="ciArchitecture"]:checked');
         selectedArchitecture = archRadio ? archRadio.value : 'x86';
     }
     
-    // Filter sidecars by architecture
+    // Filter sidecars by architecture (only based on arch field, ignore image tag)
     // Map sidecars to their original index in the full sidecars array
     const filteredSidecars = sidecars
         .map((sidecar, originalIndex) => ({ sidecar, originalIndex }))
         .filter(({ sidecar }) => {
             const sidecarArch = sidecar.arch || 'x86'; // Default to x86 if not specified
-            return sidecarArch === selectedArchitecture;
+            
+            // Normalize architecture comparison (case-insensitive)
+            const normalizedSidecarArch = sidecarArch.toUpperCase();
+            const normalizedSelectedArch = selectedArchitecture.toUpperCase();
+            
+            // Filter only based on arch field, ignore image tag
+            return normalizedSidecarArch === normalizedSelectedArch;
         });
     
     if (filteredSidecars.length === 0) {
@@ -4407,12 +4419,14 @@ async function showAddSidecarModalToDetails() {
         isInEditMode = true;
     }
     
+    // Store context that we're adding to details BEFORE populating modal
+    // This ensures populateAddSidecarModal() can detect we're in details edit mode
+    editingDetailsContext = { type: 'details', instanceId: currentEditingInstance?.id, itemType: 'sidecar' };
+    
     // Load and populate sidecars before showing modal
     await loadSidecars();
     populateAddSidecarModal();
     
-    // Store context that we're adding to details
-    editingDetailsContext = { type: 'details', instanceId: currentEditingInstance?.id, itemType: 'sidecar' };
     const modal = new bootstrap.Modal(document.getElementById('addSidecarModal'));
     modal.show();
 }
