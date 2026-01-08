@@ -1304,8 +1304,8 @@ function toggleDeletedCIs() {
         showDeletedCIs = toggle.checked;
         // Force reload by clearing previous states to trigger display update
         previousInstanceStates.clear();
-        // Reload container instances to apply the filter
-        loadContainerInstances();
+        // Reload container instances to apply the filter with spinner
+        loadContainerInstances(true);
     }
 }
 
@@ -1880,9 +1880,12 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     
     // Edit, Save, Cancel, Restart, Delete, and Close buttons
+    const isDeleted = (instance.lifecycleState || '').toUpperCase() === 'DELETED';
     const canEdit = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const editDisabledAttr = canEdit ? '' : 'disabled';
-    const canRestart = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED' && instance.lifecycleState !== 'FAILED';
+    // For deleted CIs, always enable the restart button (which will restore)
+    // For active CIs, enable restart if not in a transitional state
+    const canRestart = isDeleted ? true : (instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED' && instance.lifecycleState !== 'FAILED');
     const restartDisabledAttr = canRestart ? '' : 'disabled';
     const canDelete = instance.lifecycleState !== 'UPDATING' && instance.lifecycleState !== 'CREATING' && instance.lifecycleState !== 'DELETING' && instance.lifecycleState !== 'DELETED';
     const deleteDisabledAttr = canDelete ? '' : 'disabled';
@@ -1891,8 +1894,8 @@ function displayContainerInstanceDetails(instance) {
     html += `<button class="btn btn-success me-2" id="detailsSaveResourceManagerBtn" onclick="saveToResourceManager('${containerInstanceId}')" style="display: inline-block;">`;
     html += '<i class="bi bi-cloud-upload"></i> Save in Resource Manager';
     html += '</button>';
-    html += `<button class="btn btn-info me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
-    html += '<i class="bi bi-arrow-clockwise"></i> Restart';
+    html += `<button class="btn ${isDeleted ? 'btn-primary' : 'btn-info'} me-2" id="detailsRestartBtn" onclick="restartContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
+    html += `<i class="bi ${isDeleted ? 'bi-arrow-counterclockwise' : 'bi-arrow-clockwise'}"></i> ${isDeleted ? 'Restore' : 'Restart'}`;
     html += '</button>';
     html += `<button class="btn btn-light me-2" id="detailsStopBtn" onclick="stopContainerInstance('${containerInstanceId}')" ${restartDisabledAttr}>`;
     html += '<i class="bi bi-stop"></i> Stop';
@@ -3155,42 +3158,351 @@ function closeDetailsModal() {
     }
 }
 
-// Restart container instance
+// Restart container instance (or restore if deleted)
 async function restartContainerInstance(instanceId) {
-    // Confirm restart action
-    if (!confirm('Are you sure you want to restart this container instance?')) {
-        return;
-    }
-    
     try {
-        showNotification('Restarting container instance...', 'info');
+        // First, check the actual instance state
+        const instanceResponse = await fetch(`/api/oci/container-instances/${instanceId}`);
+        const instanceData = await instanceResponse.json();
         
-        const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
-            method: 'POST'
-        });
+        let isDeleted = false;
+        let instance = null;
         
-        const data = await response.json();
+        if (instanceData.success && instanceData.data) {
+            instance = instanceData.data;
+            const lifecycleState = (instance.lifecycleState || '').toUpperCase();
+            isDeleted = lifecycleState === 'DELETED' || lifecycleState === 'DELETING';
+        }
         
-        if (data.success) {
-            showNotification('Container instance restart initiated successfully!', 'success');
-            
-            // Close the modal
-            const modalElement = document.getElementById('containerInstanceModal');
-            if (modalElement) {
-                const modal = bootstrap.Modal.getInstance(modalElement);
-                if (modal) {
-                    modal.hide();
-                }
+        if (isDeleted && instance) {
+            // Restore the deleted CI using instance data
+            if (!confirm('Are you sure you want to restore this container instance? A new instance will be created with the same configuration. Volumes will be recreated from the current configuration.')) {
+                return;
             }
             
-            // Reload container instances to reflect the new state
-            await loadContainerInstances();
+            try {
+                // Build restore configuration from instance data
+                const restoreConfig = {
+                    displayName: instance.displayName,
+                    compartmentId: instance.compartmentId,
+                    shape: instance.shape,
+                    shapeConfig: instance.shapeConfig,
+                    subnetId: instance.subnetId || (instance.vnics && instance.vnics.length > 0 ? instance.vnics[0].subnetId : null),
+                    containerRestartPolicy: instance.containerRestartPolicy || 'NEVER',
+                    freeformTags: instance.freeformTags || {},
+                    containers: [],
+                    volumes: []
+                };
+                
+                // Get volumes from current config (localStorage) for the CI name, not from deleted container
+                const config = getConfiguration();
+                // Use current CI name from config, not the deleted instance's displayName
+                const ciName = config.projectName || restoreConfig.displayName;
+                const savedPortsVolumes = loadPortsAndVolumesForCINameForDetails(ciName);
+                const volumesFromStorage = savedPortsVolumes.volumes || [];
+                
+                console.log('Loading volumes for restore:', {
+                    ciName: ciName,
+                    volumesFromStorage: volumesFromStorage,
+                    volumesCount: volumesFromStorage.length
+                });
+                
+                if (volumesFromStorage.length > 0) {
+                    restoreConfig.volumes = volumesFromStorage.map((vol, idx) => {
+                        // Ensure both name and path are present, use temporary names if missing
+                        const volumeName = (vol.name && vol.name.trim()) || `volume-${idx}`;
+                        const volumePath = (vol.path && vol.path.trim()) || `/mnt/${volumeName}`;
+                        return {
+                            name: volumeName,
+                            path: volumePath
+                        };
+                    });
+                    console.log('Restore volumes set from current config:', restoreConfig.volumes);
+                } else {
+                    restoreConfig.volumes = [];
+                    console.log('No volumes found in current config for CI name:', ciName);
+                }
+                
+                // Fetch container details to get full configuration
+                // Note: We'll replace volumeMounts later with volumes from current config
+                if (instance.containers && instance.containers.length > 0) {
+                    for (const container of instance.containers) {
+                        const containerId = container.containerId || container.id;
+                        if (containerId) {
+                            try {
+                                const containerResponse = await fetch(`/api/oci/containers/${containerId}`);
+                                const containerData = await containerResponse.json();
+                                
+                                if (containerData.success && containerData.data) {
+                                    const containerDetails = containerData.data;
+                                    restoreConfig.containers.push({
+                                        displayName: containerDetails.displayName || container.displayName,
+                                        imageUrl: containerDetails.imageUrl,
+                                        resourceConfig: containerDetails.resourceConfig,
+                                        environmentVariables: containerDetails.environmentVariables || {},
+                                        command: containerDetails.command,
+                                        arguments: containerDetails.arguments,
+                                        // Don't include volumeMounts here - we'll set them from current config volumes
+                                        volumeMounts: []
+                                    });
+                                } else {
+                                    // Fallback to basic container info
+                                    restoreConfig.containers.push({
+                                        displayName: container.displayName,
+                                        imageUrl: container.imageUrl,
+                                        resourceConfig: container.resourceConfig || { memoryInGBs: 16, vcpus: 1 },
+                                        environmentVariables: container.environmentVariables || {},
+                                        command: container.command,
+                                        arguments: container.arguments,
+                                        // Don't include volumeMounts here - we'll set them from current config volumes
+                                        volumeMounts: []
+                                    });
+                                }
+                            } catch (containerError) {
+                                console.error(`Error fetching container details for ${containerId}:`, containerError);
+                                // Fallback to basic container info
+                                restoreConfig.containers.push({
+                                    displayName: container.displayName,
+                                    imageUrl: container.imageUrl,
+                                    resourceConfig: container.resourceConfig || { memoryInGBs: 16, vcpus: 1 },
+                                    environmentVariables: container.environmentVariables || {},
+                                    command: container.command,
+                                    arguments: container.arguments,
+                                    // Don't include volumeMounts here - we'll set them from current config volumes
+                                    volumeMounts: []
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // Use default subnet from config if subnetId is missing
+                if (!restoreConfig.subnetId) {
+                    const config = getConfiguration();
+                    const defaultSubnetId = config.defaultSubnetId || config.subnetId;
+                    if (defaultSubnetId) {
+                        restoreConfig.subnetId = defaultSubnetId;
+                        console.log('Using default subnet from config:', defaultSubnetId);
+                    }
+                }
+                
+                // Validate required fields with detailed debugging
+                const missingFields = [];
+                if (!restoreConfig.displayName) missingFields.push('displayName');
+                if (!restoreConfig.compartmentId) missingFields.push('compartmentId');
+                if (!restoreConfig.shape) missingFields.push('shape');
+                if (!restoreConfig.subnetId) missingFields.push('subnetId');
+                if (!restoreConfig.containers || restoreConfig.containers.length === 0) missingFields.push('containers (or empty)');
+                
+                if (missingFields.length > 0) {
+                    console.error('Restore config validation failed. Missing fields:', missingFields);
+                    console.error('Restore config:', JSON.stringify(restoreConfig, null, 2));
+                    console.error('Instance data:', JSON.stringify(instance, null, 2));
+                    showNotification(`Error: Invalid restore configuration. Missing required fields: ${missingFields.join(', ')}`, 'error');
+                    return;
+                }
+                
+                console.log('Restore config validation passed:', {
+                    displayName: restoreConfig.displayName,
+                    compartmentId: restoreConfig.compartmentId,
+                    shape: restoreConfig.shape,
+                    subnetId: restoreConfig.subnetId,
+                    containersCount: restoreConfig.containers.length,
+                    volumesCount: restoreConfig.volumes?.length || 0
+                });
+                
+                showNotification('Restoring container instance...', 'info');
+                
+                // Build base freeformTags (preserve from original)
+                const baseFreeformTags = restoreConfig.freeformTags || {};
+                
+                // Ensure architecture tag is set
+                if (!baseFreeformTags.architecture) {
+                    // Determine from shape
+                    baseFreeformTags.architecture = restoreConfig.shape === 'CI.Standard.A1.Flex' ? 'ARM64' : 'x86';
+                }
+                
+                // Update volumes tag from current config (not from deleted container)
+                if (restoreConfig.volumes && restoreConfig.volumes.length > 0) {
+                    const volumesTag = restoreConfig.volumes.map((v, idx) => {
+                        const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+                        return `${volumeName}:${v.path}`;
+                    }).join(',');
+                    baseFreeformTags.volumes = volumesTag;
+                } else {
+                    // Remove volumes tag if no volumes
+                    delete baseFreeformTags.volumes;
+                }
+                
+                // Clean containers data
+                const cleanedContainers = restoreConfig.containers.map(container => {
+                    const cleaned = {
+                        displayName: container.displayName,
+                        imageUrl: container.imageUrl,
+                        resourceConfig: container.resourceConfig || {
+                            memoryInGBs: 16,
+                            vcpus: 1
+                        }
+                    };
+                    
+                    // Add freeformTags to containers (OCI requirement)
+                    if (Object.keys(baseFreeformTags).length > 0) {
+                        cleaned.freeformTags = { ...baseFreeformTags };
+                    }
+                    
+                    // Include optional fields if they exist
+                    if (container.environmentVariables && Object.keys(container.environmentVariables).length > 0) {
+                        cleaned.environmentVariables = container.environmentVariables;
+                    }
+                    if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+                        cleaned.command = container.command;
+                    }
+                    if (container.arguments && Array.isArray(container.arguments) && container.arguments.length > 0) {
+                        cleaned.arguments = container.arguments;
+                    }
+                    
+                    return cleaned;
+                });
+                
+                // Build volumes array from restore config (from current config/localStorage)
+                let volumesArray = [];
+                if (restoreConfig.volumes && restoreConfig.volumes.length > 0) {
+                    volumesArray = restoreConfig.volumes.map((vol) => {
+                        const volumeName = (vol.name && vol.name.trim()) || vol.name;
+                        return {
+                            name: volumeName,
+                            volumeType: 'EMPTYDIR',
+                            backingStore: 'EPHEMERAL_STORAGE'
+                        };
+                    });
+                    
+                    // Map volumes from current config to all containers as volumeMounts
+                    // Don't use old volumeMounts from deleted container - recreate from current volumes config
+                    console.log('Mapping volumes to containers:', {
+                        volumesCount: restoreConfig.volumes.length,
+                        containersCount: cleanedContainers.length,
+                        volumes: restoreConfig.volumes
+                    });
+                    
+                    cleanedContainers.forEach(container => {
+                        container.volumeMounts = restoreConfig.volumes.map((vol) => {
+                            // Ensure both mountPath and volumeName are present and valid
+                            const volumeName = (vol.name && vol.name.trim()) || `volume-${Date.now()}`;
+                            const mountPath = (vol.path && vol.path.trim()) || `/mnt/${volumeName}`;
+                            
+                            if (!volumeName || !mountPath) {
+                                console.error('Invalid volume mapping:', vol);
+                                throw new Error(`Invalid volume: name="${volumeName}", path="${mountPath}"`);
+                            }
+                            
+                            return {
+                                mountPath: mountPath,
+                                volumeName: volumeName
+                            };
+                        });
+                        console.log(`Set volumeMounts for container ${container.displayName}:`, container.volumeMounts);
+                    });
+                } else {
+                    console.log('No volumes to map - volumes array is empty');
+                }
+                
+                // Build payload
+                const payload = {
+                    displayName: restoreConfig.displayName,
+                    compartmentId: restoreConfig.compartmentId,
+                    shape: restoreConfig.shape,
+                    shapeConfig: restoreConfig.shapeConfig || {
+                        memoryInGBs: 32,
+                        ocpus: 2
+                    },
+                    subnetId: restoreConfig.subnetId,
+                    containers: cleanedContainers,
+                    containerRestartPolicy: restoreConfig.containerRestartPolicy || 'NEVER'
+                };
+                
+                // Add freeformTags
+                if (Object.keys(baseFreeformTags).length > 0) {
+                    payload.freeformTags = baseFreeformTags;
+                }
+                
+                // Add volumes if any
+                if (volumesArray.length > 0) {
+                    payload.volumes = volumesArray;
+                }
+                
+                // Create the container instance
+                const response = await fetch('/api/oci/container-instances', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Container Instance restored successfully!', 'success');
+                    
+                    // Close the modal
+                    const modalElement = document.getElementById('containerInstanceModal');
+                    if (modalElement) {
+                        const modal = bootstrap.Modal.getInstance(modalElement);
+                        if (modal) {
+                            modal.hide();
+                        }
+                    }
+                    
+                    // Reload container instances
+                    await loadContainerInstances();
+                } else {
+                    throw new Error(data.error || 'Failed to restore container instance');
+                }
+            } catch (restoreError) {
+                console.error('Error restoring container instance:', restoreError);
+                showNotification(`Error restoring container instance: ${restoreError.message}`, 'error');
+            }
         } else {
-            throw new Error(data.error || 'Failed to restart container instance');
+            // Normal restart for active CI
+            // Confirm restart action
+            if (!confirm('Are you sure you want to restart this container instance?')) {
+                return;
+            }
+            
+            try {
+                showNotification('Restarting container instance...', 'info');
+                
+                const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Container instance restart initiated successfully!', 'success');
+                    
+                    // Close the modal
+                    const modalElement = document.getElementById('containerInstanceModal');
+                    if (modalElement) {
+                        const modal = bootstrap.Modal.getInstance(modalElement);
+                        if (modal) {
+                            modal.hide();
+                        }
+                    }
+                    
+                    // Reload container instances to reflect the new state
+                    await loadContainerInstances();
+                } else {
+                    throw new Error(data.error || 'Failed to restart container instance');
+                }
+            } catch (restartError) {
+                console.error('Error restarting container instance:', restartError);
+                showNotification(`Error restarting container instance: ${restartError.message}`, 'error');
+            }
         }
     } catch (error) {
-        console.error('Error restarting container instance:', error);
-        showNotification(`Error restarting container instance: ${error.message}`, 'error');
+        console.error('Error in restartContainerInstance:', error);
+        showNotification(`Error: ${error.message}`, 'error');
     }
 }
 
