@@ -29,7 +29,7 @@ A high-performance web server configuration with Object Storage integration and 
 
 ### 26ai Database with ORDS and Object Storage
 
-A database-driven application stack with Oracle REST Data Services and Object Storage integration for scalable data processing and storage.
+A database-driven application stack with Oracle REST Data Services and Object Storage integration with SQL retrieval for database configuration.
 
 **Components:**
 - **26ai Database** - Database system
