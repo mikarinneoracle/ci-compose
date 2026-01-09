@@ -283,15 +283,17 @@ function processDependsOn(services, orderedServices) {
 
 function addWaitScriptToCommand(service, dependencies, allServiceNames, allServices) {
   // Get dependency ports from service configs
+  // Only use port if dependency has exactly ONE port defined
   const dependencyInfo = dependencies.map(depName => {
     const depService = allServices[depName];
-    // Try to get port from ports config or freeformTags
+    // Get port from ports config (first port only)
     const ports = depService?.ports || [];
-    const port = ports.length > 0 ? extractContainerPort(ports[0]) : null;
+    // Only use port if there's exactly one port
+    const port = (ports.length === 1) ? extractContainerPort(ports[0]) : null;
     return { name: depName, port: port };
   });
   
-  // Generate wait script
+  // Generate wait script (port check for single port, delay otherwise)
   const waitScript = generateWaitScript(dependencyInfo);
   
   // Get original command/entrypoint
@@ -317,17 +319,18 @@ function addWaitScriptToCommand(service, dependencies, allServiceNames, allServi
 }
 
 function generateWaitScript(dependencyInfo) {
-  // Generate wait script using netcat (nc) or similar
-  // Check if dependencies are listening on their ports
-  const waitChecks = dependencyInfo
-    .filter(dep => dep.port)
+  // Strategy: Port check ONLY for dependencies with single port
+  // Delay for dependencies without port or with multiple ports
+  
+  // Port-based checks (only for single port)
+  const portChecks = dependencyInfo
+    .filter(dep => dep.port !== null) // Only dependencies with exactly one port
     .map(dep => {
       return `
         echo "Waiting for ${dep.name} on port ${dep.port}..."
         timeout=60
         elapsed=0
-        while ! (command -v nc >/dev/null 2>&1 && nc -z ${dep.name} ${dep.port} 2>/dev/null) && 
-              ! (command -v timeout >/dev/null 2>&1 && timeout 1 bash -c "cat < /dev/null > /dev/tcp/${dep.name}/${dep.port}" 2>/dev/null); do
+        while ! (command -v nc >/dev/null 2>&1 && nc -z ${dep.name} ${dep.port} 2>/dev/null); do
           if [ $elapsed -ge $timeout ]; then
             echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port}"
             exit 1
@@ -337,18 +340,36 @@ function generateWaitScript(dependencyInfo) {
         done
         echo "${dep.name} is ready"
       `;
-    })
-    .join('\n');
+    });
   
-  // If no ports available, use simple delay
-  if (waitChecks.trim() === '') {
-    return `
-      echo "Waiting for dependencies to start..."
-      sleep 10
+  // Dependencies without port (use delay)
+  const delayDeps = dependencyInfo
+    .filter(dep => dep.port === null)
+    .map(dep => dep.name);
+  
+  let waitScript = '';
+  
+  // Add port checks
+  if (portChecks.length > 0) {
+    waitScript += portChecks.join('\n');
+  }
+  
+  // Add delay for dependencies without ports
+  if (delayDeps.length > 0) {
+    const delaySeconds = Math.max(10, delayDeps.length * 5); // Min 10s, or 5s per dep
+    waitScript += `
+      echo "Waiting for dependencies without ports: ${delayDeps.join(', ')}..."
+      sleep ${delaySeconds}
+      echo "Dependencies should be ready"
     `;
   }
   
-  return waitChecks;
+  // Fallback if no dependencies (shouldn't happen)
+  if (waitScript.trim() === '') {
+    return 'echo "No dependencies to wait for"';
+  }
+  
+  return waitScript;
 }
 
 function extractContainerPort(portConfig) {
@@ -474,7 +495,8 @@ function extractContainerPort(portConfig) {
 - Parse format: `"8080:8080"` or `8080:8080`
 - Extract container port (right side of colon)
 - Store in `freeformTags[containerName] = portNumber`
-- Multiple ports: use first port or all ports (TBD)
+- **Single port only**: If multiple ports are defined, use the first port for `depends_on` port checks
+- Multiple ports in Docker Compose: Only the first port is used for dependency checks
 
 **Volumes:**
 - Named volumes: `volume-name:/path/in/container`
@@ -705,25 +727,29 @@ function extractContainerPort(portConfig) {
 **Wait Script Strategy:**
 The wait script is prepended to the container's original command to ensure dependencies are ready before the container starts its main process.
 
-**Port-Based Wait (Primary Method):**
+**Port-Based Wait (When Single Port Defined):**
+- **Condition**: Only used when dependency container has exactly **one port** defined
+- **Method**: Uses netcat (nc) to check if dependency is listening on its port
 ```bash
 # Check if dependency container is listening on its port
-# Uses netcat (nc) or bash TCP redirection
+# Uses netcat (nc)
 while ! nc -z dependency-name port-number; do
   sleep 2
 done
 ```
 
-**Fallback Methods:**
-1. **Bash TCP check** (if `nc` not available):
-   ```bash
-   timeout 1 bash -c "cat < /dev/null > /dev/tcp/dependency-name/port-number"
-   ```
+**Delay-Based Wait (When No Port or Multiple Ports):**
+- **Condition**: Used when dependency container has **no port** or **multiple ports** defined
+- **Method**: Fixed delay before starting (default: 10 seconds minimum, or 5 seconds per dependency)
+```bash
+# Simple delay for dependencies without ports
+sleep 10  # or calculated delay based on number of dependencies
+```
 
-2. **Fixed delay** (if no ports available):
-   ```bash
-   sleep 10  # Simple delay as last resort
-   ```
+**Decision Logic:**
+1. Check if dependency has a port in `freeformTags[containerName]`
+2. If single port exists → Use port check (nc)
+3. If no port or multiple ports → Use fixed delay
 
 **Command Wrapping:**
 - Original command: `["nginx", "-g", "daemon off;"]`
@@ -733,10 +759,15 @@ done
 - **Base Image Compatibility**: Wait script uses standard shell commands (`sh`, `nc`, `timeout`, `bash`)
 - **Container Names**: Containers in OCI Container Instances can reach each other by their `displayName`
 - **Network**: All containers share the same network namespace, so hostname resolution works
-- **Timeout**: Default 60 seconds wait time (configurable)
-- **Error Handling**: If wait times out, container fails to start (desired behavior)
-- **Port Requirements**: Dependencies must expose ports for port-based checks to work
-- **No Ports**: If dependencies don't expose ports, fall back to fixed delay
+- **Timeout**: Default 60 seconds wait time for port checks (configurable)
+- **Error Handling**: If port check times out, container fails to start (desired behavior)
+- **Port Requirements**: 
+  - Port check (nc) only used when dependency has **exactly one port** defined
+  - If no port or multiple ports → Use fixed delay instead
+- **Delay Calculation**: 
+  - Minimum 10 seconds delay
+  - Or 5 seconds per dependency without port (whichever is greater)
+- **Single Port Only**: Multiple ports in Docker Compose are supported, but only first port is used for dependency checks
 
 **Example Generated Command:**
 ```yaml
