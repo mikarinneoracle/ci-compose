@@ -6370,7 +6370,410 @@ if (dataForm) {
     });
 }
 
+// Docker Compose Import Functions
 
+// Store parsed data for import
+let parsedComposeData = null;
 
+// Show Import Docker Compose Modal
+async function showImportDockerComposeModal() {
+    const modal = new bootstrap.Modal(document.getElementById('importDockerComposeModal'));
+    
+    // Reset form
+    document.getElementById('composeYaml').value = '';
+    document.getElementById('composeFileUpload').value = '';
+    document.getElementById('importWarnings').style.display = 'none';
+    document.getElementById('importErrors').style.display = 'none';
+    document.getElementById('importToCreateBtn').disabled = true;
+    parsedComposeData = null;
+    
+    // Load current configuration
+    const config = getConfiguration();
+    
+    // Load compartments
+    await loadImportCompartments();
+    
+    // Pre-fill OCI fields from config
+    if (config.compartmentId) {
+        const compartmentSelect = document.getElementById('importCompartmentId');
+        compartmentSelect.value = config.compartmentId;
+        await loadImportSubnets(config.compartmentId);
+    }
+    
+    if (config.subnetId || config.defaultSubnetId) {
+        const subnetSelect = document.getElementById('importSubnetId');
+        subnetSelect.value = config.subnetId || config.defaultSubnetId;
+    }
+    
+    // Set architecture (default to x86)
+    const architecture = config.architecture || 'x86';
+    document.getElementById(`importArchitecture${architecture === 'ARM64' ? 'ARM64' : 'X86'}`).checked = true;
+    
+    // Set dependency delay (default: 10)
+    document.getElementById('importDependencyDelay').value = 10;
+    
+    // Handle file upload
+    document.getElementById('composeFileUpload').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const text = await file.text();
+            document.getElementById('composeYaml').value = text;
+        }
+    });
+    
+    modal.show();
+}
 
+// Load compartments for import modal
+async function loadImportCompartments() {
+    try {
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        // Get tenancy ID
+        const tenancyResponse = await fetch(`/api/oci/config/tenancy?${params.toString()}`);
+        const tenancyData = await tenancyResponse.json();
+        
+        if (!tenancyData.success || !tenancyData.tenancyId) {
+            throw new Error('Could not get tenancy ID');
+        }
+        
+        // Get compartments
+        params.append('tenancyId', tenancyData.tenancyId);
+        const response = await fetch(`/api/oci/compartments?${params.toString()}`);
+        const data = await response.json();
+        
+        const compartmentSelect = document.getElementById('importCompartmentId');
+        
+        if (data.success && data.compartments) {
+            compartmentSelect.innerHTML = '<option value="">Select a compartment...</option>';
+            
+            data.compartments.forEach(comp => {
+                const option = document.createElement('option');
+                option.value = comp.id;
+                option.textContent = comp.name + (comp.description ? ` - ${comp.description}` : '');
+                compartmentSelect.appendChild(option);
+            });
+            
+            // Pre-select from config
+            const savedConfig = getConfiguration();
+            if (savedConfig.compartmentId) {
+                compartmentSelect.value = savedConfig.compartmentId;
+                await loadImportSubnets(savedConfig.compartmentId);
+            }
+        } else {
+            compartmentSelect.innerHTML = '<option value="">Error loading compartments</option>';
+        }
+        
+        // Add change listener
+        compartmentSelect.addEventListener('change', async function() {
+            await loadImportSubnets(this.value);
+        });
+    } catch (error) {
+        console.error('Could not load compartments:', error);
+        const compartmentSelect = document.getElementById('importCompartmentId');
+        compartmentSelect.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+    }
+}
+
+// Load subnets for import modal
+async function loadImportSubnets(compartmentId) {
+    const subnetSelect = document.getElementById('importSubnetId');
+    
+    if (!compartmentId) {
+        subnetSelect.innerHTML = '<option value="">Select a compartment first...</option>';
+        return;
+    }
+    
+    try {
+        subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
+        
+        const params = new URLSearchParams();
+        params.append('compartmentId', compartmentId);
+        
+        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const data = await response.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+            subnetSelect.innerHTML = '<option value="">Select a subnet...</option>';
+            
+            data.data.forEach(subnet => {
+                const option = document.createElement('option');
+                option.value = subnet.id;
+                option.textContent = subnet.displayName || subnet.id;
+                if (subnet.cidrBlock) {
+                    option.textContent += ` (${subnet.cidrBlock})`;
+                }
+                subnetSelect.appendChild(option);
+            });
+            
+            // Pre-select from config
+            const savedConfig = getConfiguration();
+            if (savedConfig.subnetId || savedConfig.defaultSubnetId) {
+                subnetSelect.value = savedConfig.subnetId || savedConfig.defaultSubnetId;
+            }
+        } else {
+            subnetSelect.innerHTML = '<option value="">No subnets found</option>';
+        }
+    } catch (error) {
+        console.error('Could not load subnets:', error);
+        subnetSelect.innerHTML = '<option value="">Error loading subnets</option>';
+    }
+}
+
+// Parse Docker Compose YAML
+async function parseDockerCompose() {
+    const yamlText = document.getElementById('composeYaml').value.trim();
+    const compartmentId = document.getElementById('importCompartmentId').value;
+    const subnetId = document.getElementById('importSubnetId').value;
+    const architecture = document.querySelector('input[name="importArchitecture"]:checked')?.value || 'x86';
+    const dependencyDelaySeconds = parseInt(document.getElementById('importDependencyDelay').value) || 10;
+    
+    // Hide previous errors/warnings
+    document.getElementById('importWarnings').style.display = 'none';
+    document.getElementById('importErrors').style.display = 'none';
+    document.getElementById('importToCreateBtn').disabled = true;
+    
+    // Validate inputs
+    if (!yamlText) {
+        showImportError('Please provide Docker Compose YAML content or upload a file.');
+        return;
+    }
+    
+    if (!compartmentId) {
+        showImportError('Please select a compartment.');
+        return;
+    }
+    
+    if (!subnetId) {
+        showImportError('Please select a subnet.');
+        return;
+    }
+    
+    try {
+        // Send to parse API
+        const response = await fetch('/api/docker-compose/parse', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                yaml: yamlText,
+                ociConfig: {
+                    compartmentId: compartmentId,
+                    subnetId: subnetId,
+                    architecture: architecture,
+                    dependencyDelaySeconds: dependencyDelaySeconds
+                }
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Store parsed data
+            parsedComposeData = data.payload;
+            
+            // Show warnings if any
+            if (data.warnings && data.warnings.length > 0) {
+                const warningsList = document.getElementById('importWarningsList');
+                warningsList.innerHTML = '';
+                data.warnings.forEach(warning => {
+                    const li = document.createElement('li');
+                    li.textContent = warning;
+                    warningsList.appendChild(li);
+                });
+                document.getElementById('importWarnings').style.display = 'block';
+            }
+            
+            // Enable import button
+            document.getElementById('importToCreateBtn').disabled = false;
+            
+            showNotification('Docker Compose parsed successfully! Click "Import to Create CI" to proceed.', 'success');
+        } else {
+            showImportError(data.error || 'Failed to parse Docker Compose');
+        }
+    } catch (error) {
+        console.error('Error parsing Docker Compose:', error);
+        showImportError(`Error parsing Docker Compose: ${error.message}`);
+    }
+}
+
+// Show import error
+function showImportError(message) {
+    const errorsList = document.getElementById('importErrorsList');
+    errorsList.innerHTML = '';
+    const li = document.createElement('li');
+    li.textContent = message;
+    errorsList.appendChild(li);
+    document.getElementById('importErrors').style.display = 'block';
+}
+
+// Merge volumes with existing data
+function mergeVolumes(existingVolumes, newVolumes) {
+    const merged = [...existingVolumes];
+    
+    newVolumes.forEach(newVol => {
+        // Check for duplicate by path (primary identifier)
+        const exists = merged.some(existing => existing.path === newVol.path);
+        if (!exists) {
+            merged.push(newVol);
+        } else {
+            console.log(`Skipping duplicate volume with path: ${newVol.path}`);
+        }
+    });
+    
+    return merged;
+}
+
+// Merge ports with existing data
+function mergePorts(existingPorts, newPorts) {
+    const merged = [...existingPorts];
+    
+    newPorts.forEach(newPort => {
+        // Check for duplicate by port number (primary identifier)
+        const portNum = typeof newPort.port === 'number' ? newPort.port : parseInt(newPort.port);
+        const exists = merged.some(existing => {
+            const existingPortNum = typeof existing.port === 'number' ? existing.port : parseInt(existing.port);
+            return existingPortNum === portNum;
+        });
+        if (!exists) {
+            merged.push(newPort);
+        } else {
+            console.log(`Skipping duplicate port: ${portNum}`);
+        }
+    });
+    
+    return merged;
+}
+
+// Import to Create CI
+async function importToCreateCI() {
+    if (!parsedComposeData) {
+        showNotification('Please parse Docker Compose first.', 'error');
+        return;
+    }
+    
+    try {
+        const config = getConfiguration();
+        
+        // Load existing volumes and ports from localStorage
+        loadPortsAndVolumesForCIName(config.projectName);
+        
+        // Extract volumes and ports from parsed data
+        // Volumes from parsed data are in format: { name, volumeType, backingStore }
+        // We need to get mount paths from container volumeMounts
+        const parsedVolumesMap = new Map();
+        (parsedComposeData.containers || []).forEach(container => {
+            if (container.volumeMounts) {
+                container.volumeMounts.forEach(mount => {
+                    if (!parsedVolumesMap.has(mount.volumeName)) {
+                        parsedVolumesMap.set(mount.volumeName, mount.mountPath);
+                    }
+                });
+            }
+        });
+        
+        const parsedVolumes = (parsedComposeData.volumes || []).map(vol => ({
+            name: vol.name || `volume-${volumesData.length}`,
+            path: parsedVolumesMap.get(vol.name) || `/mnt/${vol.name}`
+        }));
+        
+        const parsedPorts = [];
+        // Extract ports from freeformTags
+        if (parsedComposeData.freeformTags) {
+            Object.entries(parsedComposeData.freeformTags).forEach(([key, value]) => {
+                if (key !== 'architecture' && key !== 'volumes' && !isNaN(parseInt(value))) {
+                    parsedPorts.push({
+                        port: parseInt(value),
+                        name: key
+                    });
+                }
+            });
+        }
+        
+        // Merge with existing data
+        volumesData = mergeVolumes(volumesData, parsedVolumes);
+        portsData = mergePorts(portsData, parsedPorts);
+        
+        // Save merged data to localStorage
+        savePortsAndVolumesForCIName(config.projectName);
+        
+        // Update UI tables
+        updateVolumesTable();
+        updatePortsTable();
+        
+        // Populate containers data
+        containersData = (parsedComposeData.containers || []).map(container => {
+            // Find port index for this container
+            let portIndex = null;
+            if (container.freeformTags && container.freeformTags[container.displayName]) {
+                const portNum = parseInt(container.freeformTags[container.displayName]);
+                portIndex = portsData.findIndex(p => {
+                    const pNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
+                    return pNum === portNum;
+                });
+                if (portIndex === -1) portIndex = null;
+            }
+            
+            return {
+                displayName: container.displayName,
+                imageUrl: container.imageUrl,
+                resourceConfig: container.resourceConfig || {
+                    memoryInGBs: 16,
+                    vcpus: 1
+                },
+                environmentVariables: container.environmentVariables || {},
+                command: container.command || [],
+                arguments: container.arguments || [],
+                portIndex: portIndex
+            };
+        });
+        
+        // Update containers table
+        updateContainersTable();
+        
+        // Set architecture
+        const architecture = parsedComposeData.freeformTags?.architecture || 'x86';
+        const archRadio = document.querySelector(`input[name="ciArchitecture"][value="${architecture}"]`);
+        if (archRadio) {
+            archRadio.checked = true;
+        }
+        
+        // Set shape config if available
+        if (parsedComposeData.shapeConfig) {
+            document.getElementById('ciShapeMemory').value = parsedComposeData.shapeConfig.memoryInGBs || 16;
+            document.getElementById('ciShapeOcpus').value = parsedComposeData.shapeConfig.ocpus || 1;
+        }
+        
+        // Set subnet
+        const subnetSelect = document.getElementById('ciSubnetId');
+        if (subnetSelect && parsedComposeData.subnetId) {
+            // Load subnets if needed
+            if (subnetSelect.options.length === 0 || subnetSelect.value !== parsedComposeData.subnetId) {
+                await loadSubnetsForCI(parsedComposeData.compartmentId);
+            }
+            subnetSelect.value = parsedComposeData.subnetId;
+        }
+        
+        // Close import modal
+        const importModal = bootstrap.Modal.getInstance(document.getElementById('importDockerComposeModal'));
+        importModal.hide();
+        
+        // Open create CI modal
+        showCreateContainerInstanceModal();
+        
+        showNotification('Docker Compose imported successfully! Review and create the Container Instance.', 'success');
+    } catch (error) {
+        console.error('Error importing to Create CI:', error);
+        showNotification(`Error importing: ${error.message}`, 'error');
+    }
+}
 

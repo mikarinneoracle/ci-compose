@@ -61,6 +61,9 @@
                                             Show Deleted
                                         </label>
                                     </div>
+                                <button class="btn btn-info btn-sm" onclick="showImportDockerComposeModal()">
+                                    <i class="bi bi-upload"></i> Import Compose
+                                </button>
                                 <button class="btn btn-light btn-sm" onclick="showCreateContainerInstanceModal()">
                                     + Create
                                 </button>
@@ -507,6 +510,77 @@
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                         <button type="button" class="btn btn-outline-primary" onclick="goBackToCreateCI()"><i class="bi bi-arrow-left"></i> Back</button>
                                         <button type="button" class="btn btn-primary" onclick="confirmCreateContainerInstance()">Create</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Import Docker Compose Modal -->
+                        <div class="modal fade" id="importDockerComposeModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-info text-white">
+                                        <h5 class="modal-title"><i class="bi bi-upload"></i> Import Docker Compose</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="importDockerComposeForm">
+                                            <div class="mb-3">
+                                                <label for="composeYaml" class="form-label">Docker Compose YAML</label>
+                                                <textarea class="form-control font-monospace" id="composeYaml" rows="12" placeholder="version: '3.8'&#10;services:&#10;  app:&#10;    image: nginx:latest&#10;    ports:&#10;      - &quot;8080:8080&quot;"></textarea>
+                                                <small class="form-text text-muted">Paste your Docker Compose YAML content here</small>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="composeFileUpload" class="form-label">Or Upload File</label>
+                                                <input type="file" class="form-control" id="composeFileUpload" accept=".yaml,.yml">
+                                                <small class="form-text text-muted">Select a docker-compose.yml or docker-compose.yaml file</small>
+                                            </div>
+                                            <hr>
+                                            <h6 class="mb-3">OCI Configuration</h6>
+                                            <div class="mb-3">
+                                                <label for="importCompartmentId" class="form-label">Compartment</label>
+                                                <select class="form-select" id="importCompartmentId" required>
+                                                    <option value="">Loading compartments...</option>
+                                                </select>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="importSubnetId" class="form-label">Subnet</label>
+                                                <select class="form-select" id="importSubnetId" required>
+                                                    <option value="">Select compartment first</option>
+                                                </select>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Architecture</label>
+                                                <div>
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="radio" name="importArchitecture" id="importArchitectureX86" value="x86" checked>
+                                                        <label class="form-check-label" for="importArchitectureX86">x86</label>
+                                                    </div>
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="radio" name="importArchitecture" id="importArchitectureARM64" value="ARM64">
+                                                        <label class="form-check-label" for="importArchitectureARM64">ARM64</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="importDependencyDelay" class="form-label">Dependency Delay (seconds)</label>
+                                                <input type="number" class="form-control" id="importDependencyDelay" value="10" min="1" max="300">
+                                                <small class="form-text text-muted">Delay for dependencies without ports (default: 10 seconds)</small>
+                                            </div>
+                                            <div id="importWarnings" class="alert alert-warning" style="display: none;">
+                                                <strong>Warnings:</strong>
+                                                <ul id="importWarningsList" class="mb-0"></ul>
+                                            </div>
+                                            <div id="importErrors" class="alert alert-danger" style="display: none;">
+                                                <strong>Errors:</strong>
+                                                <ul id="importErrorsList" class="mb-0"></ul>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-info" onclick="parseDockerCompose()">Parse & Preview</button>
+                                        <button type="button" class="btn btn-primary" id="importToCreateBtn" onclick="importToCreateCI()" disabled>Import to Create CI</button>
                                     </div>
                                 </div>
                             </div>
