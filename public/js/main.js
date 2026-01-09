@@ -6763,35 +6763,34 @@ async function importToCreateCI() {
         }
         
         // Set shape config if available
+        const memorySelect = document.getElementById('ciShapeMemory');
+        const ocpusSelect = document.getElementById('ciShapeOcpus');
+        
+        console.log('Setting CI shape config from parsed data:', parsedComposeData.shapeConfig);
+        
         if (parsedComposeData.shapeConfig) {
-            const memorySelect = document.getElementById('ciShapeMemory');
-            const ocpusSelect = document.getElementById('ciShapeOcpus');
-            
             // Set OCPU (should always be valid)
             if (ocpusSelect) {
-                ocpusSelect.value = parsedComposeData.shapeConfig.ocpus || 1;
+                ocpusSelect.value = (parsedComposeData.shapeConfig.ocpus || 1).toString();
             }
             
-            // Set memory - use architecture-specific default if value not in dropdown
+            // Set memory - ensure value exists in dropdown (create modal has fixed options: 16, 32, 64, 96, 128)
             if (memorySelect) {
-                const memoryValue = parsedComposeData.shapeConfig.memoryInGBs || minMemory;
+                const memoryValue = parsedComposeData.shapeConfig.memoryInGBs || 16;
                 // Check if value exists in dropdown options
                 const optionExists = Array.from(memorySelect.options).some(opt => opt.value === memoryValue.toString());
                 if (optionExists) {
                     memorySelect.value = memoryValue.toString();
                 } else {
-                    // Use architecture-specific default (closest valid option)
-                    memorySelect.value = minMemory.toString();
+                    // Use 16GB as minimum (lowest available option in create modal dropdown)
+                    memorySelect.value = '16';
                 }
             }
         } else {
             // No shapeConfig from parser, use architecture-specific defaults
-            const memorySelect = document.getElementById('ciShapeMemory');
-            const ocpusSelect = document.getElementById('ciShapeOcpus');
+            // Note: Create modal dropdown only has 16, 32, 64, 96, 128, so use 16GB as minimum
             if (memorySelect) {
-                // For ARM64, if 6GB is not in dropdown, use 16GB (closest valid)
-                const defaultMemory = architecture === 'ARM64' ? '16' : '16';
-                memorySelect.value = defaultMemory;
+                memorySelect.value = '16';
             }
             if (ocpusSelect) {
                 ocpusSelect.value = '1';
