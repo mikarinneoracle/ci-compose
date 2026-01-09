@@ -272,24 +272,40 @@ function generateWaitScript(dependencyInfo, dependencyDelaySeconds = 10) {
       return `echo "Waiting for ${dep.name} on port ${dep.port}..."
 timeout=60
 elapsed=0
-# Debug: Check if nc is available
-if ! command -v nc >/dev/null 2>&1; then
-  echo "WARNING: nc (netcat) not found, will use sleep delay instead"
-  sleep 30
-else
-  echo "DEBUG: Using nc to check port ${dep.port} on 127.0.0.1"
-  while ! (nc -z 127.0.0.1 ${dep.port} 2>/dev/null); do
-    if [ \$elapsed -ge \$timeout ]; then
-      echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port} (checked 127.0.0.1:${dep.port})"
-      echo "DEBUG: Last nc check result: \$?"
-      exit 1
+# Try multiple methods to check port availability
+port_check() {
+  # Method 1: Try bash /dev/tcp (most common, no external tools needed)
+  if command -v bash >/dev/null 2>&1; then
+    if timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/${dep.port}" 2>/dev/null; then
+      return 0
     fi
-    echo "DEBUG: Port ${dep.port} not ready yet (elapsed: \$elapsed s), retrying in 2s..."
-    sleep 2
-    elapsed=\$((elapsed + 2))
-  done
-  echo "DEBUG: Port ${dep.port} is now open on 127.0.0.1"
-fi
+  fi
+  # Method 2: Try nc (netcat) if available
+  if command -v nc >/dev/null 2>&1; then
+    if nc -z 127.0.0.1 ${dep.port} 2>/dev/null; then
+      return 0
+    fi
+  fi
+  # Method 3: Try telnet if available
+  if command -v telnet >/dev/null 2>&1; then
+    if echo "" | timeout 1 telnet 127.0.0.1 ${dep.port} 2>/dev/null | grep -q "Connected"; then
+      return 0
+    fi
+  fi
+  return 1
+}
+echo "DEBUG: Checking port ${dep.port} on 127.0.0.1"
+while ! port_check; do
+  if [ \$elapsed -ge \$timeout ]; then
+    echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port} (checked 127.0.0.1:${dep.port})"
+    echo "DEBUG: Port check failed after \$elapsed seconds"
+    exit 1
+  fi
+  echo "DEBUG: Port ${dep.port} not ready yet (elapsed: \$elapsed s), retrying in 2s..."
+  sleep 2
+  elapsed=\$((elapsed + 2))
+done
+echo "DEBUG: Port ${dep.port} is now open on 127.0.0.1"
 echo "${dep.name} is ready"`;
     });
 
