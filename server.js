@@ -14,6 +14,10 @@ const loggingsearch = require('oci-loggingsearch');
 const resourcemanager = require('oci-resourcemanager');
 const common = require('oci-common');
 
+// Docker Compose Parser
+const dockerComposeParser = require('./server/utils/docker-compose-parser');
+const yaml = require('js-yaml');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1305,6 +1309,174 @@ app.post('/api/oci/resource-manager/stacks', async (req, res) => {
     });
   } catch (error) {
     console.error('Error in Resource Manager stack creation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Docker Compose - Parse YAML to OCI payload
+app.post('/api/docker-compose/parse', (req, res) => {
+  try {
+    const { yaml: yamlString, ociConfig } = req.body;
+
+    if (!yamlString) {
+      return res.status(400).json({
+        success: false,
+        error: 'YAML string is required'
+      });
+    }
+
+    if (!ociConfig || !ociConfig.compartmentId || !ociConfig.subnetId) {
+      return res.status(400).json({
+        success: false,
+        error: 'ociConfig with compartmentId and subnetId is required'
+      });
+    }
+
+    // Parse YAML
+    const composeObject = dockerComposeParser.parseDockerCompose(yamlString);
+
+    // Validate structure
+    const validation = dockerComposeParser.validateDockerCompose(composeObject);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid Docker Compose structure',
+        errors: validation.errors
+      });
+    }
+
+    // Convert to OCI payload
+    const { payload, warnings } = dockerComposeParser.convertToOCIPayload(composeObject, ociConfig);
+
+    res.json({
+      success: true,
+      payload: payload,
+      warnings: warnings
+    });
+  } catch (error) {
+    console.error('Error parsing Docker Compose:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Docker Compose - Export OCI instance to YAML
+app.post('/api/docker-compose/export', async (req, res) => {
+  try {
+    const { instanceId, payload } = req.body;
+
+    let ociPayload = payload;
+
+    // If instanceId provided, fetch from OCI
+    if (instanceId && !payload) {
+      const getContainerInstanceRequest = {
+        containerInstanceId: instanceId
+      };
+
+      const response = await containerInstancesClient.getContainerInstance(getContainerInstanceRequest);
+      const instance = response.containerInstance;
+
+      // Convert instance to payload format
+      ociPayload = {
+        displayName: instance.displayName,
+        containers: instance.containers || [],
+        volumes: instance.volumes || [],
+        freeformTags: instance.freeformTags || {}
+      };
+    }
+
+    if (!ociPayload) {
+      return res.status(400).json({
+        success: false,
+        error: 'Either instanceId or payload is required'
+      });
+    }
+
+    // Convert OCI payload to Docker Compose YAML
+    const composeObject = {
+      version: '3.8',
+      services: {}
+    };
+
+    const containers = ociPayload.containers || [];
+    const volumes = ociPayload.volumes || [];
+    const freeformTags = ociPayload.freeformTags || {};
+
+    // Convert containers to services
+    containers.forEach(container => {
+      const serviceName = container.displayName || 'container';
+      const service = {
+        image: container.imageUrl
+      };
+
+      // Container name
+      if (container.displayName) {
+        service.container_name = container.displayName;
+      }
+
+      // Ports (from freeformTags)
+      if (freeformTags[container.displayName]) {
+        const portNum = parseInt(freeformTags[container.displayName]);
+        if (!isNaN(portNum)) {
+          service.ports = [`${portNum}:${portNum}`];
+        }
+      }
+
+      // Environment variables
+      if (container.environmentVariables && Object.keys(container.environmentVariables).length > 0) {
+        service.environment = Object.entries(container.environmentVariables).map(([key, value]) => `${key}=${value}`);
+      }
+
+      // Command
+      if (container.command && Array.isArray(container.command) && container.command.length > 0) {
+        service.command = container.command;
+      }
+
+      // Volumes (from volumeMounts)
+      if (container.volumeMounts && container.volumeMounts.length > 0) {
+        service.volumes = container.volumeMounts.map(mount => {
+          const volume = volumes.find(v => v.name === mount.volumeName);
+          if (volume) {
+            return `${mount.volumeName}:${mount.mountPath}`;
+          }
+          return mount.mountPath;
+        });
+      }
+
+      composeObject.services[serviceName] = service;
+    });
+
+    // Add volumes section
+    if (volumes.length > 0) {
+      composeObject.volumes = {};
+      volumes.forEach(vol => {
+        composeObject.volumes[vol.name] = {
+          driver: 'local'
+        };
+      });
+    }
+
+    // Generate YAML
+    const yamlString = yaml.dump(composeObject, { 
+      indent: 2,
+      lineWidth: -1,
+      noRefs: true
+    });
+
+    const filename = `${ociPayload.displayName || 'container-instance'}-docker-compose.yaml`;
+
+    res.json({
+      success: true,
+      yaml: yamlString,
+      filename: filename
+    });
+  } catch (error) {
+    console.error('Error exporting Docker Compose:', error);
     res.status(500).json({
       success: false,
       error: error.message
