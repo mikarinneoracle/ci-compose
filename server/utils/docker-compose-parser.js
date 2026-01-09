@@ -279,14 +279,14 @@ if ! command -v nc >/dev/null 2>&1; then
 else
   echo "DEBUG: Using nc to check port ${dep.port} on 127.0.0.1"
   while ! (nc -z 127.0.0.1 ${dep.port} 2>/dev/null); do
-    if [ $elapsed -ge $timeout ]; then
+    if [ \$elapsed -ge \$timeout ]; then
       echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port} (checked 127.0.0.1:${dep.port})"
-      echo "DEBUG: Last nc check result: $?"
+      echo "DEBUG: Last nc check result: \$?"
       exit 1
     fi
-    echo "DEBUG: Port ${dep.port} not ready yet (elapsed: ${elapsed}s), retrying in 2s..."
+    echo "DEBUG: Port ${dep.port} not ready yet (elapsed: \$elapsed s), retrying in 2s..."
     sleep 2
-    elapsed=$((elapsed + 2))
+    elapsed=\$((elapsed + 2))
   done
   echo "DEBUG: Port ${dep.port} is now open on 127.0.0.1"
 fi
