@@ -6730,13 +6730,21 @@ async function importToCreateCI() {
                 if (portIndex === -1) portIndex = null;
             }
             
+            // Normalize resourceConfig from parser format (memoryLimitInGBs/vcpusLimit) to UI format (memoryInGBs/vcpus)
+            const parserResourceConfig = container.resourceConfig || {};
+            const memoryFromParser = parserResourceConfig.memoryLimitInGBs || parserResourceConfig.memoryInGBs;
+            const vcpusFromParser = parserResourceConfig.vcpusLimit || parserResourceConfig.vcpus;
+            
+            // Use parsed values or defaults based on architecture
+            const resourceConfig = {
+                memoryInGBs: memoryFromParser || minMemory,
+                vcpus: vcpusFromParser || 1
+            };
+            
             return {
                 displayName: container.displayName,
                 imageUrl: container.imageUrl,
-                resourceConfig: container.resourceConfig || {
-                    memoryInGBs: minMemory,
-                    vcpus: 1
-                },
+                resourceConfig: resourceConfig,
                 environmentVariables: container.environmentVariables || {},
                 command: container.command || [],
                 arguments: container.arguments || [],
@@ -6748,8 +6756,7 @@ async function importToCreateCI() {
         console.log('Populated containersData:', containersData);
         updateContainersTable();
         
-        // Set architecture
-        const architecture = parsedComposeData.freeformTags?.architecture || 'x86';
+        // Set architecture (reuse architecture variable from above)
         const archRadio = document.querySelector(`input[name="ciArchitecture"][value="${architecture}"]`);
         if (archRadio) {
             archRadio.checked = true;
