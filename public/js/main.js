@@ -6764,8 +6764,38 @@ async function importToCreateCI() {
         
         // Set shape config if available
         if (parsedComposeData.shapeConfig) {
-            document.getElementById('ciShapeMemory').value = parsedComposeData.shapeConfig.memoryInGBs || 16;
-            document.getElementById('ciShapeOcpus').value = parsedComposeData.shapeConfig.ocpus || 1;
+            const memorySelect = document.getElementById('ciShapeMemory');
+            const ocpusSelect = document.getElementById('ciShapeOcpus');
+            
+            // Set OCPU (should always be valid)
+            if (ocpusSelect) {
+                ocpusSelect.value = parsedComposeData.shapeConfig.ocpus || 1;
+            }
+            
+            // Set memory - use architecture-specific default if value not in dropdown
+            if (memorySelect) {
+                const memoryValue = parsedComposeData.shapeConfig.memoryInGBs || minMemory;
+                // Check if value exists in dropdown options
+                const optionExists = Array.from(memorySelect.options).some(opt => opt.value === memoryValue.toString());
+                if (optionExists) {
+                    memorySelect.value = memoryValue.toString();
+                } else {
+                    // Use architecture-specific default (closest valid option)
+                    memorySelect.value = minMemory.toString();
+                }
+            }
+        } else {
+            // No shapeConfig from parser, use architecture-specific defaults
+            const memorySelect = document.getElementById('ciShapeMemory');
+            const ocpusSelect = document.getElementById('ciShapeOcpus');
+            if (memorySelect) {
+                // For ARM64, if 6GB is not in dropdown, use 16GB (closest valid)
+                const defaultMemory = architecture === 'ARM64' ? '16' : '16';
+                memorySelect.value = defaultMemory;
+            }
+            if (ocpusSelect) {
+                ocpusSelect.value = '1';
+            }
         }
         
         // Set subnet

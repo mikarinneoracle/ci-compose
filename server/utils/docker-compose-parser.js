@@ -551,18 +551,13 @@ function convertToOCIPayload(composeObject, ociConfig) {
   // Calculate shape config if not provided
   let finalShapeConfig = shapeConfig;
   if (!finalShapeConfig) {
-    // Sum container resources
-    // Use architecture-specific minimums for fallback
-    const minMemoryPerContainer = architecture === 'ARM64' ? 6 : 16;
-    let totalMemory = 0;
-    let totalVcpus = 0;
-    containers.forEach(container => {
-      totalMemory += container.resourceConfig.memoryLimitInGBs || minMemoryPerContainer;
-      totalVcpus += container.resourceConfig.vcpusLimit || 1;
-    });
+    // Use architecture-specific minimums for CI instance (not sum of containers)
+    // x86: minimum 16GB memory, 1 OCPU
+    // ARM64: minimum 6GB memory, 1 OCPU
+    const minMemoryForCI = architecture === 'ARM64' ? 6 : 16;
     finalShapeConfig = {
-      memoryInGBs: Math.max(Math.ceil(totalMemory), minMemoryPerContainer),
-      ocpus: Math.max(Math.ceil(totalVcpus), 1)
+      memoryInGBs: minMemoryForCI,
+      ocpus: 1
     };
   }
 
