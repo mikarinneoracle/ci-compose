@@ -264,7 +264,7 @@ function orderContainersByDependencies(services) {
  * @returns {string} Wait script as string
  */
 function generateWaitScript(dependencyInfo, dependencyDelaySeconds = 10) {
-  // Port-based checks (only for single port)
+  // Port-based checks (use first port if multiple ports exist)
   // Note: Use 127.0.0.1 instead of service names since OCI CI containers share network namespace
   const portChecks = dependencyInfo
     .filter(dep => dep.port !== null)
@@ -348,12 +348,12 @@ echo "Dependencies should be ready"`;
  * @returns {array} Modified command array with wait script
  */
 function addWaitScriptToCommand(service, dependencies, allServices, dependencyDelaySeconds = 10) {
-  // Get dependency ports (only if exactly one port)
+  // Get dependency ports - use first port if available (prefer port check over delay)
   const dependencyInfo = dependencies.map(depName => {
     const depService = allServices[depName];
     const ports = depService?.ports || [];
-    // Only use port if there's exactly one port
-    const port = (ports.length === 1) ? extractContainerPort(ports[0]) : null;
+    // Use first port if available (better than delay, even if multiple ports exist)
+    const port = (ports.length > 0) ? extractContainerPort(ports[0]) : null;
     return { name: depName, port: port };
   });
 
