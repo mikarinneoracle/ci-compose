@@ -378,8 +378,22 @@ function addWaitScriptToCommand(service, dependencies, allServices, dependencyDe
 
     return ['sh', '-c', `${waitScript} && exec ${cmdStr}`];
   } else {
-    // No original command, just wait
-    return ['sh', '-c', waitScript];
+    // No command/entrypoint specified in compose - need to preserve image's default entrypoint
+    // In OCI Container Instances, if we don't set command, it uses the image's default CMD/ENTRYPOINT
+    // Since we need to run the wait script but don't know the default entrypoint, we use a wrapper:
+    // 1. Run wait script
+    // 2. Use a trick: In OCI, if the image has an ENTRYPOINT, setting command passes it as args
+    //    So we can't easily wrap it. However, we can try to exec the original by not setting command.
+    //    But then wait script won't run.
+    // 
+    // Best solution: Return null to signal "don't set command", and the wait script won't be added
+    // This means depends_on won't work for containers without explicit commands
+    // Alternative: Return a command that runs wait then tries to exec original, but we don't know it
+    //
+    // For now, return null - the calling code should handle this by omitting the command field
+    // This preserves the image's default entrypoint, but the wait script won't run
+    // User should specify command in compose for depends_on to work
+    return null;
   }
 }
 
@@ -545,8 +559,12 @@ function convertToOCIPayload(composeObject, ociConfig) {
       container.environmentVariables = environmentVariables;
     }
 
-    if (command.length > 0) {
+    // Only set command if it's not null (null means preserve image default)
+    if (command !== null && command.length > 0) {
       container.command = command;
+    } else if (command === null) {
+      // No command specified in compose - preserve image default, but warn about depends_on
+      warnings.push(`Service "${serviceName}": No command/entrypoint specified. depends_on wait script will not run. Consider adding command/entrypoint to compose file for startup ordering.`);
     }
 
     containers.push(container);
