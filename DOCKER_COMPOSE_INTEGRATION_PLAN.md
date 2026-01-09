@@ -216,7 +216,8 @@ npm install js-yaml --save
 - `parseDockerCompose(yamlString)`: Parse YAML string to object
 - `validateDockerCompose(composeObject)`: Validate structure
 - `convertToOCIPayload(composeObject, ociConfig)`: Convert to OCI format
-  - `ociConfig`: { compartmentId, subnetId, architecture, shapeConfig? }
+  - `ociConfig`: { compartmentId, subnetId, architecture, shapeConfig?, dependencyDelaySeconds? }
+  - `dependencyDelaySeconds`: Optional delay in seconds for dependencies without ports (default: 10)
 
 **Key Conversion Logic:**
 ```javascript
@@ -281,7 +282,7 @@ function processDependsOn(services, orderedServices) {
   return processedServices;
 }
 
-function addWaitScriptToCommand(service, dependencies, allServiceNames, allServices) {
+function addWaitScriptToCommand(service, dependencies, allServiceNames, allServices, dependencyDelaySeconds = 10) {
   // Get dependency ports from service configs
   // Only use port if dependency has exactly ONE port defined
   const dependencyInfo = dependencies.map(depName => {
@@ -294,7 +295,7 @@ function addWaitScriptToCommand(service, dependencies, allServiceNames, allServi
   });
   
   // Generate wait script (port check for single port, delay otherwise)
-  const waitScript = generateWaitScript(dependencyInfo);
+  const waitScript = generateWaitScript(dependencyInfo, dependencyDelaySeconds);
   
   // Get original command/entrypoint
   const originalEntrypoint = service.entrypoint || [];
@@ -318,9 +319,10 @@ function addWaitScriptToCommand(service, dependencies, allServiceNames, allServi
   }
 }
 
-function generateWaitScript(dependencyInfo) {
+function generateWaitScript(dependencyInfo, dependencyDelaySeconds = 10) {
   // Strategy: Port check ONLY for dependencies with single port
   // Delay for dependencies without port or with multiple ports
+  // dependencyDelaySeconds: User-configurable delay (default: 10 seconds)
   
   // Port-based checks (only for single port)
   const portChecks = dependencyInfo
@@ -356,7 +358,10 @@ function generateWaitScript(dependencyInfo) {
   
   // Add delay for dependencies without ports
   if (delayDeps.length > 0) {
-    const delaySeconds = Math.max(10, delayDeps.length * 5); // Min 10s, or 5s per dep
+    // Use user-provided delay or calculate: max(userDelay, delayDeps.length * 5)
+    const delaySeconds = dependencyDelaySeconds 
+      ? Math.max(dependencyDelaySeconds, delayDeps.length * 5)
+      : Math.max(10, delayDeps.length * 5); // Default: min 10s, or 5s per dep
     waitScript += `
       echo "Waiting for dependencies without ports: ${delayDeps.join(', ')}..."
       sleep ${delaySeconds}
@@ -390,7 +395,8 @@ function extractContainerPort(portConfig) {
 #### 1.3 Create API Endpoints
 
 **POST `/api/docker-compose/parse`**
-- Input: `{ yaml: string, ociConfig: { compartmentId, subnetId, architecture? } }`
+- Input: `{ yaml: string, ociConfig: { compartmentId, subnetId, architecture?, dependencyDelaySeconds? } }`
+  - `dependencyDelaySeconds`: Optional delay in seconds for dependencies without ports (default: 10)
 - Output: `{ success: boolean, payload: OCI payload, warnings: string[] }`
 - Validates and converts Docker Compose to OCI format
 
@@ -420,6 +426,11 @@ function extractContainerPort(portConfig) {
   - Subnet (dropdown, pre-filled from `config.defaultSubnetId` or `config.subnetId`)
   - Architecture (radio: x86/ARM64, pre-filled from current config or default to x86)
   - Shape config override (optional, can be calculated from container resources)
+- Dependency delay setting (for dependencies without ports):
+  - Input field: "Dependency Delay (seconds)" 
+  - Default: 10 seconds
+  - Used when dependencies don't have ports defined (fallback to delay instead of port check)
+  - User can adjust this value before parsing
 - Preview/validation before import
 - Error display for parsing issues
 - Warning display for unsupported features
@@ -434,7 +445,8 @@ function extractContainerPort(portConfig) {
    - `compartmentId` from `config.compartmentId`
    - `subnetId` from `config.defaultSubnetId` or `config.subnetId`
    - `architecture` from config or default to x86
-3. Send YAML + OCI config to `/api/docker-compose/parse`
+   - `dependencyDelaySeconds` from input field (default: 10)
+3. Send YAML + OCI config (including `dependencyDelaySeconds`) to `/api/docker-compose/parse`
 4. Handle errors and warnings
 5. Populate create CI modal with parsed data:
    - Set containers data
@@ -586,17 +598,25 @@ function extractContainerPort(portConfig) {
 - Prepend wait script to original command using shell wrapper
 - Implementation:
   ```javascript
-  function addWaitScriptToCommand(container, dependencies, allContainers) {
+  function addWaitScriptToCommand(container, dependencies, allContainers, dependencyDelaySeconds = 10) {
     // Get dependency container names and their ports
-    const dependencyPorts = dependencies.map(depName => {
+    // Only use port if dependency has exactly ONE port
+    const dependencyInfo = dependencies.map(depName => {
       const depContainer = allContainers.find(c => c.displayName === depName);
-      const depPort = depContainer?.freeformTags?.[depName] || 
-                     extractPortFromContainer(depContainer);
-      return { name: depName, port: depPort, hostname: depName };
+      // Get port from freeformTags (single port only)
+      const depPort = depContainer?.freeformTags?.[depName];
+      // Check if port is a valid single port (not multiple)
+      const hasSinglePort = depPort && !isNaN(parseInt(depPort));
+      return { 
+        name: depName, 
+        port: hasSinglePort ? parseInt(depPort) : null,
+        hostname: depName 
+      };
     });
     
-    // Generate wait script
-    const waitScript = generateWaitScript(dependencyPorts);
+    // Generate wait script (port check or delay)
+    // Pass dependencyDelaySeconds from ociConfig (user-provided, default: 10)
+    const waitScript = generateWaitScript(dependencyInfo, dependencyDelaySeconds);
     
     // Get original command
     const originalCommand = container.command || [];
@@ -621,24 +641,22 @@ function extractContainerPort(portConfig) {
     }
   }
   
-  function generateWaitScript(dependencyPorts) {
-    // Generate a wait script that checks if dependencies are ready
-    // Option 1: Port-based check (if ports are available)
-    // Option 2: Health check endpoint (if available)
-    // Option 3: Simple delay with retries
+  function generateWaitScript(dependencyInfo, dependencyDelaySeconds = 10) {
+    // Strategy: Port check ONLY if dependency has exactly one port
+    // Otherwise, use fixed delay (user-configurable)
+    // dependencyDelaySeconds: User-provided delay in seconds (default: 10)
     
-    const checks = dependencyPorts
-      .filter(dep => dep.port)
+    // Port-based checks (only for single port)
+    const portChecks = dependencyInfo
+      .filter(dep => dep.port !== null) // Only dependencies with exactly one port
       .map(dep => {
-        // Use nc (netcat) or similar to check port availability
-        // Fallback to timeout-based check if nc not available
         return `
           echo "Waiting for ${dep.name} on port ${dep.port}..."
           timeout=60
           elapsed=0
           while ! nc -z ${dep.hostname} ${dep.port} 2>/dev/null; do
             if [ $elapsed -ge $timeout ]; then
-              echo "Timeout waiting for ${dep.name}"
+              echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port}"
               exit 1
             fi
             sleep 2
@@ -646,18 +664,39 @@ function extractContainerPort(portConfig) {
           done
           echo "${dep.name} is ready"
         `;
-      })
-      .join('\n');
+      });
     
-    // If no ports available, use simple delay
-    if (checks.trim() === '') {
-      return `
-        echo "Waiting for dependencies to start..."
-        sleep 10
+    // Dependencies without port (use delay)
+    const delayDeps = dependencyInfo
+      .filter(dep => dep.port === null)
+      .map(dep => dep.name);
+    
+    let waitScript = '';
+    
+    // Add port checks
+    if (portChecks.length > 0) {
+      waitScript += portChecks.join('\n');
+    }
+    
+    // Add delay for dependencies without ports
+    if (delayDeps.length > 0) {
+      // Use user-provided delay or calculate: max(userDelay, delayDeps.length * 5)
+      const delaySeconds = dependencyDelaySeconds 
+        ? Math.max(dependencyDelaySeconds, delayDeps.length * 5)
+        : Math.max(10, delayDeps.length * 5); // Default: min 10s, or 5s per dep
+      waitScript += `
+        echo "Waiting for dependencies without ports: ${delayDeps.join(', ')}..."
+        sleep ${delaySeconds}
+        echo "Dependencies should be ready"
       `;
     }
     
-    return checks;
+    // Fallback if no dependencies
+    if (waitScript.trim() === '') {
+      return 'echo "No dependencies to wait for"';
+    }
+    
+    return waitScript;
   }
   
   // Alternative: Use wait-for-it style script (more robust)
@@ -765,8 +804,10 @@ sleep 10  # or calculated delay based on number of dependencies
   - Port check (nc) only used when dependency has **exactly one port** defined
   - If no port or multiple ports → Use fixed delay instead
 - **Delay Calculation**: 
-  - Minimum 10 seconds delay
-  - Or 5 seconds per dependency without port (whichever is greater)
+  - User-configurable via UI input field (default: 10 seconds)
+  - Formula: `max(userDelay, numberOfDepsWithoutPorts * 5)`
+  - Minimum: 10 seconds or user-provided value (whichever is greater)
+  - Example: If user sets 15 seconds and 2 deps without ports → `max(15, 2*5) = 15` seconds
 - **Single Port Only**: Multiple ports in Docker Compose are supported, but only first port is used for dependency checks
 
 **Example Generated Command:**
