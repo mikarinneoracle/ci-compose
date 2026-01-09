@@ -378,21 +378,10 @@ function addWaitScriptToCommand(service, dependencies, allServices, dependencyDe
 
     return ['sh', '-c', `${waitScript} && exec ${cmdStr}`];
   } else {
-    // No command/entrypoint specified in compose - need to preserve image's default entrypoint
-    // In OCI Container Instances, if we don't set command, it uses the image's default CMD/ENTRYPOINT
-    // Since we need to run the wait script but don't know the default entrypoint, we use a wrapper:
-    // 1. Run wait script
-    // 2. Use a trick: In OCI, if the image has an ENTRYPOINT, setting command passes it as args
-    //    So we can't easily wrap it. However, we can try to exec the original by not setting command.
-    //    But then wait script won't run.
-    // 
-    // Best solution: Return null to signal "don't set command", and the wait script won't be added
-    // This means depends_on won't work for containers without explicit commands
-    // Alternative: Return a command that runs wait then tries to exec original, but we don't know it
-    //
-    // For now, return null - the calling code should handle this by omitting the command field
-    // This preserves the image's default entrypoint, but the wait script won't run
-    // User should specify command in compose for depends_on to work
+    // No command/entrypoint specified in compose - preserve image's default entrypoint
+    // We can't add the wait script without knowing what the default entrypoint is
+    // Return null to signal "don't set command" - this preserves the image's default
+    // The calling code will handle this and add a warning that depends_on won't work
     return null;
   }
 }
