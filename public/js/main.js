@@ -6384,7 +6384,6 @@ async function showImportDockerComposeModal() {
     document.getElementById('composeFileUpload').value = '';
     document.getElementById('importWarnings').style.display = 'none';
     document.getElementById('importErrors').style.display = 'none';
-    document.getElementById('importToCreateBtn').disabled = true;
     parsedComposeData = null;
     
     // Load current configuration
@@ -6528,7 +6527,7 @@ async function loadImportSubnets(compartmentId) {
     }
 }
 
-// Parse Docker Compose YAML
+// Parse Docker Compose YAML (internal function, called by importToCreateCI)
 async function parseDockerCompose() {
     const yamlText = document.getElementById('composeYaml').value.trim();
     const compartmentId = document.getElementById('importCompartmentId').value;
@@ -6539,71 +6538,59 @@ async function parseDockerCompose() {
     // Hide previous errors/warnings
     document.getElementById('importWarnings').style.display = 'none';
     document.getElementById('importErrors').style.display = 'none';
-    document.getElementById('importToCreateBtn').disabled = true;
     
     // Validate inputs
     if (!yamlText) {
-        showImportError('Please provide Docker Compose YAML content or upload a file.');
-        return;
+        throw new Error('Please provide Docker Compose YAML content or upload a file.');
     }
     
     if (!compartmentId) {
-        showImportError('Please select a compartment.');
-        return;
+        throw new Error('Please select a compartment.');
     }
     
     if (!subnetId) {
-        showImportError('Please select a subnet.');
-        return;
+        throw new Error('Please select a subnet.');
     }
     
-    try {
-        // Send to parse API
-        const response = await fetch('/api/docker-compose/parse', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                yaml: yamlText,
-                ociConfig: {
-                    compartmentId: compartmentId,
-                    subnetId: subnetId,
-                    architecture: architecture,
-                    dependencyDelaySeconds: dependencyDelaySeconds
-                }
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Store parsed data
-            parsedComposeData = data.payload;
-            
-            // Show warnings if any
-            if (data.warnings && data.warnings.length > 0) {
-                const warningsList = document.getElementById('importWarningsList');
-                warningsList.innerHTML = '';
-                data.warnings.forEach(warning => {
-                    const li = document.createElement('li');
-                    li.textContent = warning;
-                    warningsList.appendChild(li);
-                });
-                document.getElementById('importWarnings').style.display = 'block';
+    // Send to parse API
+    const response = await fetch('/api/docker-compose/parse', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            yaml: yamlText,
+            ociConfig: {
+                compartmentId: compartmentId,
+                subnetId: subnetId,
+                architecture: architecture,
+                dependencyDelaySeconds: dependencyDelaySeconds
             }
-            
-            // Enable import button
-            document.getElementById('importToCreateBtn').disabled = false;
-            
-            showNotification('Docker Compose parsed successfully! Click "Import to Create CI" to proceed.', 'success');
-        } else {
-            showImportError(data.error || 'Failed to parse Docker Compose');
-        }
-    } catch (error) {
-        console.error('Error parsing Docker Compose:', error);
-        showImportError(`Error parsing Docker Compose: ${error.message}`);
+        })
+    });
+    
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Failed to parse Docker Compose');
     }
+    
+    // Store parsed data
+    parsedComposeData = data.payload;
+    
+    // Show warnings if any
+    if (data.warnings && data.warnings.length > 0) {
+        const warningsList = document.getElementById('importWarningsList');
+        warningsList.innerHTML = '';
+        data.warnings.forEach(warning => {
+            const li = document.createElement('li');
+            li.textContent = warning;
+            warningsList.appendChild(li);
+        });
+        document.getElementById('importWarnings').style.display = 'block';
+    }
+    
+    return parsedComposeData;
 }
 
 // Show import error
@@ -6656,12 +6643,14 @@ function mergePorts(existingPorts, newPorts) {
 
 // Import to Create CI
 async function importToCreateCI() {
-    if (!parsedComposeData) {
-        showNotification('Please parse Docker Compose first.', 'error');
-        return;
-    }
-    
     try {
+        // Parse Docker Compose first (implicit parsing)
+        await parseDockerCompose();
+        
+        if (!parsedComposeData) {
+            showNotification('Failed to parse Docker Compose.', 'error');
+            return;
+        }
         const config = getConfiguration();
         
         // Load existing volumes and ports from localStorage
@@ -6780,6 +6769,7 @@ async function importToCreateCI() {
         showNotification('Docker Compose imported successfully! Review and create the Container Instance.', 'success');
     } catch (error) {
         console.error('Error importing to Create CI:', error);
+        showImportError(error.message || 'Error importing Docker Compose');
         showNotification(`Error importing: ${error.message}`, 'error');
     }
 }
