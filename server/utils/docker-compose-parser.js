@@ -265,13 +265,14 @@ function orderContainersByDependencies(services) {
  */
 function generateWaitScript(dependencyInfo, dependencyDelaySeconds = 10) {
   // Port-based checks (only for single port)
+  // Note: Use 127.0.0.1 instead of service names since OCI CI containers share network namespace
   const portChecks = dependencyInfo
     .filter(dep => dep.port !== null)
     .map(dep => {
       return `echo "Waiting for ${dep.name} on port ${dep.port}..."
 timeout=60
 elapsed=0
-while ! (command -v nc >/dev/null 2>&1 && nc -z ${dep.name} ${dep.port} 2>/dev/null); do
+while ! (command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 ${dep.port} 2>/dev/null); do
   if [ $elapsed -ge $timeout ]; then
     echo "ERROR: Timeout waiting for ${dep.name} on port ${dep.port}"
     exit 1

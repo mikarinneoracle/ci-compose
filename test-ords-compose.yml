@@ -25,7 +25,7 @@ services:
       - "8888:8080" # HTTP
       - "27017:27017" # MongoDB API
     environment:
-      - CONN_STRING=jdbc:oracle:thin:@ordsdb:1521/freepdb1
+      - CONN_STRING=jdbc:oracle:thin:@127.0.0.1:1521/freepdb1
       - ORACLE_PWD=Welcome12345
     volumes:
       - ./ords_config:/etc/ords/config
@@ -41,4 +41,4 @@ services:
     command:
       - bash
       - -c
-      - echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@ordsdb:1521/freepdb1
+      - echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@127.0.0.1:1521/freepdb1
