@@ -429,6 +429,29 @@ function convertToOCIPayload(composeObject, ociConfig) {
     warnings.push('Circular dependencies detected in depends_on. Using best-effort ordering.');
   }
 
+  // Extract restart policy from services (before processing depends_on)
+  // Docker Compose restart values: always, no, on-failure, unless-stopped
+  // OCI containerRestartPolicy values: NEVER, ALWAYS, ON_FAILURE
+  // Use the first service's restart policy, or default to NEVER
+  let containerRestartPolicy = 'NEVER'; // Default
+  const restartPolicyMap = {
+    'always': 'ALWAYS',
+    'no': 'NEVER',
+    'never': 'NEVER',
+    'on-failure': 'ON_FAILURE',
+    'unless-stopped': 'ALWAYS' // Map to ALWAYS as closest match
+  };
+  
+  // Check first service (in original order) for restart policy
+  if (serviceNames.length > 0) {
+    const firstServiceName = serviceNames[0];
+    const firstService = services[firstServiceName];
+    if (firstService && firstService.restart) {
+      const restartValue = String(firstService.restart).toLowerCase();
+      containerRestartPolicy = restartPolicyMap[restartValue] || 'NEVER';
+    }
+  }
+
   // Process depends_on and add wait scripts
   const processedServices = processDependsOn(services, orderedServiceNames, dependencyDelaySeconds);
 
@@ -551,7 +574,7 @@ function convertToOCIPayload(composeObject, ociConfig) {
     shape: shape,
     shapeConfig: finalShapeConfig,
     containers: containers,
-    containerRestartPolicy: 'NEVER',
+    containerRestartPolicy: containerRestartPolicy, // Use extracted restart policy or default to NEVER
     freeformTags: freeformTags
   };
 
