@@ -31,9 +31,14 @@ services:
       - ./ords_config:/etc/ords/config
     depends_on:
       - ordsdb
-    # healthcheck is not supported in OCI - will be replaced with depends_on port check
-    healthcheck:
-      test: [ "CMD", "bash", "-c", "echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@ordsdb:1521/freepdb1" ]
-      interval: 20s
-      timeout: 10s
-      retries: 5
+
+  sqlcl:
+    image: container-registry.oracle.com/database/sqlcl:latest
+    container_name: sqlcl
+    depends_on:
+      - ordsdb
+    # Port check (1521) will be automatically added by parser via depends_on
+    command:
+      - bash
+      - -c
+      - echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@ordsdb:1521/freepdb1
