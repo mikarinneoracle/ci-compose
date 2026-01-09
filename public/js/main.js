@@ -6710,7 +6710,20 @@ async function importToCreateCI() {
         updateVolumesTable();
         updatePortsTable();
         
-        // Populate containers data
+        // Close import modal first
+        const importModal = bootstrap.Modal.getInstance(document.getElementById('importDockerComposeModal'));
+        importModal.hide();
+        
+        // Open create CI modal (this will reset containersData and reload volumes/ports, so we populate after)
+        showCreateContainerInstanceModal();
+        
+        // Re-load volumes/ports after modal opens (to get the merged data we just saved)
+        loadPortsAndVolumesForCIName(config.projectName);
+        updateVolumesTable();
+        updatePortsTable();
+        
+        // Populate containers data AFTER modal is opened (to avoid being cleared)
+        console.log('Importing containers from parsed data:', parsedComposeData.containers);
         containersData = (parsedComposeData.containers || []).map(container => {
             // Find port index for this container
             let portIndex = null;
@@ -6738,6 +6751,7 @@ async function importToCreateCI() {
         });
         
         // Update containers table
+        console.log('Populated containersData:', containersData);
         updateContainersTable();
         
         // Set architecture
@@ -6762,13 +6776,6 @@ async function importToCreateCI() {
             }
             subnetSelect.value = parsedComposeData.subnetId;
         }
-        
-        // Close import modal
-        const importModal = bootstrap.Modal.getInstance(document.getElementById('importDockerComposeModal'));
-        importModal.hide();
-        
-        // Open create CI modal
-        showCreateContainerInstanceModal();
         
         showNotification('Docker Compose imported successfully! Review and create the Container Instance.', 'success');
     } catch (error) {
