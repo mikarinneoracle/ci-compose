@@ -6713,6 +6713,11 @@ async function importToCreateCI() {
         
         // Populate containers data AFTER modal is opened (to avoid being cleared)
         console.log('Importing containers from parsed data:', parsedComposeData.containers);
+        
+        // Get architecture for minimum resource defaults
+        const architecture = parsedComposeData.freeformTags?.architecture || 'x86';
+        const minMemory = architecture === 'ARM64' ? 6 : 16;
+        
         containersData = (parsedComposeData.containers || []).map(container => {
             // Find port index for this container
             let portIndex = null;
@@ -6729,7 +6734,7 @@ async function importToCreateCI() {
                 displayName: container.displayName,
                 imageUrl: container.imageUrl,
                 resourceConfig: container.resourceConfig || {
-                    memoryInGBs: 16,
+                    memoryInGBs: minMemory,
                     vcpus: 1
                 },
                 environmentVariables: container.environmentVariables || {},

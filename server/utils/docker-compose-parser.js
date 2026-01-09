@@ -472,9 +472,12 @@ function convertToOCIPayload(composeObject, ociConfig) {
       }
     });
 
-    // Resource config (defaults)
+    // Resource config (architecture-specific minimums)
+    // x86: minimum 16GB memory, 1 OCPU
+    // ARM64: minimum 6GB memory, 1 OCPU
+    const minMemory = architecture === 'ARM64' ? 6 : 16;
     const resourceConfig = {
-      memoryLimitInGBs: 16,
+      memoryLimitInGBs: minMemory,
       vcpusLimit: 1
     };
 
@@ -526,14 +529,16 @@ function convertToOCIPayload(composeObject, ociConfig) {
   let finalShapeConfig = shapeConfig;
   if (!finalShapeConfig) {
     // Sum container resources
+    // Use architecture-specific minimums for fallback
+    const minMemoryPerContainer = architecture === 'ARM64' ? 6 : 16;
     let totalMemory = 0;
     let totalVcpus = 0;
     containers.forEach(container => {
-      totalMemory += container.resourceConfig.memoryLimitInGBs || 16;
+      totalMemory += container.resourceConfig.memoryLimitInGBs || minMemoryPerContainer;
       totalVcpus += container.resourceConfig.vcpusLimit || 1;
     });
     finalShapeConfig = {
-      memoryInGBs: Math.max(Math.ceil(totalMemory), 1),
+      memoryInGBs: Math.max(Math.ceil(totalMemory), minMemoryPerContainer),
       ocpus: Math.max(Math.ceil(totalVcpus), 1)
     };
   }
