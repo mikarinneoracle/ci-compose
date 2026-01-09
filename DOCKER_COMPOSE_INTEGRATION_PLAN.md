@@ -446,21 +446,103 @@ function extractContainerPort(portConfig) {
    - `subnetId` from `config.defaultSubnetId` or `config.subnetId`
    - `architecture` from config or default to x86
    - `dependencyDelaySeconds` from input field (default: 10)
-3. Send YAML + OCI config (including `dependencyDelaySeconds`) to `/api/docker-compose/parse`
-4. Handle errors and warnings
-5. Populate create CI modal with parsed data:
-   - Set containers data
-   - Set volumes data
-   - Set ports data
+3. **Load existing volumes and ports from localStorage** for current CI name:
+   - Call `loadPortsAndVolumesForCIName(config.projectName)` to load existing data
+   - This populates global `volumesData` and `portsData` arrays
+4. Send YAML + OCI config (including `dependencyDelaySeconds`) to `/api/docker-compose/parse`
+5. Handle errors and warnings
+6. **Merge parsed volumes and ports with existing data**:
+   - **Volumes**: Add new volumes from Compose YAML to existing `volumesData`
+     - Avoid duplicates: Check if volume with same `path` already exists
+     - If duplicate found, skip or update (user preference: skip to preserve existing)
+   - **Ports**: Add new ports from Compose YAML to existing `portsData`
+     - Avoid duplicates: Check if port with same `port` number already exists
+     - If duplicate found, skip to preserve existing port
+   - Update global `volumesData` and `portsData` arrays with merged data
+7. **Save merged data to localStorage**:
+   - Call `savePortsAndVolumesForCIName(config.projectName)` to persist merged data
+8. Populate create CI modal with parsed data:
+   - Set containers data (from parsed YAML)
+   - Set volumes data (merged: existing + new from YAML)
+   - Set ports data (merged: existing + new from YAML)
    - Set architecture (from config or parsed)
    - Set shape config (if provided or calculated)
-6. Open create CI modal for review/editing (with all fields pre-filled)
-7. User can modify before creating
+9. **Update UI tables**:
+   - Call `updateVolumesTable()` to refresh volumes table with merged data
+   - Call `updatePortsTable()` or similar to refresh ports table with merged data
+10. Open create CI modal for review/editing (with all fields pre-filled)
+11. User can modify before creating
 
 #### 2.4 Integration Points
 - Hook into existing `confirmCreateContainerInstance()` flow
 - Reuse existing container/volume/port data structures
 - Validate against existing validation rules
+- **Merge with existing localStorage data**:
+  - Use `loadPortsAndVolumesForCIName(ciName)` to load existing volumes/ports
+  - Merge parsed volumes/ports with existing ones (avoid duplicates)
+  - Use `savePortsAndVolumesForCIName(ciName)` to save merged data
+  - Update UI tables with merged data
+
+**Merge Logic for Volumes:**
+```javascript
+function mergeVolumes(existingVolumes, newVolumes) {
+  const merged = [...existingVolumes];
+  
+  newVolumes.forEach(newVol => {
+    // Check for duplicate by path (primary identifier)
+    // Volumes are considered duplicates if they have the same mount path
+    const exists = merged.some(existing => existing.path === newVol.path);
+    if (!exists) {
+      merged.push(newVol);
+    } else {
+      console.log(`Skipping duplicate volume with path: ${newVol.path}`);
+      // Existing volume is preserved, new one is skipped
+    }
+  });
+  
+  return merged;
+}
+```
+
+**Merge Logic for Ports:**
+```javascript
+function mergePorts(existingPorts, newPorts) {
+  const merged = [...existingPorts];
+  
+  newPorts.forEach(newPort => {
+    // Check for duplicate by port number (primary identifier)
+    // Ports are considered duplicates if they have the same port number
+    const portNum = typeof newPort.port === 'number' ? newPort.port : parseInt(newPort.port);
+    const exists = merged.some(existing => {
+      const existingPortNum = typeof existing.port === 'number' ? existing.port : parseInt(existing.port);
+      return existingPortNum === portNum;
+    });
+    if (!exists) {
+      merged.push(newPort);
+    } else {
+      console.log(`Skipping duplicate port: ${portNum}`);
+      // Existing port is preserved, new one is skipped
+    }
+  });
+  
+  return merged;
+}
+```
+
+**Duplicate Detection Rules:**
+- **Volumes**: Duplicate if `path` matches (case-sensitive)
+  - Example: `/data` and `/data` are duplicates
+  - Example: `/data` and `/Data` are NOT duplicates (different paths)
+- **Ports**: Duplicate if port number matches (numeric comparison)
+  - Example: `8080` and `8080` are duplicates
+  - Example: `8080` and `3000` are NOT duplicates
+  - Port names are ignored for duplicate detection (only port number matters)
+
+**Behavior:**
+- Existing volumes/ports in localStorage are preserved
+- New volumes/ports from Compose YAML are added only if not duplicates
+- Merged data is saved back to localStorage
+- UI tables are updated to show merged data
 
 ### Phase 3: Frontend Export Functionality
 
@@ -1000,13 +1082,22 @@ ci-compose/
    - Compartment: Pre-filled from `config.compartmentId`
    - Subnet: Pre-filled from `config.defaultSubnetId` or `config.subnetId`
    - Architecture: Pre-filled from current config or default to x86
+   - Dependency Delay: Pre-filled with default 10 seconds (user can adjust)
    - User can modify these fields if needed
 5. User clicks "Parse & Preview"
 6. System validates and converts, shows warnings
-7. User reviews converted configuration
-8. User clicks "Import to Create CI"
-9. Create CI modal opens with pre-filled data (containers, volumes, ports, etc.)
-10. User can modify before creating
+7. **System merges parsed volumes and ports with existing localStorage data**:
+   - Loads existing volumes/ports for current CI name from localStorage
+   - Adds new volumes/ports from Compose YAML (skips duplicates)
+   - Saves merged data back to localStorage
+8. User reviews converted configuration (with merged volumes/ports)
+9. User clicks "Import to Create CI"
+10. Create CI modal opens with pre-filled data:
+    - Containers from Compose YAML
+    - Volumes: existing + new from YAML (merged)
+    - Ports: existing + new from YAML (merged)
+    - Architecture, shape config, etc.
+11. User can modify before creating
 
 ### Export Flow
 1. User opens CI Details modal
