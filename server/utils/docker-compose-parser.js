@@ -591,7 +591,7 @@ function convertToOCIPayload(composeObject, ociConfig) {
       warnings.push(`Service "${serviceName}": build is not supported (use pre-built images)`);
     }
     if (service.healthcheck) {
-      warnings.push(`Service "${serviceName}": healthcheck is not supported in OCI`);
+      warnings.push(`Service "${serviceName}": healthcheck is not supported in OCI. Use depends_on with port checks instead for startup ordering.`);
     }
     if (service.deploy && service.deploy.resources) {
       warnings.push(`Service "${serviceName}": deploy.resources are ignored (using defaults)`);

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  ordsdb:
+    image: gvenzl/oracle-free:23.26.0-slim-faststart
+    container_name: ordsdb
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=Welcome12345
+    volumes:
+      - ./oracle:/container-entrypoint-initdb.d
+    # healthcheck is not supported in OCI - will be replaced with depends_on port check
+    healthcheck:
+      test: ["CMD-SHELL", "lsnrctl status | grep READY"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  ords:
+    image: container-registry.oracle.com/database/ords:latest
+    container_name: ords
+    ports:
+      - "8888:8080" # HTTP
+      - "27017:27017" # MongoDB API
+    environment:
+      - CONN_STRING=jdbc:oracle:thin:@ordsdb:1521/freepdb1
+      - ORACLE_PWD=Welcome12345
+    volumes:
+      - ./ords_config:/etc/ords/config
+    depends_on:
+      - ordsdb
+    # healthcheck is not supported in OCI - will be replaced with depends_on port check
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@ordsdb:1521/freepdb1" ]
+      interval: 20s
+      timeout: 10s
+      retries: 5
