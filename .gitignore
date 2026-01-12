@@ -7,4 +7,4 @@ yarn-debug.log*
 yarn-error.log*
 
 # Docker Compose integration plan (not tracked)
-DOCKER_COMPOSE_INTEGRATION_PLAN_NEW.md
+DOCKER_COMPOSE_INTEGRATION_PLAN*.md
