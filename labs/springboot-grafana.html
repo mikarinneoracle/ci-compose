@@ -643,6 +643,8 @@ services:
     container_name: java-springboot
     ports:
       - "8080:8080"
+    volumes:
+      - logs:/var/log
     restart: always
 
   node-exporter:
@@ -657,7 +659,7 @@ services:
       - -c
       - while [ ! -f /etc/prometheus/prometheus.yml ]; do echo "Waiting for config file..."; sleep 2; done; /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
     volumes:
-      - ./prometheus:/etc/prometheus
+      - prometheus-grafana:/etc/prometheus
 
   grafana:
     image: grafana/grafana:latest
@@ -670,10 +672,6 @@ services:
       - while [ ! -f /etc/grafana/grafana.ini ]; do echo "Waiting for config file..."; sleep 2; done; /usr/share/grafana/bin/grafana server --config /etc/grafana/grafana.ini
     volumes:
       - prometheus-grafana:/etc/grafana
-
-  java-springboot:
-    volumes:
-      - logs:/var/log
 
 volumes:
   prometheus-grafana:
