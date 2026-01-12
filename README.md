@@ -124,7 +124,8 @@ Once a Container Instance is created (either manually or from a Docker Compose Y
 2. **Export to Resource Manager**: 
    - Open the Container Instance details modal
    - Click the "Export to Resource Manager" button
-   - The Terraform configuration will be generated and can be saved to your repository
+   - An OCI Resource Manager Stack is created automatically
+   - The stack can be executed using the OCI Cloud Console UI or via CLI/pipeline (see examples below)
 
 ### Using in CI/CD Pipelines
 
