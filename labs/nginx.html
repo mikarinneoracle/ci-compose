@@ -457,7 +457,14 @@ services:
     container_name: nginx
     ports:
       - "80:80"
-    restart: always</code></pre>
+    volumes:
+      - www-data:/usr/share/nginx/html
+      - logs:/var/log/nginx
+    restart: always
+
+volumes:
+  www-data:
+  logs:</code></pre>
                         <p class="text-muted small">Note: Sidecars (OsReader, LogWriter) are OCI-specific and need to be added separately in CI Compose after importing. Copy this YAML and use the "Import Compose" feature in CI Compose to quickly set up this lab configuration.</p>
                         <div class="alert alert-info mt-3 mb-0" role="alert">
                             <strong><i class="bi bi-info-circle"></i> Next Steps:</strong> After importing the Docker Compose configuration, <a href="#prerequisites" class="alert-link">continue with the manual setup steps</a> to configure OCI resources, environment variables, and sidecars.
