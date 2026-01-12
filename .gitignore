@@ -6,3 +6,5 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Docker Compose integration plan (not tracked)
+DOCKER_COMPOSE_INTEGRATION_PLAN_NEW.md
