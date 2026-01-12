@@ -659,7 +659,7 @@ services:
       - -c
       - while [ ! -f /etc/prometheus/prometheus.yml ]; do echo "Waiting for config file..."; sleep 2; done; /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
     volumes:
-      - prometheus-grafana:/etc/prometheus
+      - prometheus-grafana:/etc
 
   grafana:
     image: grafana/grafana:latest
@@ -671,7 +671,7 @@ services:
       - -c
       - while [ ! -f /etc/grafana/grafana.ini ]; do echo "Waiting for config file..."; sleep 2; done; /usr/share/grafana/bin/grafana server --config /etc/grafana/grafana.ini
     volumes:
-      - prometheus-grafana:/etc/grafana
+      - prometheus-grafana:/etc
 
 volumes:
   prometheus-grafana:
