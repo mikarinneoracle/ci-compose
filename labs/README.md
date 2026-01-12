@@ -2,6 +2,8 @@
 
 Experimental features and advanced container instance configurations
 
+> **Note:** Each lab includes a Docker Compose example that can be imported using the "Import Compose" feature in CI Compose for quick setup.
+
 ## Getting Started
 
 To access CI Compose Labs:

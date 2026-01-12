@@ -80,7 +80,13 @@
                     </div>
                     <div class="card-body">
                         <p>This lab is based on the example at <a href="https://github.com/mikarinneoracle/cars-api-pg-prometheus" target="_blank" class="text-decoration-none">https://github.com/mikarinneoracle/cars-api-pg-prometheus</a> with small modifications.</p>
-                        <p>This lab demonstrates how to deploy a NodeJS Swagger API application using OCI Container Instances with OCI PostgreSQL database and Vault for secrets management. You'll learn how to:</p>
+                        <p>This lab demonstrates how to deploy a NodeJS Swagger API application using OCI Container Instances with OCI PostgreSQL database and Vault for secrets management.</p>
+                        <p><strong>How to run this lab:</strong></p>
+                        <ul>
+                            <li><a href="#prerequisites">Run the lab manually</a> - Follow the step-by-step instructions below</li>
+                            <li><a href="#docker-compose-example">Start with Docker Compose</a> - Import the Docker Compose YAML example for quick setup</li>
+                        </ul>
+                        <p>You'll learn how to:</p>
                         <ul>
                             <li>Configure OCI resources (VCN, PostgreSQL, Vault, Logging)</li>
                             <li>Set up a PostgreSQL database instance</li>
@@ -93,7 +99,7 @@
                 </div>
 
                 <!-- Prerequisites -->
-                <div class="card mb-4 shadow-sm step-card">
+                <div id="prerequisites" class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-secondary text-white">
                         <h5 class="mb-0"><i class="bi bi-check-circle"></i> Prerequisites</h5>
                     </div>
@@ -586,7 +592,7 @@
                 </div>
 
                 <!-- Docker Compose Example -->
-                <div class="card mb-4 shadow-sm step-card">
+                <div id="docker-compose-example" class="card mb-4 shadow-sm step-card">
                     <div class="card-header bg-info text-white">
                         <h5 class="mb-0">
                             <i class="bi bi-file-code"></i> Docker Compose Example
