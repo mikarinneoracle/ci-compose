@@ -128,30 +128,25 @@ Once a Container Instance is created (either manually or from a Docker Compose Y
 
 ### Using in CI/CD Pipelines
 
-The exported Terraform configuration can be included in your CI/CD pipeline using the OCI CLI. Here's an example workflow:
+After exporting a Container Instance configuration to OCI Resource Manager from the CI Compose UI, you can use the exported stack in your CI/CD pipeline. The stack ID is provided when you export from the UI.
 
-#### Example: Create/Update Stack using OCI CLI
+#### Example: Apply Stack using OCI CLI
 
 ```bash
-# Create or update an OCI Resource Manager Stack
-oci resource-manager stack create \
-  --compartment-id <compartment-ocid> \
-  --display-name "my-container-instance-stack" \
-  --config-source file-uri \
-  --working-directory ./terraform \
-  --terraform-version "1.5.x"
+# Use the stack ID that was created when exporting from CI Compose UI
+# The stack ID is displayed after exporting in the CI Compose UI
 
 # Apply the stack (create/update resources)
 oci resource-manager job create-apply-job \
-  --stack-id <stack-ocid> \
+  --stack-id <stack-ocid-from-ui-export> \
   --execution-plan-strategy AUTO_APPROVED
 
 # Or use plan and apply separately
 oci resource-manager job create-plan-job \
-  --stack-id <stack-ocid>
+  --stack-id <stack-ocid-from-ui-export>
 
 oci resource-manager job create-apply-job \
-  --stack-id <stack-ocid> \
+  --stack-id <stack-ocid-from-ui-export> \
   --execution-plan-strategy APPROVED \
   --plan-job-id <plan-job-ocid>
 ```
@@ -182,32 +177,29 @@ jobs:
           user-id: ${{ secrets.OCI_USER_ID }}
           region: ${{ secrets.OCI_REGION }}
       
-      - name: Create/Update Stack
-        run: |
-          oci resource-manager stack create \
-            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
-            --display-name "ci-stack" \
-            --config-source file-uri \
-            --working-directory ./terraform \
-            --terraform-version "1.5.x" || \
-          oci resource-manager stack update \
-            --stack-id $(oci resource-manager stack list \
-              --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
-              --display-name "ci-stack" \
-              --query 'data[0].id' --raw-output) \
-            --config-source file-uri \
-            --working-directory ./terraform \
-            --terraform-version "1.5.x"
-      
       - name: Apply Stack
         run: |
-          STACK_ID=$(oci resource-manager stack list \
-            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
-            --display-name "ci-stack" \
-            --query 'data[0].id' --raw-output)
+          # Use the stack ID that was created when exporting from CI Compose UI
+          # Store the stack ID as a GitHub secret: OCI_STACK_ID
           oci resource-manager job create-apply-job \
-            --stack-id $STACK_ID \
+            --stack-id ${{ secrets.OCI_STACK_ID }} \
             --execution-plan-strategy AUTO_APPROVED
+      
+      # Alternative: Use plan and apply separately for more control
+      # - name: Plan Stack
+      #   run: |
+      #     PLAN_JOB_ID=$(oci resource-manager job create-plan-job \
+      #       --stack-id ${{ secrets.OCI_STACK_ID }} \
+      #       --query 'data.id' --raw-output)
+      #     echo "PLAN_JOB_ID=$PLAN_JOB_ID" >> $GITHUB_ENV
+      #     # Wait for plan to complete and review
+      # 
+      # - name: Apply Stack
+      #   run: |
+      #     oci resource-manager job create-apply-job \
+      #       --stack-id ${{ secrets.OCI_STACK_ID }} \
+      #       --execution-plan-strategy APPROVED \
+      #       --plan-job-id ${{ env.PLAN_JOB_ID }}
 ```
 
 ### Benefits
