@@ -436,6 +436,63 @@ grant connect, resource to testuser;</pre>
                     </div>
                 </div>
 
+                <!-- Docker Compose Example -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-code"></i> Docker Compose Example
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p>You can also import this lab configuration using Docker Compose YAML. Here's the compose file for this lab:</p>
+                        <pre class="code-block"><code>version: '3.8'
+
+services:
+  ordsdb:
+    image: gvenzl/oracle-free:23.26.0-slim-faststart
+    container_name: ordsdb
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=Welcome12345
+    volumes:
+      - ./oracle:/container-entrypoint-initdb.d
+    # healthcheck is not supported in OCI - will be replaced with depends_on port check
+    healthcheck:
+      test: ["CMD-SHELL", "lsnrctl status | grep READY"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  ords:
+    image: container-registry.oracle.com/database/ords:latest
+    container_name: ords
+    ports:
+      - "8888:8080" # HTTP
+      - "27017:27017" # MongoDB API
+    environment:
+      - CONN_STRING=jdbc:oracle:thin:@127.0.0.1:1521/freepdb1
+      - ORACLE_PWD=Welcome12345
+    volumes:
+      - ./ords_config:/etc/ords/config
+    depends_on:
+      - ordsdb
+
+  sqlcl:
+    image: container-registry.oracle.com/database/sqlcl:latest
+    container_name: sqlcl
+    depends_on:
+      - ords
+    # Port check (1521) will be automatically added by parser via depends_on
+    command:
+      - bash
+      - -c
+      - echo 'EXECUTE ORDS.ENABLE_SCHEMA;' | sql -s testuser/testpwd@127.0.0.1:1521/freepdb1</code></pre>
+                        <p class="text-muted small">Copy this YAML and use the "Import Compose" feature in CI Compose to quickly set up this lab configuration.</p>
+                    </div>
+                </div>
+
                 <!-- Navigation -->
                 <div class="text-center mt-4 mb-4">
                     <a href="/labs.html" class="btn btn-outline-primary me-2">

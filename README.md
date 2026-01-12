@@ -95,6 +95,126 @@ After completing the configuration, you can start creating and managing containe
 - Access to an OCI tenancy with the appropriate permissions to use Container Instances, Networking, Logging, Vault, and Object Storage services, where applicable
 - OCI SDK credentials configured (via `~/.oci/config` or environment variables)
 
+## Docker Compose Import
+
+CI Compose supports importing Docker Compose YAML files to quickly set up OCI Container Instances. This feature allows you to:
+
+- Import standard Docker Compose configurations
+- Convert Docker Compose services to OCI Container Instances
+- Support for `image`, `command`, `entrypoint`, `environment`, `ports`, `volumes`, and `depends_on`
+- Automatic merging of volumes and ports with existing configurations
+
+To use this feature:
+1. Click the "Import Compose" button in the Container Instances section
+2. Paste your Docker Compose YAML or upload a file
+3. Configure OCI-specific settings (compartment, subnet, architecture)
+4. Review and create the Container Instance
+
+For more details and examples, see the [Labs](labs/README.md) section.
+
+## CI/CD Integration
+
+Once a Container Instance is created (either manually or from a Docker Compose YAML), you can export it to OCI Resource Manager (Terraform) for CI/CD pipeline integration.
+
+### Exporting to OCI Resource Manager
+
+1. **Create or configure your Container Instance** using the CI Compose UI or by importing a Docker Compose file
+2. **Export to Resource Manager**: 
+   - Open the Container Instance details modal
+   - Click the "Export to Resource Manager" button
+   - The Terraform configuration will be generated and can be saved to your repository
+
+### Using in CI/CD Pipelines
+
+The exported Terraform configuration can be included in your CI/CD pipeline using the OCI CLI. Here's an example workflow:
+
+#### Example: Create/Update Stack using OCI CLI
+
+```bash
+# Create or update an OCI Resource Manager Stack
+oci resource-manager stack create \
+  --compartment-id <compartment-ocid> \
+  --display-name "my-container-instance-stack" \
+  --config-source file-uri \
+  --working-directory ./terraform \
+  --terraform-version "1.5.x"
+
+# Apply the stack (create/update resources)
+oci resource-manager job create-apply-job \
+  --stack-id <stack-ocid> \
+  --execution-plan-strategy AUTO_APPROVED
+
+# Or use plan and apply separately
+oci resource-manager job create-plan-job \
+  --stack-id <stack-ocid>
+
+oci resource-manager job create-apply-job \
+  --stack-id <stack-ocid> \
+  --execution-plan-strategy APPROVED \
+  --plan-job-id <plan-job-ocid>
+```
+
+#### Example: GitHub Actions Workflow
+
+```yaml
+name: Deploy Container Instance
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure OCI CLI
+        uses: oracle-actions/configure-oci-cli@v1
+        with:
+          config-file-content: ${{ secrets.OCI_CONFIG }}
+          private-key-content: ${{ secrets.OCI_PRIVATE_KEY }}
+          passphrase: ${{ secrets.OCI_PASSPHRASE }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          tenancy-id: ${{ secrets.OCI_TENANCY_ID }}
+          user-id: ${{ secrets.OCI_USER_ID }}
+          region: ${{ secrets.OCI_REGION }}
+      
+      - name: Create/Update Stack
+        run: |
+          oci resource-manager stack create \
+            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
+            --display-name "ci-stack" \
+            --config-source file-uri \
+            --working-directory ./terraform \
+            --terraform-version "1.5.x" || \
+          oci resource-manager stack update \
+            --stack-id $(oci resource-manager stack list \
+              --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
+              --display-name "ci-stack" \
+              --query 'data[0].id' --raw-output) \
+            --config-source file-uri \
+            --working-directory ./terraform \
+            --terraform-version "1.5.x"
+      
+      - name: Apply Stack
+        run: |
+          STACK_ID=$(oci resource-manager stack list \
+            --compartment-id ${{ secrets.OCI_COMPARTMENT_ID }} \
+            --display-name "ci-stack" \
+            --query 'data[0].id' --raw-output)
+          oci resource-manager job create-apply-job \
+            --stack-id $STACK_ID \
+            --execution-plan-strategy AUTO_APPROVED
+```
+
+### Benefits
+
+- **Version Control**: Track Container Instance configurations in Git
+- **Automated Deployments**: Integrate with CI/CD pipelines
+- **Infrastructure as Code**: Manage OCI resources declaratively
+- **Reproducibility**: Deploy the same configuration across environments
+
 ## Labs
 
 For experimental features and labs, see [Labs](labs/README.md).

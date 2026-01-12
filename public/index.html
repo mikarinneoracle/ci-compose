@@ -728,7 +728,47 @@
                             <li>Edit, restart, stop, and delete container instances</li>
                             <li>Restore deleted container instances with the same configuration (volumes and subnet are recreated from current configuration)</li>
                             <li>Export Container Instances configurations to OCI Resource Manager (Terraform)</li>
+                            <li>Import Docker Compose YAML files to quickly set up Container Instances</li>
                         </ul>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">Docker Compose Import</h5>
+                        <p>
+                            CI Compose supports importing Docker Compose YAML files to quickly set up OCI Container Instances. 
+                            This feature allows you to import standard Docker Compose configurations and convert them to OCI Container Instances.
+                        </p>
+                        <p class="small text-muted">
+                            Supported features: <code>image</code>, <code>command</code>, <code>entrypoint</code>, 
+                            <code>environment</code>, <code>ports</code>, <code>volumes</code>, and <code>depends_on</code>.
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">CI/CD Integration</h5>
+                        <p>
+                            Once a Container Instance is created (either manually or from a Docker Compose YAML), 
+                            you can export it to OCI Resource Manager (Terraform) for CI/CD pipeline integration.
+                        </p>
+                        <p class="small text-muted mb-2">
+                            <strong>Example: Create/Update Stack using OCI CLI</strong>
+                        </p>
+                        <pre class="bg-light p-2 rounded small"><code># Create or update an OCI Resource Manager Stack
+oci resource-manager stack create \
+  --compartment-id &lt;compartment-ocid&gt; \
+  --display-name "my-container-instance-stack" \
+  --config-source file-uri \
+  --working-directory ./terraform \
+  --terraform-version "1.5.x"
+
+# Apply the stack (create/update resources)
+oci resource-manager job create-apply-job \
+  --stack-id &lt;stack-ocid&gt; \
+  --execution-plan-strategy AUTO_APPROVED</code></pre>
+                        <p class="small text-muted mt-2">
+                            The exported Terraform configuration can be included in your CI/CD pipeline using the OCI CLI. 
+                            This enables version control, automated deployments, and infrastructure as code practices.
+                        </p>
                     </div>
                     
                     <div class="mb-4">
