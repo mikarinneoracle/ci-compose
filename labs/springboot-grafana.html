@@ -620,6 +620,54 @@
                     </div>
                 </div>
 
+                <!-- Docker Compose Example -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-code"></i> Docker Compose Example
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p>You can also import this lab configuration using Docker Compose YAML. Here's a basic compose file for this lab:</p>
+                        <pre class="code-block"><code>version: '3.8'
+
+services:
+  java-springboot:
+    image: fra.ocir.io/&lt;tenancy-namespace&gt;/prometheusjavademo:1.0.0
+    container_name: java-springboot
+    ports:
+      - "8080:8080"
+    restart: always
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node-exporter
+
+  prometheus:
+    image: prom/prometheus:main
+    container_name: prometheus
+    command:
+      - /bin/sh
+      - -c
+      - while [ ! -f /etc/prometheus/prometheus.yml ]; do echo "Waiting for config file..."; sleep 2; done; /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./prometheus:/etc/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    command:
+      - /bin/sh
+      - -c
+      - while [ ! -f /etc/grafana/grafana.ini ]; do echo "Waiting for config file..."; sleep 2; done; /usr/share/grafana/bin/grafana server --config /etc/grafana/grafana.ini
+    volumes:
+      - ./grafana:/etc/grafana</code></pre>
+                        <p class="text-muted small">Note: Replace <code>&lt;tenancy-namespace&gt;</code> with your actual OCI tenancy namespace. Sidecars (OsReader, LogWriter) and volumes are OCI-specific and need to be configured separately in CI Compose after importing. Copy this YAML and use the "Import Compose" feature in CI Compose to quickly set up this lab configuration.</p>
+                    </div>
+                </div>
+
                 <!-- Navigation -->
                 <div class="text-center mt-4 mb-4">
                     <a href="/labs.html" class="btn btn-outline-primary me-2">

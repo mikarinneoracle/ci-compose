@@ -585,6 +585,28 @@
                     </div>
                 </div>
 
+                <!-- Docker Compose Example -->
+                <div class="card mb-4 shadow-sm step-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-code"></i> Docker Compose Example
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p>You can also import this lab configuration using Docker Compose YAML. Here's a basic compose file for this lab:</p>
+                        <pre class="code-block"><code>version: '3.8'
+
+services:
+  nodejs:
+    image: fra.ocir.io/&lt;tenancy-namespace&gt;/cars-api-pg:1.0.0
+    container_name: nodejs
+    ports:
+      - "3000:3000"
+    restart: always</code></pre>
+                        <p class="text-muted small">Note: Replace <code>&lt;tenancy-namespace&gt;</code> with your actual OCI tenancy namespace. Sidecars (VaultReader, LogWriter) and volumes are OCI-specific and need to be configured separately in CI Compose after importing. Copy this YAML and use the "Import Compose" feature in CI Compose to quickly set up this lab configuration.</p>
+                    </div>
+                </div>
+
                 <!-- Navigation -->
                 <div class="text-center mt-4 mb-4">
                     <a href="/labs.html" class="btn btn-outline-primary me-2">
