@@ -12,6 +12,8 @@ const containerinstances = require('oci-containerinstances');
 const logging = require('oci-logging');
 const loggingsearch = require('oci-loggingsearch');
 const resourcemanager = require('oci-resourcemanager');
+const vault = require('oci-vault');
+const secrets = require('oci-secrets');
 const common = require('oci-common');
 
 // Docker Compose Parser
@@ -60,6 +62,14 @@ const logSearchClient = new loggingsearch.LogSearchClient({
 });
 
 const resourceManagerClient = new resourcemanager.ResourceManagerClient({
+  authenticationDetailsProvider: provider
+});
+
+const vaultClient = new vault.VaultsClient({
+  authenticationDetailsProvider: provider
+});
+
+const secretsClient = new secrets.SecretsClient({
   authenticationDetailsProvider: provider
 });
 
@@ -443,6 +453,239 @@ app.get('/api/oci/logging/log-groups', async (req, res) => {
   }
 });
 
+// Sidecar validation functions
+async function validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId) {
+  try {
+    // First try in the specified compartment
+    let listBucketsRequest = {
+      namespaceName: namespaceName,
+      compartmentId: compartmentId
+    };
+    let response = await objectStorageClient.listBuckets(listBucketsRequest);
+    let bucket = response.items.find(b => b.name === bucketName);
+    
+    // If not found and tenancyId is available, search in all accessible compartments
+    if (!bucket && tenancyId) {
+      listBucketsRequest = {
+        namespaceName: namespaceName,
+        compartmentId: tenancyId,
+        compartmentIdInSubtree: true
+      };
+      response = await objectStorageClient.listBuckets(listBucketsRequest);
+      bucket = response.items.find(b => b.name === bucketName);
+    }
+    
+    if (!bucket) {
+      throw new Error(`Bucket '${bucketName}' not found in compartment ${compartmentId} or accessible compartments`);
+    }
+    return true;
+  } catch (error) {
+    throw new Error(`Failed to validate bucket '${bucketName}': ${error.message}`);
+  }
+}
+
+async function validateLogExists(logOcid, logGroupId) {
+  try {
+    // Validate log OCID format - log OCIDs start with "ocid1.log."
+    if (!logOcid || typeof logOcid !== 'string') {
+      throw new Error(`Invalid log OCID: must be a string`);
+    }
+    
+    if (!logOcid.startsWith('ocid1.log.')) {
+      throw new Error(`Invalid log OCID format: '${logOcid}' (must start with 'ocid1.log.')`);
+    }
+    
+    // If logGroupId is provided, attempt to fetch the log to verify it exists
+    if (logGroupId) {
+      try {
+        const getLogRequest = {
+          logGroupId: logGroupId,
+          logId: logOcid
+        };
+        await loggingManagementClient.getLog(getLogRequest);
+        return true;
+      } catch (error) {
+        if (error.statusCode === 404) {
+          throw new Error(`Log with OCID '${logOcid}' not found in log group '${logGroupId}'`);
+        }
+        throw new Error(`Failed to validate log '${logOcid}': ${error.message}`);
+      }
+    }
+    
+    // If no logGroupId, just validate the OCID format
+    // The actual log will be validated when used with the logGroupId from config
+    return true;
+  } catch (error) {
+    throw new Error(`Failed to validate log OCID '${logOcid}': ${error.message}`);
+  }
+}
+
+async function validateVaultExists(vaultOcid) {
+  try {
+    // Validate vault OCID format - vault OCIDs start with "ocid1.vault."
+    // Note: VaultsClient doesn't have getVault() method, so we validate format only
+    // The actual vault will be validated when the secret is used
+    if (!vaultOcid || typeof vaultOcid !== 'string') {
+      throw new Error(`Invalid vault OCID: must be a string`);
+    }
+    
+    if (!vaultOcid.startsWith('ocid1.vault.')) {
+      throw new Error(`Invalid vault OCID format: '${vaultOcid}' (must start with 'ocid1.vault.')`);
+    }
+    
+    // OCID format is valid - we can't verify existence without additional API calls,
+    // but the format check is sufficient for sidecar validation
+    // The actual vault will be validated when the secret is accessed
+    return true;
+  } catch (error) {
+    throw new Error(`Failed to validate vault OCID '${vaultOcid}': ${error.message}`);
+  }
+}
+
+async function getVaultOcidFromSecret(secretOcid) {
+  try {
+    // Use VaultsClient.getSecret() to get secret metadata including vaultId
+    // VaultsClient manages secrets and vaults, SecretsClient only retrieves secret content via getSecretBundle()
+    const getSecretRequest = {
+      secretId: secretOcid
+    };
+    const secretResponse = await vaultClient.getSecret(getSecretRequest);
+    const vaultId = secretResponse.secret.vaultId;
+    if (!vaultId) {
+      throw new Error(`Secret '${secretOcid}' does not have a vaultId`);
+    }
+    return vaultId;
+  } catch (error) {
+    if (error.statusCode === 404) {
+      throw new Error(`Secret with OCID '${secretOcid}' not found`);
+    }
+    throw new Error(`Failed to get vault OCID from secret '${secretOcid}': ${error.message}`);
+  }
+}
+
+async function validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId) {
+  const errors = [];
+  const warnings = [];
+  
+  // Get namespace for bucket validation
+  let namespaceName;
+  try {
+    const getNamespaceRequest = {};
+    const namespaceResponse = await objectStorageClient.getNamespace(getNamespaceRequest);
+    namespaceName = namespaceResponse.value;
+  } catch (error) {
+    warnings.push(`Could not get namespace for bucket validation: ${error.message}`);
+  }
+  
+  for (const container of containers) {
+    if (!container.environmentVariables || typeof container.environmentVariables !== 'object') {
+      continue;
+    }
+    
+    const envVars = container.environmentVariables;
+    const containerName = container.displayName || 'Unknown';
+    
+    // Check for OsReader sidecar (os_bucket)
+    if (envVars.os_bucket) {
+      const bucketName = envVars.os_bucket;
+      // Skip validation if bucket name is a placeholder
+      if (bucketName && !bucketName.includes('***') && !bucketName.includes('put here')) {
+        if (!namespaceName) {
+          errors.push(`Container '${containerName}': Cannot validate bucket '${bucketName}' - namespace not available`);
+        } else {
+          try {
+            await validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId);
+          } catch (error) {
+            errors.push(`Container '${containerName}': ${error.message}`);
+          }
+        }
+      }
+    }
+    
+    // Check for LogWriter sidecar (log_ocid)
+    // Note: The log group ID comes from the application configuration, but the log_ocid
+    // (specific log OCID) comes from the sidecar environment variables and should be validated.
+    if (envVars.log_ocid) {
+      const logOcid = envVars.log_ocid;
+      // Skip validation if log OCID is a placeholder
+      if (logOcid && !logOcid.includes('***') && !logOcid.includes('put here')) {
+        try {
+          await validateLogExists(logOcid, logGroupId);
+        } catch (error) {
+          errors.push(`Container '${containerName}': ${error.message}`);
+        }
+      }
+    }
+    
+    // Check for VaultReader sidecar (secret_ocid -> vault)
+    if (envVars.secret_ocid) {
+      const secretOcid = envVars.secret_ocid;
+      // Skip validation if secret OCID is a placeholder
+      if (secretOcid && !secretOcid.includes('***') && !secretOcid.includes('put here')) {
+        try {
+          const vaultOcid = await getVaultOcidFromSecret(secretOcid);
+          await validateVaultExists(vaultOcid);
+        } catch (error) {
+          errors.push(`Container '${containerName}': ${error.message}`);
+        }
+      }
+    }
+  }
+  
+  return { errors, warnings };
+}
+
+// Container Instances - Validate Sidecar Configs (before create/update)
+app.post('/api/oci/container-instances/validate', async (req, res) => {
+  try {
+    const {
+      containers,
+      compartmentId,
+      tenancyId,
+      logGroupId
+    } = req.body;
+
+    if (!containers || containers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one container is required'
+      });
+    }
+
+    if (!compartmentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'compartmentId is required'
+      });
+    }
+
+    // Get tenancyId from config if not provided
+    let tenancyIdToUse = tenancyId;
+    if (!tenancyIdToUse) {
+      const configPath = process.env.OCI_CONFIG_FILE || '~/.oci/config';
+      const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+      const ociConfig = readOCIConfig(configPath, profile);
+      tenancyIdToUse = ociConfig?.tenancy;
+    }
+
+    const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyIdToUse, logGroupId);
+    
+    res.json({
+      success: validationResult.errors.length === 0,
+      errors: validationResult.errors,
+      warnings: validationResult.warnings
+    });
+  } catch (error) {
+    console.error('Error validating sidecar configs:', error);
+    res.status(500).json({
+      success: false,
+      error: `Validation error: ${error.message}`,
+      errors: [error.message],
+      warnings: []
+    });
+  }
+});
+
 // Container Instances - Create Container Instance
 app.post('/api/oci/container-instances', async (req, res) => {
   try {
@@ -457,7 +700,8 @@ app.post('/api/oci/container-instances', async (req, res) => {
       volumes,
       containerRestartPolicy,
       ingressIps,
-      freeformTags
+      freeformTags,
+      logGroupId
     } = req.body;
 
     if (!displayName || !compartmentId || !shape || !subnetId || !containers || containers.length === 0) {
@@ -473,6 +717,28 @@ app.post('/api/oci/container-instances', async (req, res) => {
     const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
     const ociConfig = readOCIConfig(configPath, profile);
     const tenancyId = ociConfig?.tenancy || req.body.tenancyId;
+    
+    // Validate sidecar configurations (bucket, log, vault)
+    try {
+      const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId);
+      if (validationResult.errors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Sidecar configuration validation failed',
+          details: validationResult.errors,
+          warnings: validationResult.warnings
+        });
+      }
+      // Log warnings if any
+      if (validationResult.warnings.length > 0) {
+        console.warn('Sidecar validation warnings:', validationResult.warnings);
+      }
+    } catch (validationError) {
+      return res.status(500).json({
+        success: false,
+        error: `Sidecar validation error: ${validationError.message}`
+      });
+    }
     
     if (!tenancyId) {
       return res.status(400).json({

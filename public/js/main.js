@@ -2816,11 +2816,6 @@ async function saveCIChanges(instanceId) {
         return;
     }
     
-    // Confirm with user that delete/create will happen
-    if (!confirm('Warning: This will delete the current container instance and create a new one with the same name. All changes will be saved. Continue?')) {
-        return;
-    }
-    
     try {
         const config = getConfiguration();
         // Get updated containers and volumes
@@ -2976,8 +2971,63 @@ async function saveCIChanges(instanceId) {
             containers: cleanedContainers,
             containerRestartPolicy: currentEditingInstance.containerRestartPolicy || 'NEVER',
             volumes: volumesPayload,
-            freeformTags: Object.keys(baseFreeformTags).length > 0 ? baseFreeformTags : undefined
+            freeformTags: Object.keys(baseFreeformTags).length > 0 ? baseFreeformTags : undefined,
+            logGroupId: config.logGroupId || null
         };
+        
+        // Validate sidecar configurations before proceeding with delete
+        showNotification('Validating sidecar configurations...', 'info');
+        const tenancyResponse = await fetch('/api/oci/config/tenancy').catch(() => null);
+        const tenancyData = tenancyResponse ? await tenancyResponse.json().catch(() => ({})) : {};
+        const tenancyId = tenancyData.tenancyId || config.tenancyId;
+        
+        const validateResponse = await fetch('/api/oci/container-instances/validate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                containers: cleanedContainers,
+                compartmentId: compartmentId,
+                tenancyId: tenancyId,
+                logGroupId: config.logGroupId || null
+            })
+        });
+        
+        const validateData = await validateResponse.json();
+        
+        if (!validateData.success) {
+            // Show all validation errors using the notification system
+            if (validateData.errors && validateData.errors.length > 0) {
+                validateData.errors.forEach(error => {
+                    showNotification(error, 'error', 8000);
+                });
+            } else {
+                showNotification(validateData.error || 'Sidecar configuration validation failed', 'error', 8000);
+            }
+            
+            // Show warnings if any
+            if (validateData.warnings && validateData.warnings.length > 0) {
+                validateData.warnings.forEach(warning => {
+                    showNotification(warning, 'warning', 6000);
+                });
+            }
+            
+            // Don't proceed with delete - return early
+            return;
+        }
+        
+        // Show warnings if any (but validation passed)
+        if (validateData.warnings && validateData.warnings.length > 0) {
+            validateData.warnings.forEach(warning => {
+                showNotification(warning, 'warning', 6000);
+            });
+        }
+        
+        // Confirm with user that delete/create will happen (only after validation passes)
+        if (!confirm('Warning: This will delete the current container instance and create a new one with the same name. All changes will be saved. Continue?')) {
+            return;
+        }
         
         // Step 1: Delete the old container instance
         showNotification('Deleting old container instance...', 'info');
@@ -6147,7 +6197,8 @@ async function confirmCreateContainerInstance() {
         architecture: ciArchitecture,
         subnetId: document.getElementById('ciSubnetId').value,
         containers: cleanedContainers,
-        containerRestartPolicy: 'NEVER'
+        containerRestartPolicy: 'NEVER',
+        logGroupId: config.logGroupId || null
     };
     
     // Add freeformTags to CI instance (must match container tags per OCI requirement)
@@ -6184,6 +6235,55 @@ async function confirmCreateContainerInstance() {
     // They cannot be specified during creation - OCI assigns them automatically
     
     try {
+        // Validate sidecar configurations before creating
+        showNotification('Validating sidecar configurations...', 'info');
+        const tenancyResponse = await fetch('/api/oci/config/tenancy').catch(() => null);
+        const tenancyData = tenancyResponse ? await tenancyResponse.json().catch(() => ({})) : {};
+        const tenancyId = tenancyData.tenancyId || config.tenancyId;
+        
+        const validateResponse = await fetch('/api/oci/container-instances/validate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                containers: cleanedContainers,
+                compartmentId: config.compartmentId,
+                tenancyId: tenancyId,
+                logGroupId: config.logGroupId || null
+            })
+        });
+        
+        const validateData = await validateResponse.json();
+        
+        if (!validateData.success) {
+            // Show all validation errors using the notification system
+            if (validateData.errors && validateData.errors.length > 0) {
+                validateData.errors.forEach(error => {
+                    showNotification(error, 'error', 8000);
+                });
+            } else {
+                showNotification(validateData.error || 'Sidecar configuration validation failed', 'error', 8000);
+            }
+            
+            // Show warnings if any
+            if (validateData.warnings && validateData.warnings.length > 0) {
+                validateData.warnings.forEach(warning => {
+                    showNotification(warning, 'warning', 6000);
+                });
+            }
+            
+            // Don't proceed with create - return early
+            return;
+        }
+        
+        // Show warnings if any (but validation passed)
+        if (validateData.warnings && validateData.warnings.length > 0) {
+            validateData.warnings.forEach(warning => {
+                showNotification(warning, 'warning', 6000);
+            });
+        }
+        
         const response = await fetch('/api/oci/container-instances', {
             method: 'POST',
             headers: {
@@ -6208,8 +6308,21 @@ async function confirmCreateContainerInstance() {
             // Reload container instances
             await loadContainerInstances();
         } else {
-            // Show error notification
-            showNotification(`Error creating container instance: ${data.error || 'Unknown error'}`, 'error');
+            // Show all errors from the response
+            if (data.details && Array.isArray(data.details) && data.details.length > 0) {
+                data.details.forEach(error => {
+                    showNotification(error, 'error', 8000);
+                });
+            } else {
+                showNotification(`Error creating container instance: ${data.error || 'Unknown error'}`, 'error', 8000);
+            }
+            
+            // Show warnings if any
+            if (data.warnings && Array.isArray(data.warnings) && data.warnings.length > 0) {
+                data.warnings.forEach(warning => {
+                    showNotification(warning, 'warning', 6000);
+                });
+            }
         }
     } catch (error) {
         console.error('Error creating container instance:', error);
