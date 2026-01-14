@@ -6928,3 +6928,22 @@ async function importToCreateCI() {
     }
 }
 
+
+
+// Paste Docker Compose YAML from clipboard
+async function pasteComposeYaml() {
+    try {
+        const text = await navigator.clipboard.readText();
+        const composeYamlTextarea = document.getElementById("composeYaml");
+        if (composeYamlTextarea) {
+            composeYamlTextarea.value = text;
+            showNotification("Docker Compose YAML pasted from clipboard!", "success", 2000);
+        } else {
+            showNotification("Compose YAML textarea not found", "error");
+        }
+    } catch (error) {
+        console.error("Error pasting from clipboard:", error);
+        showNotification("Failed to paste from clipboard. Please paste manually.", "error");
+    }
+}
+

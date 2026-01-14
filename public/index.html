@@ -526,7 +526,12 @@
                                     <div class="modal-body">
                                         <form id="importDockerComposeForm">
                                             <div class="mb-3">
-                                                <label for="composeYaml" class="form-label">Docker Compose YAML</label>
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <label for="composeYaml" class="form-label mb-0">Docker Compose YAML</label>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="pasteComposeYaml()" title="Paste from clipboard">
+                                                        <i class="bi bi-clipboard-check"></i> Paste
+                                                    </button>
+                                                </div>
                                                 <textarea class="form-control font-monospace" id="composeYaml" rows="12" placeholder="version: '3.8'&#10;services:&#10;  app:&#10;    image: nginx:latest&#10;    ports:&#10;      - &quot;8080:8080&quot;"></textarea>
                                                 <small class="form-text text-muted">Paste your Docker Compose YAML content here</small>
                                             </div>
