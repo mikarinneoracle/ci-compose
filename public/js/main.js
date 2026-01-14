@@ -1100,7 +1100,7 @@ async function loadContainerInstances(showSpinner = false) {
             } else {
                 containerInstancesCount = 0;
                 // Always update the message with the current CI name
-                contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
+                    contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
             }
         } else {
             containerInstancesCount = 0;
@@ -3519,36 +3519,36 @@ async function restartContainerInstance(instanceId) {
             }
         } else {
             // Normal restart for active CI
-            // Confirm restart action
-            if (!confirm('Are you sure you want to restart this container instance?')) {
-                return;
+    // Confirm restart action
+    if (!confirm('Are you sure you want to restart this container instance?')) {
+        return;
+    }
+    
+    try {
+        showNotification('Restarting container instance...', 'info');
+        
+        const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Container instance restart initiated successfully!', 'success');
+            
+            // Close the modal
+            const modalElement = document.getElementById('containerInstanceModal');
+            if (modalElement) {
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) {
+                    modal.hide();
+                }
             }
             
-            try {
-                showNotification('Restarting container instance...', 'info');
-                
-                const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
-                    method: 'POST'
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showNotification('Container instance restart initiated successfully!', 'success');
-                    
-                    // Close the modal
-                    const modalElement = document.getElementById('containerInstanceModal');
-                    if (modalElement) {
-                        const modal = bootstrap.Modal.getInstance(modalElement);
-                        if (modal) {
-                            modal.hide();
-                        }
-                    }
-                    
-                    // Reload container instances to reflect the new state
-                    await loadContainerInstances();
-                } else {
-                    throw new Error(data.error || 'Failed to restart container instance');
+            // Reload container instances to reflect the new state
+            await loadContainerInstances();
+        } else {
+            throw new Error(data.error || 'Failed to restart container instance');
                 }
             } catch (restartError) {
                 console.error('Error restarting container instance:', restartError);
@@ -5126,21 +5126,22 @@ function displaySidecarGallery() {
 }
 
 function viewSidecar(type, index) {
-    let sidecar;
-    if (type === 'default') {
-        sidecar = defaultSidecars[index];
-    } else {
-        sidecar = customSidecars[index];
+    // Only handle default sidecars; custom sidecars go directly to edit
+    if (type !== 'default') {
+        editCustomSidecarByIndex(index);
+        return;
     }
+    
+    const sidecar = defaultSidecars[index];
     if (!sidecar) return;
     
     // Populate view modal
     document.getElementById('viewSidecarId').value = sidecar.id;
-    document.getElementById('viewSidecarIsDefault').value = type === 'default' ? 'true' : 'false';
+    document.getElementById('viewSidecarIsDefault').value = 'true';
     document.getElementById('viewSidecarName').value = sidecar.name || '';
     document.getElementById('viewSidecarImage').value = sidecar.image || '';
     // Show "(none)" when port is empty for stock sidecars
-    const portValue = sidecar.port && sidecar.port.trim() ? sidecar.port : (type === 'default' ? '(none)' : '');
+    const portValue = sidecar.port && sidecar.port.trim() ? sidecar.port : '(none)';
     document.getElementById('viewSidecarPort').value = portValue;
     document.getElementById('viewSidecarMem').value = sidecar.mem || '';
     document.getElementById('viewSidecarOcpu').value = sidecar.ocpu || '';
@@ -5156,17 +5157,14 @@ function viewSidecar(type, index) {
         envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
     }
     
-    // Show/hide buttons based on type
-    const isDefault = type === 'default';
-    document.getElementById('deleteCustomSidecarBtn').style.display = isDefault ? 'none' : 'inline-block';
-    document.getElementById('editCustomSidecarBtn').style.display = isDefault ? 'none' : 'inline-block';
-    document.getElementById('saveDefaultsBtn').style.display = isDefault ? 'inline-block' : 'none';
-    document.getElementById('defaultSidecarDefaultsSection').style.display = isDefault ? 'block' : 'none';
+    // Hide custom sidecar buttons, show defaults button
+    document.getElementById('deleteCustomSidecarBtn').style.display = 'none';
+    document.getElementById('editCustomSidecarBtn').style.display = 'none';
+    document.getElementById('saveDefaultsBtn').style.display = 'inline-block';
+    document.getElementById('defaultSidecarDefaultsSection').style.display = 'block';
     
     // Load saved defaults for default sidecars
-    if (isDefault) {
         loadSidecarDefaults(sidecar.id);
-    }
     
     document.getElementById('viewSidecarModalTitle').textContent = `Sidecar: ${sidecar.name}`;
     const modal = new bootstrap.Modal(document.getElementById('viewSidecarModal'));
@@ -5352,13 +5350,15 @@ function showAddCustomSidecarModal() {
     document.getElementById('editCustomSidecarVolumes').innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
     document.getElementById('editCustomSidecarArch').value = '';
     
+    // Hide delete button when adding new sidecar
+    document.getElementById('deleteCustomSidecarBtnInEdit').style.display = 'none';
+    
     const modal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
     modal.show();
 }
 
-function editCustomSidecar() {
-    const sidecarId = document.getElementById('viewSidecarId').value;
-    const sidecar = customSidecars.find(s => s.id === sidecarId);
+function editCustomSidecarByIndex(index) {
+    const sidecar = customSidecars[index];
     if (!sidecar) return;
     
     // Populate edit form
@@ -5398,6 +5398,9 @@ function editCustomSidecar() {
         volumesContainer.innerHTML = sidecar.volumes.map((vol, idx) => `
             <div class="mb-2 volume-row">
                 <div class="input-group input-group-sm">
+                    <span class="input-group-text">
+                        <input type="checkbox" class="form-check-input" data-volume-enabled ${vol.enabled !== false ? 'checked' : ''} title="Enable automatic volume merging">
+                    </span>
                     <span class="input-group-text">Name</span>
                     <input type="text" class="form-control" data-volume-name value="${vol.name || ''}" placeholder="e.g., data">
                     <span class="input-group-text">Path</span>
@@ -5412,19 +5415,55 @@ function editCustomSidecar() {
         volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
     }
     
+    // Show delete button and set modal title
+    document.getElementById('deleteCustomSidecarBtnInEdit').style.display = 'inline-block';
     document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Edit Custom Sidecar';
-    
-    // Close view modal and open edit modal
-    const viewModal = bootstrap.Modal.getInstance(document.getElementById('viewSidecarModal'));
-    viewModal.hide();
     
     const editModal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
     editModal.show();
 }
 
-function deleteCustomSidecar() {
+function editCustomSidecar() {
+    // Legacy function - called from view modal for default sidecars (shouldn't happen now)
     const sidecarId = document.getElementById('viewSidecarId').value;
-    if (!confirm(`Are you sure you want to delete the sidecar "${customSidecars.find(s => s.id === sidecarId)?.name}"?`)) {
+    const sidecar = customSidecars.find(s => s.id === sidecarId);
+    if (!sidecar) return;
+    
+    editCustomSidecarByIndex(customSidecars.findIndex(s => s.id === sidecarId));
+}
+
+function deleteCustomSidecarFromEdit() {
+    const sidecarId = document.getElementById('editCustomSidecarId').value;
+    const sidecar = customSidecars.find(s => s.id === sidecarId);
+    if (!sidecar) return;
+    
+    if (!confirm(`Are you sure you want to delete the sidecar "${sidecar.name}"?`)) {
+        return;
+    }
+    
+    customSidecars = customSidecars.filter(s => s.id !== sidecarId);
+    try {
+        localStorage.setItem('customSidecars', JSON.stringify(customSidecars));
+        sidecars = [...defaultSidecars, ...customSidecars];
+        showNotification('Sidecar deleted successfully!', 'success');
+        
+        // Close modal and refresh gallery
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addEditCustomSidecarModal'));
+        modal.hide();
+        displaySidecarGallery();
+    } catch (error) {
+        console.error('Error deleting sidecar:', error);
+        showNotification('Error deleting sidecar', 'error');
+    }
+}
+
+function deleteCustomSidecar() {
+    // Legacy function - kept for backward compatibility
+    const sidecarId = document.getElementById('viewSidecarId').value;
+    const sidecar = customSidecars.find(s => s.id === sidecarId);
+    if (!sidecar) return;
+    
+    if (!confirm(`Are you sure you want to delete the sidecar "${sidecar.name}"?`)) {
         return;
     }
     
@@ -5451,6 +5490,9 @@ function addVolumeToCustomSidecar() {
     const index = volumesContainer.querySelectorAll('.volume-row').length;
     volumeRow.innerHTML = `
         <div class="input-group input-group-sm">
+            <span class="input-group-text">
+                <input type="checkbox" class="form-check-input" data-volume-enabled checked title="Enable automatic volume merging">
+            </span>
             <span class="input-group-text">Name</span>
             <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
             <span class="input-group-text">Path</span>
@@ -5471,7 +5513,7 @@ function addVolumeToCustomSidecar() {
 }
 
 function removeVolumeFromCustomSidecar(index) {
-    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+        const volumesContainer = document.getElementById('editCustomSidecarVolumes');
     const volumeRows = volumesContainer.querySelectorAll('.volume-row');
     if (volumeRows[index]) {
         volumeRows[index].remove();
@@ -5525,45 +5567,6 @@ function removeEnvFromCustomSidecar(index) {
                     </button>
                 </div>
             `).join('');
-        }
-    }
-}
-
-function addVolumeToCustomSidecar() {
-    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
-    const volumeRow = document.createElement('div');
-    volumeRow.className = 'mb-2 volume-row';
-    const index = volumesContainer.querySelectorAll('.volume-row').length;
-    volumeRow.innerHTML = `
-        <div class="input-group input-group-sm">
-            <span class="input-group-text">Name</span>
-            <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
-            <span class="input-group-text">Path</span>
-            <input type="text" class="form-control" data-volume-path placeholder="e.g., /data" required>
-            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeVolumeFromCustomSidecar(${index})">
-                <i class="bi bi-trash"></i>
-            </button>
-        </div>
-    `;
-    
-    // Remove "No volumes" message if present
-    const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
-    if (noVolumesMsg) {
-        noVolumesMsg.remove();
-    }
-    
-    volumesContainer.appendChild(volumeRow);
-}
-
-function removeVolumeFromCustomSidecar(index) {
-    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
-    const volumeRows = volumesContainer.querySelectorAll('.volume-row');
-    if (volumeRows[index]) {
-        volumeRows[index].remove();
-        
-        // Update display
-        if (volumesContainer.querySelectorAll('.volume-row').length === 0) {
-            volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
         }
     }
 }
@@ -5639,10 +5642,12 @@ function saveCustomSidecar() {
     volumeRows.forEach(row => {
         const nameInput = row.querySelector('input[data-volume-name]');
         const pathInput = row.querySelector('input[data-volume-path]');
+        const enabledCheckbox = row.querySelector('input[data-volume-enabled]');
         if (pathInput && pathInput.value.trim()) {
             sidecar.volumes.push({
                 name: nameInput ? nameInput.value.trim() : '',
-                path: pathInput.value.trim()
+                path: pathInput.value.trim(),
+                enabled: enabledCheckbox ? enabledCheckbox.checked : true
             });
         }
     });
@@ -6052,12 +6057,12 @@ function saveEditedPort() {
                         const targetPortNum = parseInt(portToSelect);
                         
                         // Find the port by port number in the dropdown options
-                        for (let i = 0; i < containerPortSelect.options.length; i++) {
-                            const option = containerPortSelect.options[i];
-                            if (option.value !== '') {
-                                // Check if this option matches the port number
-                                // Format can be "Port 8080" or "name (8080)"
-                                const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
+                    for (let i = 0; i < containerPortSelect.options.length; i++) {
+                        const option = containerPortSelect.options[i];
+                        if (option.value !== '') {
+                            // Check if this option matches the port number
+                            // Format can be "Port 8080" or "name (8080)"
+                            const portMatch = option.textContent.match(/\((\d+)\)|Port (\d+)/);
                                 if (portMatch && (parseInt(portMatch[1] || portMatch[2]) === targetPortNum)) {
                                     const portIndexValue = option.value;
                                     containerPortSelect.value = portIndexValue;
@@ -6117,9 +6122,9 @@ function saveEditedPort() {
         // If container edit modal is open, pre-select the newly created port
         // Store the port number in a data attribute so it persists across dropdown updates
         const portNumber = port.port;
-        const containerModal = document.getElementById('editContainerModal');
-        if (containerModal && containerModal.classList.contains('show')) {
-            const containerPortSelect = document.getElementById('editContainerPort');
+            const containerModal = document.getElementById('editContainerModal');
+            if (containerModal && containerModal.classList.contains('show')) {
+                const containerPortSelect = document.getElementById('editContainerPort');
             if (containerPortSelect) {
                 // Store the port number to select in a data attribute
                 containerPortSelect.setAttribute('data-selected-port', portNumber.toString());
