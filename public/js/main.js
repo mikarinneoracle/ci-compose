@@ -1748,7 +1748,7 @@ function displayContainerInstanceDetails(instance) {
         const imageColspan = (isInEditMode || hasLogColumn) ? 2 : 1;
         
         html += '<table class="table table-sm" style="width: 100%; table-layout: auto;">';
-        html += `<thead class="table-light"><tr><th style="border-bottom: 1px solid #dee2e6;">State</th><th style="border-bottom: 1px solid #dee2e6;">Name</th><th style="border-bottom: 1px solid #dee2e6;">Port</th><th colspan="${imageColspan}" style="border-bottom: 1px solid #dee2e6;">Image</th></tr></thead>`;
+        html += `<thead class="table-light"><tr><th>State</th><th>Name</th><th>Port</th><th colspan="${imageColspan}">Image</th></tr></thead>`;
         html += '<tbody id="detailsContainersTableBody">';
         
         detailsContainersData.forEach((container, idx) => {
@@ -1798,14 +1798,14 @@ function displayContainerInstanceDetails(instance) {
                 const logOcid = envVars.log_ocid;
                 const config = getConfiguration();
                 if (logOcid && config.logGroupId) {
-                    html += `<td style="white-space: nowrap; border-bottom: 1px solid #dee2e6;">`;
+                    html += `<td style="white-space: nowrap;">`;
                     html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                     html += `<i class="bi bi-file-text"></i> Log`;
                     html += `</button>`;
                     html += `</td>`;
                 } else if (hasLogColumn) {
                     // Add empty cell to maintain column alignment if log column exists but this container doesn't have logs
-                    html += `<td style="border-bottom: 1px solid #dee2e6;"></td>`;
+                    html += `<td></td>`;
                 }
             }
             
@@ -1871,7 +1871,7 @@ function displayContainerInstanceDetails(instance) {
     if (detailsVolumesData.length > 0) {
         html += '<div class="table-responsive"><table class="table table-sm">';
         // Path header spans over Actions column (always, since Actions column always exists in view mode too)
-        html += `<thead class="table-light"><tr><th style="border-bottom: 1px solid #dee2e6;">Name</th><th colspan="2" style="border-bottom: 1px solid #dee2e6;">Path</th></tr></thead>`;
+        html += `<thead class="table-light"><tr><th>Name</th><th colspan="2">Path</th></tr></thead>`;
         html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '">';
         
         detailsVolumesData.forEach((volume, idx) => {
@@ -6275,7 +6275,7 @@ function updatePortsTable() {
             <tr>
                 <td style="border-bottom: 1px solid #dee2e6;">${displayText}</td>
                 <td style="border-bottom: 1px solid #dee2e6;">
-                    <button type="button" class="btn btn-warning btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="btn btn-success btn-sm me-1" onclick="editPort(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deletePort(${index})"><i class="bi bi-trash"></i></button>
                 </td>
             </tr>

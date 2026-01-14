@@ -61,10 +61,10 @@
                                             Show Deleted
                                         </label>
                                     </div>
-                                <button class="btn btn-info btn-sm" onclick="showImportDockerComposeModal()">
+                                <button class="btn btn-dark btn-sm" onclick="showImportDockerComposeModal()">
                                     <i class="bi bi-upload"></i> Import Compose
                                 </button>
-                                <button class="btn btn-light btn-sm" onclick="showCreateContainerInstanceModal()">
+                                <button class="btn btn-dark btn-sm" onclick="showCreateContainerInstanceModal()">
                                     + Create
                                 </button>
                                 </div>
@@ -84,7 +84,7 @@
                     <div class="col-md-4">
                         <!-- Ports Card -->
                         <div class="card shadow mb-4">
-                            <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                                 <h3 class="mb-0"><i class="bi bi-ethernet"></i> Ports</h3>
                                 <button class="btn btn-dark btn-sm" onclick="addPortToTable()">
                                     + Add Port
@@ -95,7 +95,7 @@
                                     <table class="table table-sm" id="portsTable">
                                         <thead class="table-light">
                                             <tr>
-                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Port</th>
+                                                <th colspan="2">Port</th>
                                             </tr>
                                         </thead>
                                         <tbody id="portsTableBody">
@@ -115,7 +115,7 @@
                         <div class="card shadow">
                             <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                                 <h3 class="mb-0"><i class="bi bi-hdd"></i> Volumes</h3>
-                                <button class="btn btn-light btn-sm" onclick="addVolumeToTable()">
+                                <button class="btn btn-dark btn-sm" onclick="addVolumeToTable()">
                                     + Add Volume
                                 </button>
                             </div>
@@ -124,7 +124,7 @@
                                     <table class="table table-sm" id="volumesTable">
                                         <thead class="table-light">
                                             <tr>
-                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Volume</th>
+                                                <th colspan="2">Volume</th>
                                             </tr>
                                         </thead>
                                 <tbody id="volumesTableBody">
@@ -263,16 +263,16 @@
                                                     <table class="table table-sm" id="containersTable">
                                                         <thead class="table-light">
                                                             <tr>
-                                                                <th style="border-bottom: 1px solid #dee2e6;">Name</th>
-                                                                <th style="border-bottom: 1px solid #dee2e6;">Image</th>
-                                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Port</th>
-                                                                <th style="border-bottom: 1px solid #dee2e6;">Memory (GB)</th>
-                                                                <th style="border-bottom: 1px solid #dee2e6;">VCPUs</th>
+                                                                <th>Name</th>
+                                                                <th>Image</th>
+                                                                <th colspan="2">Port</th>
+                                                                <th>Memory (GB)</th>
+                                                                <th>VCPUs</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody id="containersTableBody">
                                                             <tr>
-                                                                <td colspan="6" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No containers added yet. Click "Add Container" to add one.</td>
+                                                                <td colspan="6" class="text-center text-muted">No containers added yet. Click "Add Container" to add one.</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>
@@ -292,13 +292,13 @@
                                                     <table class="table table-sm" id="createVolumesTable">
                                                         <thead class="table-light">
                                                             <tr>
-                                                                <th style="border-bottom: 1px solid #dee2e6;">Name</th>
-                                                                <th colspan="2" style="border-bottom: 1px solid #dee2e6;">Path</th>
+                                                                <th>Name</th>
+                                                                <th colspan="2">Path</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody id="createVolumesTableBody">
                                                             <tr>
-                                                                <td colspan="3" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes added yet. Click "Add Volume" to add one.</td>
+                                                                <td colspan="3" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>
@@ -370,7 +370,7 @@
                         <div class="modal fade" id="editPortModal" tabindex="-1">
                             <div class="modal-dialog">
                                 <div class="modal-content">
-                                    <div class="modal-header bg-warning text-dark">
+                                    <div class="modal-header bg-success text-white">
                                         <h5 class="modal-title">Edit Port</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
@@ -391,7 +391,7 @@
                                     </div>
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <button type="button" class="btn btn-warning" onclick="saveEditedPort()">Save Port</button>
+                                        <button type="button" class="btn btn-success" onclick="saveEditedPort()">Save Port</button>
                                     </div>
                                 </div>
                             </div>
@@ -445,7 +445,7 @@
                                             <div class="mb-3">
                                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                                     <label for="editContainerPort" class="form-label mb-0">Port</label>
-                                                    <button type="button" class="btn btn-warning btn-sm" onclick="showAddPortFromContainerEdit()">
+                                                    <button type="button" class="btn btn-success btn-sm" onclick="showAddPortFromContainerEdit()">
                                                         <i class="bi bi-plus"></i> Add Port
                                                     </button>
                                                 </div>
@@ -716,7 +716,7 @@
                             multiple containers, sidecars, volumes, and networking configurations.
                         </p>
                         <div class="alert alert-warning mt-3" role="alert">
-                            <strong>Notice:</strong> This software (version 0.1.0) is currently intended for experimental use and evaluation purposes. 
+                            <strong>Notice:</strong> This software (version 0.1.1) is currently intended for experimental use and evaluation purposes. 
                             It is not recommended for production environments at this time.
                         </div>
                     </div>

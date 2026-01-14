@@ -1,6 +1,6 @@
 {
   "name": "ci-compose",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CI Compose - A comprehensive management tool for Oracle Cloud Infrastructure (OCI) Container Instances",
   "main": "server.js",
   "scripts": {

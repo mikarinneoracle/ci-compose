@@ -6,7 +6,7 @@
 
 CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastructure (OCI) Container Instances. It provides an intuitive interface for creating, configuring, and managing container instances with support for multiple containers, sidecars, volumes, and networking configurations.
 
-> **Notice:** This software (version 0.1.0) is currently intended for experimental use and evaluation purposes. It is not recommended for production environments at this time.
+> **Notice:** This software (version 0.1.1) is currently intended for experimental use and evaluation purposes. It is not recommended for production environments at this time.
 
 ## Features
 
