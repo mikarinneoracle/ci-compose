@@ -6339,7 +6339,7 @@ function showCISummaryModal() {
     html += '<div class="row mb-4">';
     html += '<div class="col-12">';
     html += '<h5 class="border-bottom pb-2 mb-3">Containers</h5>';
-    html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+    html += '<div class="table-responsive"><table class="table table-sm">';
     html += '<thead class="table-light"><tr><th>Name</th><th>Image</th><th>Port</th><th>Memory (GB)</th><th>VCPUs</th></tr></thead>';
     html += '<tbody>';
     
@@ -6402,7 +6402,7 @@ function showCISummaryModal() {
         html += '<div class="row mb-4">';
         html += '<div class="col-12">';
         html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
-        html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+        html += '<div class="table-responsive"><table class="table table-sm">';
         html += '<thead class="table-light"><tr><th>Name</th><th>Path</th></tr></thead>';
         html += '<tbody>';
         
@@ -6741,7 +6741,7 @@ async function showContainerLogs(logOcid, containerName) {
     modalTitle.textContent = `Logs: ${containerName}`;
     
     // Show loading state
-    logsContent.innerHTML = '<p class="text-muted">Loading logs...</p>';
+    logsContent.innerHTML = '<p style="color: #ffffff;">Loading logs...</p>';
     
     modal.show();
     
@@ -6759,7 +6759,7 @@ async function showContainerLogs(logOcid, containerName) {
         
         if (data.success && data.data) {
             const logs = data.data;
-            let logsHtml = '<pre style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">';
+            let logsHtml = '<pre style="background-color: #000000; color: #ffffff; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">';
             
             // Handle different log formats
             if (logs.content) {

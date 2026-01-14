@@ -22,6 +22,18 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Import Docker Compose YAML files to quickly set up Container Instances
 - CI/CD integration: Export to OCI Resource Manager for automated deployments using OCI CLI
 
+## UI Changes (Version 0.1.1)
+
+Starting with version 0.1.1, CI Compose features a modern dark theme with a teal/cyan color palette, replacing the previous light theme. This update provides:
+
+- **Dark Mode Interface**: A sleek dark slate background (#0f172a) that reduces eye strain, especially during extended use
+- **Teal/Cyan Accent Colors**: Primary teal (#14b8a6) and cyan (#06b6d4) accents throughout the interface for a modern, professional appearance
+- **Enhanced Readability**: Improved contrast ratios and carefully selected text colors ensure optimal readability in all lighting conditions
+- **Consistent Styling**: All UI components including tables, modals, buttons, and forms have been updated to match the new dark theme
+- **Terminal-Style Logs**: Container logs are displayed with a black background and white text, providing a familiar terminal-like experience
+
+The new color scheme maintains excellent accessibility while providing a contemporary developer-focused aesthetic that aligns with modern development tools and IDEs.
+
 ## Custom Sidecars
 
 If you want to add a custom sidecar to this project, please contact [@mikarinneoracle](https://github.com/mikarinneoracle).
