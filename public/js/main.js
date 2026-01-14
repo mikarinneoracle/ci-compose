@@ -2876,6 +2876,11 @@ async function saveCIChanges(instanceId) {
         const architecture = currentEditingInstance.freeformTags?.architecture || 'x86';
         baseFreeformTags.architecture = architecture;
         
+        // Preserve composeImport tag if it exists
+        if (currentEditingInstance.freeformTags?.composeImport) {
+            baseFreeformTags.composeImport = currentEditingInstance.freeformTags.composeImport;
+        }
+        
         if (volumes.length > 0) {
             const volumesTag = volumes.map((v, idx) => {
                 const volumeName = v.name || `volume-${idx}`;
@@ -4693,6 +4698,9 @@ function addSidecar(index) {
         return;
     }
     
+    // Get config early for use throughout the function
+    const config = getConfiguration();
+    
     // Check for saved defaults (only for default sidecars)
     let effectiveSidecar = { ...sidecar };
     if (sidecar.isDefault) {
@@ -4706,7 +4714,8 @@ function addSidecar(index) {
                     port: defaults.port || sidecar.port || '',
                     mem: defaults.mem || sidecar.mem || '16',
                     ocpu: defaults.ocpu || sidecar.ocpu || '1',
-                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
+                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs,
+                    volumes: defaults.volumes && defaults.volumes.length > 0 ? defaults.volumes : (sidecar.volumes || [])
                 };
             }
         } catch (error) {
@@ -4744,11 +4753,56 @@ function addSidecar(index) {
                 portIndex = portsData.length - 1;
                 
                 // Save ports to localStorage
-                const config = getConfiguration();
                 savePortsAndVolumesForCIName(config.projectName);
                 updatePortsTable();
             }
         }
+    }
+    
+    // Merge volumes from sidecar into volumesData (avoid duplicates by path)
+    // Skip volume merging if CI was created from Docker Compose (check parsedComposeData for create flow)
+    const isComposeImport = parsedComposeData !== null;
+    
+    if (!isComposeImport && effectiveSidecar.volumes && Array.isArray(effectiveSidecar.volumes) && effectiveSidecar.volumes.length > 0) {
+        // Get enabled volumes from defaults if available
+        let enabledVolumes = effectiveSidecar.volumes;
+        if (sidecar.isDefault) {
+            try {
+                const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecar.id}`);
+                if (savedDefaults) {
+                    const defaults = JSON.parse(savedDefaults);
+                    if (defaults.volumes && defaults.volumes.length > 0) {
+                        // Use volumes from defaults, filtering by enabled flag
+                        enabledVolumes = defaults.volumes.filter(vol => vol.enabled !== false);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading sidecar volume defaults:', error);
+            }
+        }
+        
+        enabledVolumes.forEach(sidecarVolume => {
+            if (sidecarVolume.path) {
+                // Check if volume with same path already exists
+                const existingVolumeIndex = volumesData.findIndex(v => v.path === sidecarVolume.path);
+                if (existingVolumeIndex === -1) {
+                    // Add new volume
+                    volumesData.push({
+                        name: sidecarVolume.name || '',
+                        path: sidecarVolume.path
+                    });
+                } else {
+                    // Update name if sidecar volume has a name and existing doesn't
+                    if (sidecarVolume.name && sidecarVolume.name.trim() && (!volumesData[existingVolumeIndex].name || !volumesData[existingVolumeIndex].name.trim())) {
+                        volumesData[existingVolumeIndex].name = sidecarVolume.name.trim();
+                    }
+                }
+            }
+        });
+        
+        // Save volumes to localStorage
+        savePortsAndVolumesForCIName(config.projectName);
+        updateVolumesTable();
     }
     
     const container = {
@@ -4807,6 +4861,9 @@ function addSidecarToDetails(index) {
     const instanceId = editingDetailsContext.instanceId;
     if (!instanceId) return;
     
+    // Get config early for use throughout the function
+    const config = getConfiguration();
+    
     // Check for saved defaults (only for default sidecars)
     let effectiveSidecar = { ...sidecar };
     if (sidecar.isDefault) {
@@ -4820,7 +4877,8 @@ function addSidecarToDetails(index) {
                     port: defaults.port || sidecar.port || '',
                     mem: defaults.mem || sidecar.mem || '16',
                     ocpu: defaults.ocpu || sidecar.ocpu || '1',
-                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs
+                    envs: defaults.envs && defaults.envs.length > 0 ? defaults.envs : sidecar.envs,
+                    volumes: defaults.volumes && defaults.volumes.length > 0 ? defaults.volumes : (sidecar.volumes || [])
                 };
             }
         } catch (error) {
@@ -4881,6 +4939,57 @@ function addSidecarToDetails(index) {
                 // Update port dropdown
                 updateContainerPortDropdown();
             }
+        }
+    }
+    
+    // Merge volumes from sidecar into volumesData (avoid duplicates by path)
+    // Always allow volume merging when editing an existing CI (even if originally created from compose)
+    let detailsVolumes = window[`detailsVolumes_${instanceId}`] || [];
+    if (effectiveSidecar.volumes && Array.isArray(effectiveSidecar.volumes) && effectiveSidecar.volumes.length > 0) {
+        // Get enabled volumes from defaults if available
+        let enabledVolumes = effectiveSidecar.volumes;
+        if (sidecar.isDefault) {
+            try {
+                const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecar.id}`);
+                if (savedDefaults) {
+                    const defaults = JSON.parse(savedDefaults);
+                    if (defaults.volumes && defaults.volumes.length > 0) {
+                        // Use volumes from defaults, filtering by enabled flag
+                        enabledVolumes = defaults.volumes.filter(vol => vol.enabled !== false);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading sidecar volume defaults:', error);
+            }
+        }
+        
+        enabledVolumes.forEach(sidecarVolume => {
+            if (sidecarVolume.path) {
+                // Check if volume with same path already exists
+                const existingVolumeIndex = detailsVolumes.findIndex(v => v.path === sidecarVolume.path);
+                if (existingVolumeIndex === -1) {
+                    // Add new volume
+                    detailsVolumes.push({
+                        name: sidecarVolume.name || '',
+                        path: sidecarVolume.path
+                    });
+                } else {
+                    // Update name if sidecar volume has a name and existing doesn't
+                    if (sidecarVolume.name && sidecarVolume.name.trim() && (!detailsVolumes[existingVolumeIndex].name || !detailsVolumes[existingVolumeIndex].name.trim())) {
+                        detailsVolumes[existingVolumeIndex].name = sidecarVolume.name.trim();
+                    }
+                }
+            }
+        });
+        
+        window[`detailsVolumes_${instanceId}`] = detailsVolumes;
+        
+        // Also save to localStorage
+        if (config.projectName) {
+            const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+            volumesData = detailsVolumes;
+            savePortsAndVolumesForCIName(config.projectName);
+            refreshDetailsVolumesTable(instanceId);
         }
     }
     
@@ -5100,6 +5209,44 @@ function loadSidecarDefaults(sidecarId) {
                     envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
                 }
             }
+            
+            // Display volume defaults
+            const volumesContainer = document.getElementById('defaultSidecarVolumes');
+            if (defaults.volumes && defaults.volumes.length > 0) {
+                volumesContainer.innerHTML = defaults.volumes.map((vol, idx) => `
+                    <div class="mb-2 volume-row">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">
+                                <input type="checkbox" class="form-check-input" data-volume-enabled ${vol.enabled !== false ? 'checked' : ''} title="Enable automatic volume merging">
+                            </span>
+                            <span class="input-group-text">Name</span>
+                            <input type="text" class="form-control" data-volume-name value="${vol.name || ''}" placeholder="e.g., data">
+                            <span class="input-group-text">Path</span>
+                            <input type="text" class="form-control" data-volume-path value="${vol.path || ''}" placeholder="e.g., /data" required>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                // Load from original sidecar
+                const sidecar = defaultSidecars.find(s => s.id === sidecarId);
+                if (sidecar && sidecar.volumes && sidecar.volumes.length > 0) {
+                    volumesContainer.innerHTML = sidecar.volumes.map((vol, idx) => `
+                        <div class="mb-2 volume-row">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">
+                                    <input type="checkbox" class="form-check-input" data-volume-enabled checked title="Enable automatic volume merging">
+                                </span>
+                                <span class="input-group-text">Name</span>
+                                <input type="text" class="form-control" data-volume-name value="${vol.name || ''}" placeholder="e.g., data">
+                                <span class="input-group-text">Path</span>
+                                <input type="text" class="form-control" data-volume-path value="${vol.path || ''}" placeholder="e.g., /data" required>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    volumesContainer.innerHTML = '<p class="text-muted mb-0">No volumes</p>';
+                }
+            }
         } else {
             // Load from original sidecar
             const sidecar = defaultSidecars.find(s => s.id === sidecarId);
@@ -5121,6 +5268,26 @@ function loadSidecarDefaults(sidecarId) {
                 } else {
                     envsContainer.innerHTML = '<p class="text-muted mb-0">No environment variables</p>';
                 }
+                
+                // Load volumes from original sidecar
+                const volumesContainer = document.getElementById('defaultSidecarVolumes');
+                if (sidecar.volumes && sidecar.volumes.length > 0) {
+                    volumesContainer.innerHTML = sidecar.volumes.map((vol, idx) => `
+                        <div class="mb-2 volume-row">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">
+                                    <input type="checkbox" class="form-check-input" data-volume-enabled checked title="Enable automatic volume merging">
+                                </span>
+                                <span class="input-group-text">Name</span>
+                                <input type="text" class="form-control" data-volume-name value="${vol.name || ''}" placeholder="e.g., data">
+                                <span class="input-group-text">Path</span>
+                                <input type="text" class="form-control" data-volume-path value="${vol.path || ''}" placeholder="e.g., /data" required>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    volumesContainer.innerHTML = '<p class="text-muted mb-0">No volumes</p>';
+                }
             }
         }
     } catch (error) {
@@ -5134,7 +5301,8 @@ function saveSidecarDefaults() {
         port: document.getElementById('defaultSidecarPort').value,
         mem: document.getElementById('defaultSidecarMem').value,
         ocpu: document.getElementById('defaultSidecarOcpu').value,
-        envs: []
+        envs: [],
+        volumes: []
     };
     
     // Collect environment variable defaults
@@ -5145,6 +5313,22 @@ function saveSidecarDefaults() {
             var: input.getAttribute('data-var'),
             value: input.value
         });
+    });
+    
+    // Collect volume defaults
+    const volumesContainer = document.getElementById('defaultSidecarVolumes');
+    const volumeRows = volumesContainer.querySelectorAll('.volume-row');
+    volumeRows.forEach(row => {
+        const nameInput = row.querySelector('input[data-volume-name]');
+        const pathInput = row.querySelector('input[data-volume-path]');
+        const enabledCheckbox = row.querySelector('input[data-volume-enabled]');
+        if (pathInput && pathInput.value.trim()) {
+            defaults.volumes.push({
+                name: nameInput ? nameInput.value.trim() : '',
+                path: pathInput.value.trim(),
+                enabled: enabledCheckbox ? enabledCheckbox.checked : true
+            });
+        }
     });
     
     try {
@@ -5165,6 +5349,7 @@ function showAddCustomSidecarModal() {
     document.getElementById('editCustomSidecarId').value = '';
     document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Add Custom Sidecar';
     document.getElementById('editCustomSidecarEnvs').innerHTML = '<p class="text-muted mb-2">No environment variables added</p>';
+    document.getElementById('editCustomSidecarVolumes').innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
     document.getElementById('editCustomSidecarArch').value = '';
     
     const modal = new bootstrap.Modal(document.getElementById('addEditCustomSidecarModal'));
@@ -5207,6 +5392,26 @@ function editCustomSidecar() {
         window.currentCustomSidecarEnvs = [];
     }
     
+    // Display volumes
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    if (sidecar.volumes && sidecar.volumes.length > 0) {
+        volumesContainer.innerHTML = sidecar.volumes.map((vol, idx) => `
+            <div class="mb-2 volume-row">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Name</span>
+                    <input type="text" class="form-control" data-volume-name value="${vol.name || ''}" placeholder="e.g., data">
+                    <span class="input-group-text">Path</span>
+                    <input type="text" class="form-control" data-volume-path value="${vol.path || ''}" placeholder="e.g., /data" required>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeVolumeFromCustomSidecar(${idx})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
+    }
+    
     document.getElementById('addEditCustomSidecarModalTitle').textContent = 'Edit Custom Sidecar';
     
     // Close view modal and open edit modal
@@ -5240,40 +5445,40 @@ function deleteCustomSidecar() {
 }
 
 function addVolumeToCustomSidecar() {
-    const name = prompt('Enter volume name:');
-    if (!name) return;
-    
-    if (!window.currentCustomSidecarVolumes) {
-        window.currentCustomSidecarVolumes = [];
-    }
-    window.currentCustomSidecarVolumes.push({ name: name });
-    
     const volumesContainer = document.getElementById('editCustomSidecarVolumes');
-    volumesContainer.innerHTML = window.currentCustomSidecarVolumes.map((v, idx) => `
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <span>${v.name || 'Unnamed'}</span>
-            <button type="button" class="btn btn-sm btn-danger" onclick="removeVolumeFromCustomSidecar(${idx})">
+    const volumeRow = document.createElement('div');
+    volumeRow.className = 'mb-2 volume-row';
+    const index = volumesContainer.querySelectorAll('.volume-row').length;
+    volumeRow.innerHTML = `
+        <div class="input-group input-group-sm">
+            <span class="input-group-text">Name</span>
+            <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
+            <span class="input-group-text">Path</span>
+            <input type="text" class="form-control" data-volume-path placeholder="e.g., /data" required>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeVolumeFromCustomSidecar(${index})">
                 <i class="bi bi-trash"></i>
             </button>
         </div>
-    `).join('');
+    `;
+    
+    // Remove "No volumes" message if present
+    const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
+    if (noVolumesMsg) {
+        noVolumesMsg.remove();
+    }
+    
+    volumesContainer.appendChild(volumeRow);
 }
 
 function removeVolumeFromCustomSidecar(index) {
-    if (window.currentCustomSidecarVolumes) {
-        window.currentCustomSidecarVolumes.splice(index, 1);
-        const volumesContainer = document.getElementById('editCustomSidecarVolumes');
-        if (window.currentCustomSidecarVolumes.length === 0) {
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    const volumeRows = volumesContainer.querySelectorAll('.volume-row');
+    if (volumeRows[index]) {
+        volumeRows[index].remove();
+        
+        // Update display
+        if (volumesContainer.querySelectorAll('.volume-row').length === 0) {
             volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
-        } else {
-            volumesContainer.innerHTML = window.currentCustomSidecarVolumes.map((v, idx) => `
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span>${v.name || 'Unnamed'}</span>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="removeVolumeFromCustomSidecar(${idx})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `).join('');
         }
     }
 }
@@ -5324,6 +5529,71 @@ function removeEnvFromCustomSidecar(index) {
     }
 }
 
+function addVolumeToCustomSidecar() {
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    const volumeRow = document.createElement('div');
+    volumeRow.className = 'mb-2 volume-row';
+    const index = volumesContainer.querySelectorAll('.volume-row').length;
+    volumeRow.innerHTML = `
+        <div class="input-group input-group-sm">
+            <span class="input-group-text">Name</span>
+            <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
+            <span class="input-group-text">Path</span>
+            <input type="text" class="form-control" data-volume-path placeholder="e.g., /data" required>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeVolumeFromCustomSidecar(${index})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `;
+    
+    // Remove "No volumes" message if present
+    const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
+    if (noVolumesMsg) {
+        noVolumesMsg.remove();
+    }
+    
+    volumesContainer.appendChild(volumeRow);
+}
+
+function removeVolumeFromCustomSidecar(index) {
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    const volumeRows = volumesContainer.querySelectorAll('.volume-row');
+    if (volumeRows[index]) {
+        volumeRows[index].remove();
+        
+        // Update display
+        if (volumesContainer.querySelectorAll('.volume-row').length === 0) {
+            volumesContainer.innerHTML = '<p class="text-muted mb-2">No volumes added</p>';
+        }
+    }
+}
+
+function addVolumeToDefaultSidecar() {
+    const volumesContainer = document.getElementById('defaultSidecarVolumes');
+    const volumeRow = document.createElement('div');
+    volumeRow.className = 'mb-2 volume-row';
+    const index = volumesContainer.querySelectorAll('.volume-row').length;
+    volumeRow.innerHTML = `
+        <div class="input-group input-group-sm">
+            <span class="input-group-text">
+                <input type="checkbox" class="form-check-input" data-volume-enabled checked title="Enable automatic volume merging">
+            </span>
+            <span class="input-group-text">Name</span>
+            <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
+            <span class="input-group-text">Path</span>
+            <input type="text" class="form-control" data-volume-path placeholder="e.g., /data" required>
+        </div>
+    `;
+    
+    // Remove "No volumes" message if present
+    const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
+    if (noVolumesMsg) {
+        noVolumesMsg.remove();
+    }
+    
+    volumesContainer.appendChild(volumeRow);
+}
+
 function saveCustomSidecar() {
     const form = document.getElementById('addEditCustomSidecarForm');
     if (!form.checkValidity()) {
@@ -5343,7 +5613,8 @@ function saveCustomSidecar() {
         mem: document.getElementById('editCustomSidecarMem').value,
         ocpu: document.getElementById('editCustomSidecarOcpu').value,
         arch: document.getElementById('editCustomSidecarArch').value,
-        envs: []
+        envs: [],
+        volumes: []
     };
     
     // Collect environment variables
@@ -5361,6 +5632,20 @@ function saveCustomSidecar() {
             });
         }
     }
+    
+    // Collect volumes
+    const volumesContainer = document.getElementById('editCustomSidecarVolumes');
+    const volumeRows = volumesContainer.querySelectorAll('.volume-row');
+    volumeRows.forEach(row => {
+        const nameInput = row.querySelector('input[data-volume-name]');
+        const pathInput = row.querySelector('input[data-volume-path]');
+        if (pathInput && pathInput.value.trim()) {
+            sidecar.volumes.push({
+                name: nameInput ? nameInput.value.trim() : '',
+                path: pathInput.value.trim()
+            });
+        }
+    });
     
     if (isEdit) {
         // Update existing sidecar
@@ -6123,6 +6408,11 @@ async function confirmCreateContainerInstance() {
     
     // Add architecture tag
     baseFreeformTags.architecture = ciArchitecture;
+    
+    // Add composeImport tag if this CI was created from Docker Compose
+    if (parsedComposeData) {
+        baseFreeformTags.composeImport = 'true';
+    }
     
     // Add volumes tag
     if (volumesData.length > 0) {

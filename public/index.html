@@ -936,6 +936,16 @@ oci resource-manager job create-apply-job \
                                     <p class="text-muted mb-0">No environment variables</p>
                                 </div>
                             </div>
+                            <div class="mb-3">
+                                <label class="form-label">Volumes</label>
+                                <small class="form-text text-muted d-block mb-2">Volumes that will be merged when this sidecar is added to a container instance.</small>
+                                <div id="defaultSidecarVolumes" class="border rounded p-2">
+                                    <p class="text-muted mb-0">No volumes</p>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addVolumeToDefaultSidecar()">
+                                    <i class="bi bi-plus"></i> Add Volume
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -1019,6 +1029,16 @@ oci resource-manager job create-apply-job \
                             </div>
                             <button type="button" class="btn btn-sm btn-secondary" onclick="addEnvToCustomSidecar()">
                                 <i class="bi bi-plus"></i> Add Environment Variable
+                            </button>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Volumes</label>
+                            <small class="form-text text-muted d-block mb-2">Volumes that will be merged when this sidecar is added to a container instance.</small>
+                            <div id="editCustomSidecarVolumes" class="border rounded p-2 mb-2">
+                                <p class="text-muted mb-2">No volumes added</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="addVolumeToCustomSidecar()">
+                                <i class="bi bi-plus"></i> Add Volume
                             </button>
                         </div>
                     </form>

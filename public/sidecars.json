@@ -6,7 +6,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "data"
+                "name": "data",
+                "path": "/data"
             }
         ],
         "envs": [
@@ -34,7 +35,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "db-config"
+                "name": "secret",
+                "path": "/secrets"
             }
         ],
         "envs": [
@@ -58,7 +60,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "logs"
+                "name": "logs",
+                "path": "/var/log"
             }
         ],
         "envs": [
@@ -86,7 +89,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "data"
+                "name": "data",
+                "path": "/data"
             }
         ],
         "envs": [
@@ -114,7 +118,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "db-config"
+                "name": "secret",
+                "path": "/secrets"
             }
         ],
         "envs": [
@@ -138,7 +143,8 @@
         "port": "",
         "volumes": [
             {
-                "name": "logs"
+                "name": "logs",
+                "path": "/var/log"
             }
         ],
         "envs": [
