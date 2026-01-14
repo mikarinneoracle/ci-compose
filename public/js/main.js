@@ -510,10 +510,14 @@ function savePortsAndVolumesForCIName(ciName) {
 }
 
 // Load ports and volumes for a specific CI name (projectName)
-function loadPortsAndVolumesForCIName(ciName) {
+function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
     if (!ciName) {
         volumesData = [];
         portsData = [];
+        if (updateTables) {
+            updatePortsTable();
+            updateVolumesTable();
+        }
         return;
     }
     
@@ -526,15 +530,27 @@ function loadPortsAndVolumesForCIName(ciName) {
             portsData = data.ports || [];
             volumesData = data.volumes || [];
             console.log(`Loaded ${portsData.length} ports and ${volumesData.length} volumes for CI name: ${ciName}`);
+            if (updateTables) {
+                updatePortsTable();
+                updateVolumesTable();
+            }
         } catch (error) {
             console.error('Error loading ports and volumes:', error);
             volumesData = [];
             portsData = [];
+            if (updateTables) {
+                updatePortsTable();
+                updateVolumesTable();
+            }
         }
     } else {
         console.log(`No saved ports/volumes found for CI name: ${ciName}`);
         volumesData = [];
         portsData = [];
+        if (updateTables) {
+            updatePortsTable();
+            updateVolumesTable();
+        }
     }
 }
 
@@ -4763,9 +4779,12 @@ function addSidecar(index) {
     // Skip volume merging if CI was created from Docker Compose (check parsedComposeData for create flow)
     const isComposeImport = parsedComposeData !== null;
     
-    if (!isComposeImport && effectiveSidecar.volumes && Array.isArray(effectiveSidecar.volumes) && effectiveSidecar.volumes.length > 0) {
+    // Ensure volumes is an array
+    const sidecarVolumes = effectiveSidecar.volumes || sidecar.volumes || [];
+    
+    if (!isComposeImport && Array.isArray(sidecarVolumes) && sidecarVolumes.length > 0) {
         // Get enabled volumes from defaults if available
-        let enabledVolumes = effectiveSidecar.volumes;
+        let enabledVolumes = sidecarVolumes;
         if (sidecar.isDefault) {
             try {
                 const savedDefaults = localStorage.getItem(`sidecarDefaults_${sidecar.id}`);
@@ -4779,6 +4798,9 @@ function addSidecar(index) {
             } catch (error) {
                 console.error('Error loading sidecar volume defaults:', error);
             }
+        } else {
+            // For custom sidecars, filter by enabled flag directly from volumes
+            enabledVolumes = sidecarVolumes.filter(vol => vol.enabled !== false);
         }
         
         enabledVolumes.forEach(sidecarVolume => {
@@ -4802,7 +4824,61 @@ function addSidecar(index) {
         
         // Save volumes to localStorage
         savePortsAndVolumesForCIName(config.projectName);
-        updateVolumesTable();
+        
+        // Force update the main page volumes table immediately using a helper function
+        const updateMainVolumesTable = () => {
+            const tbody = document.getElementById('volumesTableBody');
+            if (tbody) {
+                if (volumesData.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No volumes added yet. Click "Add Volume" to add one.</td></tr>';
+                } else {
+                    // Dispose of existing tooltips before updating
+                    const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+                    existingTooltips.forEach(el => {
+                        const tooltipInstance = bootstrap.Tooltip.getInstance(el);
+                        if (tooltipInstance) {
+                            tooltipInstance.dispose();
+                        }
+                    });
+                    
+                    tbody.innerHTML = volumesData.map((volume, index) => {
+                        const path = volume.path || 'N/A';
+                        const escapedPath = escapeHtml(path);
+                        // If name is empty, show path instead; otherwise show name
+                        const displayText = volume.name && volume.name.trim() ? volume.name : path;
+                        
+                        return `
+                            <tr>
+                                <td style="border-bottom: 1px solid #dee2e6;">
+                                    <span 
+                                        data-bs-toggle="tooltip" 
+                                        data-bs-placement="top" 
+                                        data-bs-title="${escapedPath}"
+                                        style="cursor: default;"
+                                    >${escapeHtml(displayText)}</span>
+                                </td>
+                                <td style="border-bottom: 1px solid #dee2e6;">
+                                    <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
+                                    <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                    
+                    // Initialize Bootstrap tooltips for the volume paths
+                    const tooltipTriggerList = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+                    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+                }
+            } else {
+                console.warn('volumesTableBody not found in DOM');
+            }
+        };
+        
+        // Update immediately
+        updateMainVolumesTable();
+        
+        // Also update after a very short delay to ensure DOM is ready
+        setTimeout(updateMainVolumesTable, 50);
     }
     
     const container = {
@@ -4825,7 +4901,23 @@ function addSidecar(index) {
     }
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('addSidecarModal'));
+    
+    // Update volumes table using the function as well
+    updateVolumesTable();
+    
     modal.hide();
+    
+    // Update volumes table after modal closes to ensure it's visible
+    modal._element.addEventListener('hidden.bs.modal', function() {
+        // Reload from localStorage to ensure we have the latest data (updateTables=true by default)
+        const config = getConfiguration();
+        loadPortsAndVolumesForCIName(config.projectName, true); // This will call updateVolumesTable() internally
+        
+        // Also update after a short delay to be absolutely sure
+        setTimeout(() => {
+            loadPortsAndVolumesForCIName(config.projectName, true); // This will call updateVolumesTable() internally
+        }, 300);
+    }, { once: true });
 }
 
 // Show sidecar modal for details edit mode
@@ -4961,6 +5053,9 @@ function addSidecarToDetails(index) {
             } catch (error) {
                 console.error('Error loading sidecar volume defaults:', error);
             }
+        } else {
+            // For custom sidecars, filter by enabled flag directly from volumes
+            enabledVolumes = effectiveSidecar.volumes.filter(vol => vol.enabled !== false);
         }
         
         enabledVolumes.forEach(sidecarVolume => {
@@ -4989,7 +5084,12 @@ function addSidecarToDetails(index) {
             const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
             volumesData = detailsVolumes;
             savePortsAndVolumesForCIName(config.projectName);
-            refreshDetailsVolumesTable(instanceId);
+            // Reload volumesData from localStorage to ensure consistency
+            loadPortsAndVolumesForCIName(config.projectName);
+            // Refresh details volumes table
+            setTimeout(() => {
+                refreshDetailsVolumesTable(instanceId);
+            }, 100);
         }
     }
     
