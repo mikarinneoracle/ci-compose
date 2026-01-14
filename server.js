@@ -588,8 +588,11 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
     // Check for OsReader sidecar (os_bucket)
     if (envVars.os_bucket) {
       const bucketName = envVars.os_bucket;
-      // Skip validation if bucket name is a placeholder
-      if (bucketName && !bucketName.includes('***') && !bucketName.includes('put here')) {
+      // Check if bucket name is a placeholder - must be replaced with actual value
+      if (bucketName && (bucketName.includes('***') || bucketName.includes('put here'))) {
+        errors.push(`Container '${containerName}': os_bucket contains placeholder value. Please replace with actual bucket name.`);
+      } else if (bucketName) {
+        // Validate bucket exists only if not a placeholder
         if (!namespaceName) {
           errors.push(`Container '${containerName}': Cannot validate bucket '${bucketName}' - namespace not available`);
         } else {
@@ -607,8 +610,11 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
     // (specific log OCID) comes from the sidecar environment variables and should be validated.
     if (envVars.log_ocid) {
       const logOcid = envVars.log_ocid;
-      // Skip validation if log OCID is a placeholder
-      if (logOcid && !logOcid.includes('***') && !logOcid.includes('put here')) {
+      // Check if log OCID is a placeholder - must be replaced with actual value
+      if (logOcid && (logOcid.includes('***') || logOcid.includes('put here'))) {
+        errors.push(`Container '${containerName}': log_ocid contains placeholder value. Please replace with actual log OCID.`);
+      } else if (logOcid) {
+        // Validate log exists only if not a placeholder
         try {
           await validateLogExists(logOcid, logGroupId);
         } catch (error) {
@@ -620,8 +626,11 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
     // Check for VaultReader sidecar (secret_ocid -> vault)
     if (envVars.secret_ocid) {
       const secretOcid = envVars.secret_ocid;
-      // Skip validation if secret OCID is a placeholder
-      if (secretOcid && !secretOcid.includes('***') && !secretOcid.includes('put here')) {
+      // Check if secret OCID is a placeholder - must be replaced with actual value
+      if (secretOcid && (secretOcid.includes('***') || secretOcid.includes('put here'))) {
+        errors.push(`Container '${containerName}': secret_ocid contains placeholder value. Please replace with actual secret OCID.`);
+      } else if (secretOcid) {
+        // Validate secret and vault exist only if not a placeholder
         try {
           const vaultOcid = await getVaultOcidFromSecret(secretOcid);
           await validateVaultExists(vaultOcid);
