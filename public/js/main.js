@@ -5671,32 +5671,6 @@ function removeEnvFromCustomSidecar(index) {
     }
 }
 
-function addVolumeToDefaultSidecar() {
-    const volumesContainer = document.getElementById('defaultSidecarVolumes');
-    const volumeRow = document.createElement('div');
-    volumeRow.className = 'mb-2 volume-row';
-    const index = volumesContainer.querySelectorAll('.volume-row').length;
-    volumeRow.innerHTML = `
-        <div class="input-group input-group-sm">
-            <span class="input-group-text">
-                <input type="checkbox" class="form-check-input" data-volume-enabled checked title="Enable automatic volume merging">
-            </span>
-            <span class="input-group-text">Name</span>
-            <input type="text" class="form-control" data-volume-name placeholder="e.g., data">
-            <span class="input-group-text">Path</span>
-            <input type="text" class="form-control" data-volume-path placeholder="e.g., /data" required>
-        </div>
-    `;
-    
-    // Remove "No volumes" message if present
-    const noVolumesMsg = volumesContainer.querySelector('p.text-muted');
-    if (noVolumesMsg) {
-        noVolumesMsg.remove();
-    }
-    
-    volumesContainer.appendChild(volumeRow);
-}
-
 function saveCustomSidecar() {
     const form = document.getElementById('addEditCustomSidecarForm');
     if (!form.checkValidity()) {
