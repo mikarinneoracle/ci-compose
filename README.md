@@ -226,7 +226,7 @@ For scenarios where you only need to rebuild containers (e.g., after updating co
 **When to use restart instead of stack apply:**
 - Container image updates (e.g., after updating container images due to a code change)
 - Application code changes that don't require infrastructure modifications
-- Configuration changes managed through sidecars (e.g., Vault sidecar for secrets) - sidecars will reload their configuration during restart
+- Configuration changes managed through sidecars (e.g., Vault sidecar for secrets, Object Storage sidecar for Prometheus/Grafana configurations) - sidecars will reload their configuration during restart
 - Quick container refresh without infrastructure changes
 
 **Example: Restart Container Instance using OCI CLI**
@@ -251,7 +251,7 @@ oci container-instances container-instance restart \
       --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }}
 ```
 
-> **Note:** The restart command will pull the latest image versions and restart all containers in the instance, including sidecars. This means sidecars (such as Vault for secrets management) will reload their configuration, making configuration changes convenient without requiring a full stack apply. For infrastructure changes (networking, volumes, resource limits, etc.), you should use the full stack apply process described above.
+> **Note:** The restart command will pull the latest image versions and restart all containers in the instance, including sidecars. This means sidecars (such as Vault for secrets management) will reload their configuration, making configuration changes convenient without requiring a full stack apply. Additionally, sidecars like Object Storage can be configured to periodically reload configurations (e.g., for Prometheus and Grafana), enabling configuration updates without even needing container restarts. For infrastructure changes (networking, volumes, resource limits, etc.), you should use the full stack apply process described above.
 
 ### Benefits
 
