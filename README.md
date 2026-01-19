@@ -219,6 +219,40 @@ jobs:
       #       --plan-job-id ${{ env.PLAN_JOB_ID }}
 ```
 
+#### Container Rebuilds Without Stack Changes
+
+For scenarios where you only need to rebuild containers (e.g., after updating container images due to a code change) without making changes to the infrastructure stack (networking, volumes, resource limits, etc.), you can simply restart the container instance using the OCI CLI. This approach is faster than a full stack apply and preserves the existing IP address.
+
+**When to use restart instead of stack apply:**
+- Container image updates (e.g., after updating container images due to a code change)
+- Application code changes that don't require infrastructure modifications
+- Configuration changes managed through sidecars (e.g., Vault sidecar for secrets) - sidecars will reload their configuration during restart
+- Quick container refresh without infrastructure changes
+
+**Example: Restart Container Instance using OCI CLI**
+
+```bash
+# Restart a container instance by its OCID
+oci container-instances container-instance restart \
+  --container-instance-id <container-instance-ocid>
+
+# Example with a specific container instance OCID
+oci container-instances container-instance restart \
+  --container-instance-id ocid1.containerinstance.oc1.iad.unique-id
+```
+
+**Example: Restart in CI/CD Pipeline**
+
+```yaml
+- name: Restart Container Instance
+  run: |
+    # Restart the container instance after image updates
+    oci container-instances container-instance restart \
+      --container-instance-id ${{ secrets.OCI_CONTAINER_INSTANCE_ID }}
+```
+
+> **Note:** The restart command will pull the latest image versions and restart all containers in the instance, including sidecars. This means sidecars (such as Vault for secrets management) will reload their configuration, making configuration changes convenient without requiring a full stack apply. For infrastructure changes (networking, volumes, resource limits, etc.), you should use the full stack apply process described above.
+
 ### Benefits
 
 - **Version Control**: Track Container Instance configurations in Git
