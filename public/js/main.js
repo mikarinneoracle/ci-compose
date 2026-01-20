@@ -1922,6 +1922,9 @@ function displayContainerInstanceDetails(instance) {
     html += `<button class="btn btn-warning me-2" id="detailsEditBtn" onclick="isInEditMode = true; enterEditMode('${containerInstanceId}')" ${editDisabledAttr}>`;
     html += '<i class="bi bi-pencil"></i> Edit';
     html += '</button>';
+    html += `<button class="btn btn-secondary me-2" id="detailsDuplicateBtn" onclick="duplicateContainerInstance('${containerInstanceId}')" ${editDisabledAttr}>`;
+    html += '<i class="bi bi-files"></i> Duplicate';
+    html += '</button>';
     html += `<button class="btn btn-secondary me-2" id="detailsCloseBtn" onclick="closeDetailsModal()" style="display: inline-block;">`;
     html += 'Close';
     html += '</button>';
@@ -3098,6 +3101,126 @@ async function saveCIChanges(instanceId) {
         showNotification(`Error saving changes: ${error.message}`, 'error');
         // Exit edit mode on error too
         exitEditMode();
+    }
+}
+
+// Duplicate current Container Instance configuration into the Create CI modal
+async function duplicateContainerInstance(instanceId) {
+    if (!currentEditingInstance || currentEditingInstance.id !== instanceId) {
+        showNotification('Error: Instance data not available for duplication', 'error');
+        return;
+    }
+
+    try {
+        const config = getConfiguration();
+
+        // Open the Create CI modal to initialize form, name counter, and defaults
+        await showCreateContainerInstanceModal();
+
+        // Determine architecture from tags or shape
+        let architecture = currentEditingInstance.freeformTags?.architecture;
+        if (!architecture && currentEditingInstance.shape) {
+            architecture = currentEditingInstance.shape === 'CI.Standard.A1.Flex' ? 'ARM64' : 'x86';
+        }
+        architecture = architecture || 'x86';
+
+        // Set architecture radio
+        const archRadio = document.querySelector(`input[name="ciArchitecture"][value="${architecture}"]`);
+        if (archRadio) {
+            archRadio.checked = true;
+        }
+
+        // Set shape (read-only field)
+        const shapeInput = document.getElementById('ciShape');
+        if (shapeInput) {
+            shapeInput.value = currentEditingInstance.shape || (architecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex');
+        }
+
+        // Set shape memory and OCPUs from current instance, with safe fallbacks
+        const memorySelect = document.getElementById('ciShapeMemory');
+        const ocpusSelect = document.getElementById('ciShapeOcpus');
+        const instanceMemory = currentEditingInstance.shapeConfig?.memoryInGBs || 16;
+        const instanceOcpus = currentEditingInstance.shapeConfig?.ocpus || 1;
+
+        if (memorySelect) {
+            const memoryValue = instanceMemory.toString();
+            const optionExists = Array.from(memorySelect.options).some(opt => opt.value === memoryValue);
+            memorySelect.value = optionExists ? memoryValue : '16';
+        }
+        if (ocpusSelect) {
+            ocpusSelect.value = instanceOcpus.toString();
+        }
+
+        // Set subnet to match the original instance
+        const subnetSelect = document.getElementById('ciSubnetId');
+        if (subnetSelect && currentEditingInstance.compartmentId && currentEditingInstance.subnetId) {
+            // Ensure subnets are loaded for this compartment
+            await loadSubnetsForCI(currentEditingInstance.compartmentId);
+            subnetSelect.value = currentEditingInstance.subnetId;
+        }
+
+        // Build portsData from details view ports
+        const detailsPorts = window[`detailsPorts_${instanceId}`] || [];
+        portsData = detailsPorts.map(p => ({
+            port: typeof p.port === 'number' ? p.port : parseInt(p.port, 10),
+            name: p.name || null
+        }));
+
+        // Build volumesData from details view volumes
+        const detailsVolumes = window[`detailsVolumes_${instanceId}`] || [];
+        volumesData = detailsVolumes.map(v => ({
+            name: v.name || '',
+            path: v.path || ''
+        }));
+
+        updatePortsTable();
+        updateVolumesTable();
+
+        // Build containersData from detailsContainers for this instance
+        const detailsContainers = window[`detailsContainers_${instanceId}`] || [];
+        containersData = detailsContainers.map(container => {
+            // Find port index in portsData based on the container's port number
+            let portIndex = null;
+            if (container.port) {
+                const portNum = parseInt(container.port, 10);
+                if (!isNaN(portNum)) {
+                    const foundIndex = portsData.findIndex(p => {
+                        const pNum = typeof p.port === 'number' ? p.port : parseInt(p.port, 10);
+                        return pNum === portNum;
+                    });
+                    if (foundIndex !== -1) {
+                        portIndex = foundIndex;
+                    }
+                }
+            }
+
+            return {
+                displayName: container.displayName,
+                imageUrl: container.imageUrl,
+                resourceConfig: {
+                    memoryInGBs: container.resourceConfig?.memoryInGBs || instanceMemory,
+                    vcpus: container.resourceConfig?.vcpus || instanceOcpus
+                },
+                environmentVariables: container.environmentVariables || {},
+                command: container.command || [],
+                arguments: container.arguments || [],
+                portIndex: portIndex
+            };
+        });
+
+        updateContainersTable();
+
+        // Close the details modal so user focuses on the Create CI flow
+        const detailsModalEl = document.getElementById('containerInstanceModal');
+        const detailsModal = detailsModalEl ? bootstrap.Modal.getInstance(detailsModalEl) : null;
+        if (detailsModal) {
+            detailsModal.hide();
+        }
+
+        showNotification('Container Instance duplicated into Create CI form. Review and create a new instance.', 'success');
+    } catch (error) {
+        console.error('Error duplicating Container Instance:', error);
+        showNotification(`Error duplicating Container Instance: ${error.message}`, 'error');
     }
 }
 
