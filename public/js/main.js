@@ -3728,8 +3728,6 @@ resource "oci_container_instances_container_instance" "this" {
     ocpus         = ${shapeOcpus}
   }
   
-  ${architecture !== 'x86' ? `architecture = "${architecture}"` : ''}
-  
   vnics {
     subnet_id = "${subnetId}"
   }
@@ -3947,8 +3945,48 @@ async function showCreateContainerInstanceModal() {
     const config = getConfiguration();
     loadPortsAndVolumesForCIName(config.projectName);
     
-    // Set default CI name: projectName (count + 1)
-    const defaultName = config.projectName ? `${config.projectName} ${containerInstancesCount + 1}` : '';
+    // Calculate next container instance number by finding the highest existing number
+    let nextNumber = 1;
+    if (config.projectName) {
+        try {
+            const params = buildQueryString();
+            const response = await fetch(`/api/oci/container-instances?${params}`);
+            const data = await response.json();
+            
+            if (data.success && data.data && data.data.length > 0) {
+                const projectName = config.projectName.toLowerCase();
+                const matchingInstances = data.data.filter(instance => {
+                    const displayName = (instance.displayName || '').toLowerCase();
+                    const tags = instance.freeformTags || {};
+                    const tagValues = Object.values(tags).join(' ').toLowerCase();
+                    return displayName.includes(projectName) || tagValues.includes(projectName);
+                });
+                
+                // Extract numbers from display names matching pattern "projectName N"
+                const numbers = [];
+                matchingInstances.forEach(instance => {
+                    const displayName = instance.displayName || '';
+                    // Match pattern: "projectName N" or "projectNameN" where N is a number
+                    const regex = new RegExp(`^${config.projectName}\\s*(\\d+)$`, 'i');
+                    const match = displayName.match(regex);
+                    if (match) {
+                        numbers.push(parseInt(match[1], 10));
+                    }
+                });
+                
+                if (numbers.length > 0) {
+                    nextNumber = Math.max(...numbers) + 1;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching container instances for name calculation:', error);
+            // Fallback to using containerInstancesCount if fetch fails
+            nextNumber = containerInstancesCount + 1;
+        }
+    }
+    
+    // Set default CI name: projectName (nextNumber)
+    const defaultName = config.projectName ? `${config.projectName} ${nextNumber}` : '';
     document.getElementById('ciName').value = defaultName;
     
     // Set default shape config: CI.Standard.E4.Flex (readonly), memory 16GB, ocpus 1
