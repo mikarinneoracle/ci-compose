@@ -299,6 +299,235 @@ app.get('/api/oci/compartments/:compartmentId', async (req, res) => {
   }
 });
 
+// Get active domain from root compartment
+app.get('/api/oci/identity/active-domain', async (req, res) => {
+  try {
+    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
+    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    
+    // Create a provider for the requested config/profile
+    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
+      configPath,
+      profile
+    );
+    
+    // Get tenancy ID
+    let tenancyId;
+    try {
+      tenancyId = requestProvider.getTenantId();
+    } catch (e) {
+      const config = readOCIConfig(configPath, profile);
+      tenancyId = config ? config.tenancy : null;
+    }
+    
+    if (!tenancyId) {
+      return res.status(404).json({ error: 'Tenancy ID not found in config file' });
+    }
+    
+    // Create Identity client
+    const idClient = new identity.IdentityClient({
+      authenticationDetailsProvider: requestProvider
+    });
+    
+    // List domains in root compartment (tenancy)
+    const listDomainsRequest = {
+      compartmentId: tenancyId,
+      lifecycleState: 'ACTIVE'
+    };
+    
+    const response = await idClient.listDomains(listDomainsRequest);
+    
+    // Get the first active domain
+    const activeDomain = response.items && response.items.length > 0 ? response.items[0] : null;
+    
+    if (!activeDomain) {
+      return res.status(404).json({ error: 'No active domain found in root compartment' });
+    }
+    
+    res.json({
+      success: true,
+      domainName: activeDomain.name,
+      domainId: activeDomain.id
+    });
+  } catch (error) {
+    console.error('Error getting active domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create or update dynamic group
+app.post('/api/oci/identity/dynamic-group', async (req, res) => {
+  try {
+    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
+    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { name, description, matchingRule } = req.body;
+    
+    if (!name || !matchingRule) {
+      return res.status(400).json({ error: 'name and matchingRule are required' });
+    }
+    
+    // Create a provider for the requested config/profile
+    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
+      configPath,
+      profile
+    );
+    
+    // Get tenancy ID
+    let tenancyId;
+    try {
+      tenancyId = requestProvider.getTenantId();
+    } catch (e) {
+      const config = readOCIConfig(configPath, profile);
+      tenancyId = config ? config.tenancy : null;
+    }
+    
+    if (!tenancyId) {
+      return res.status(404).json({ error: 'Tenancy ID not found in config file' });
+    }
+    
+    // Create Identity client
+    const idClient = new identity.IdentityClient({
+      authenticationDetailsProvider: requestProvider
+    });
+    
+    // Check if dynamic group already exists
+    const listDynamicGroupsRequest = {
+      compartmentId: tenancyId
+    };
+    
+    let existingGroup = null;
+    try {
+      const listResponse = await idClient.listDynamicGroups(listDynamicGroupsRequest);
+      existingGroup = listResponse.items.find(g => g.name === name);
+    } catch (e) {
+      // If listing fails, continue to create
+    }
+    
+    if (existingGroup) {
+      // Update existing dynamic group
+      const updateDynamicGroupRequest = {
+        dynamicGroupId: existingGroup.id,
+        updateDynamicGroupDetails: {
+          description: description || existingGroup.description,
+          matchingRule: matchingRule
+        }
+      };
+      
+      await idClient.updateDynamicGroup(updateDynamicGroupRequest);
+      
+      res.json({
+        success: true,
+        message: 'Dynamic group updated successfully',
+        dynamicGroupId: existingGroup.id
+      });
+    } else {
+      // Create new dynamic group
+      const createDynamicGroupRequest = {
+        createDynamicGroupDetails: {
+          compartmentId: tenancyId,
+          name: name,
+          description: description || '',
+          matchingRule: matchingRule
+        }
+      };
+      
+      const response = await idClient.createDynamicGroup(createDynamicGroupRequest);
+      
+      res.json({
+        success: true,
+        message: 'Dynamic group created successfully',
+        dynamicGroupId: response.dynamicGroup.id
+      });
+    }
+  } catch (error) {
+    console.error('Error creating/updating dynamic group:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create or update policies
+app.post('/api/oci/identity/policies', async (req, res) => {
+  try {
+    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
+    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { compartmentId, policies } = req.body;
+    
+    if (!compartmentId || !policies || !Array.isArray(policies) || policies.length === 0) {
+      return res.status(400).json({ error: 'compartmentId and policies array are required' });
+    }
+    
+    // Create a provider for the requested config/profile
+    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
+      configPath,
+      profile
+    );
+    
+    // Create Identity client
+    const idClient = new identity.IdentityClient({
+      authenticationDetailsProvider: requestProvider
+    });
+    
+    // Policy name is fixed as "ci-compose"
+    const policyName = 'ci-compose';
+    
+    // Check if policy already exists
+    const listPoliciesRequest = {
+      compartmentId: compartmentId
+    };
+    
+    let existingPolicy = null;
+    try {
+      const listResponse = await idClient.listPolicies(listPoliciesRequest);
+      existingPolicy = listResponse.items.find(p => p.name === policyName);
+    } catch (e) {
+      // If listing fails, continue to create
+    }
+    
+    const statements = policies.map(p => p.trim()).filter(p => p.length > 0);
+    
+    if (existingPolicy) {
+      // Update existing policy
+      const updatePolicyRequest = {
+        policyId: existingPolicy.id,
+        updatePolicyDetails: {
+          statements: statements
+        }
+      };
+      
+      await idClient.updatePolicy(updatePolicyRequest);
+      
+      res.json({
+        success: true,
+        message: 'Policy updated successfully',
+        policyId: existingPolicy.id,
+        statementsCount: statements.length
+      });
+    } else {
+      // Create new policy
+      const createPolicyRequest = {
+        createPolicyDetails: {
+          compartmentId: compartmentId,
+          name: policyName,
+          description: 'Policies for CI Compose dynamic group',
+          statements: statements
+        }
+      };
+      
+      const response = await idClient.createPolicy(createPolicyRequest);
+      
+      res.json({
+        success: true,
+        message: 'Policy created successfully',
+        policyId: response.policy.id,
+        statementsCount: statements.length
+      });
+    }
+  } catch (error) {
+    console.error('Error creating/updating policies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/data', (req, res) => {
   res.json({
     message: 'Hello from the backend!',

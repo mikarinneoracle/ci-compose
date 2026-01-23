@@ -628,7 +628,7 @@
                                             <div class="mb-3">
                                                 <label for="compartmentId" class="form-label">Compartment <span class="text-danger">*</span></label>
                                                 <div class="input-group">
-                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets(); loadLogGroups();">
+                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets(); loadLogGroups(); generateDynamicGroupAndPolicies(this.value);">
                                                         <option value="">Loading compartments...</option>
                                                     </select>
                                                     <button class="btn btn-outline-secondary" type="button" onclick="loadCompartments()">
@@ -661,6 +661,28 @@
                                                 <input type="number" class="form-control" id="autoReloadTime" min="0" value="5" placeholder="5">
                                                 <small class="form-text text-muted">Auto-reload interval in seconds (0 = disabled)</small>
                                             </div>
+                                            
+                                            <hr class="my-4">
+                                            <h6 class="mb-3">OCI Dynamic Group & Policies Setup</h6>
+                                            
+                                            <div class="mb-3">
+                                                <label for="dynamicGroupRule" class="form-label" id="dynamicGroupRuleLabel">Dynamic Group Rule for dynamic-group "ci-compose" for your active domain</label>
+                                                <textarea class="form-control" id="dynamicGroupRule" rows="3" readonly></textarea>
+                                                <small class="form-text text-muted">Dynamic group rule for container instances in the selected compartment. Select a compartment to generate the rule.</small>
+                                                <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createDynamicGroup()">
+                                                    <i class="bi bi-cloud-upload"></i> Create/Update Dynamic Group
+                                                </button>
+                                            </div>
+                                            
+                                            <div class="mb-3">
+                                                <label for="policiesText" class="form-label">Policies</label>
+                                                <textarea class="form-control" id="policiesText" rows="8" readonly></textarea>
+                                                <small class="form-text text-muted">Policies for the dynamic group. These will be created in the selected compartment.</small>
+                                                <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createPolicies()">
+                                                    <i class="bi bi-cloud-upload"></i> Create/Update Policies
+                                                </button>
+                                            </div>
+                                            
                                             <div class="alert alert-info">
                                                 <strong>Note:</strong> These settings are stored in your browser's local storage and are used for API requests.
                                             </div>
@@ -747,6 +769,22 @@
                         <p class="small text-muted">
                             Supported features: <code>image</code>, <code>command</code>, <code>entrypoint</code>, 
                             <code>environment</code>, <code>ports</code>, <code>volumes</code>, and <code>depends_on</code>.
+                        </p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h5 class="mb-3">Dynamic Group & Policies Setup</h5>
+                        <p>
+                            CI Compose requires an OCI Dynamic Group and policies to enable resource principal authentication for container instances. 
+                            After selecting a compartment in the Configuration modal, the application will automatically generate:
+                        </p>
+                        <ul>
+                            <li><strong>Dynamic Group Rule:</strong> Matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.</li>
+                            <li><strong>Policies:</strong> Required permissions for the dynamic group to manage resources, including Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, and File Storage.</li>
+                        </ul>
+                        <p class="small text-muted">
+                            Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons in the Configuration modal to apply these settings. 
+                            The dynamic group is created in the root compartment, while policies are created in the selected compartment.
                         </p>
                     </div>
                     

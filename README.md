@@ -106,6 +106,19 @@ Once the application is running, access the Configuration menu to set up your en
    - Region (auto-loaded from config file when available)
    - Auto-Reload Time (in seconds, 0 to disable)
 
+6. **Dynamic Group & Policies Setup:** After selecting a compartment, the Configuration modal will automatically generate:
+   - **Dynamic Group Rule:** A rule that matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.
+   - **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for:
+     - Object Storage (object-family)
+     - Vault/Secrets (secret-family)
+     - Networking (virtual-network-family)
+     - Compute Instances (instance-family)
+     - Resource Manager (orm-stacks, orm-jobs)
+     - Container Instances (compute-container-family)
+     - File Storage (file-family)
+   
+   Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations to your OCI tenancy. The dynamic group is created in the root compartment, while policies are created in the selected compartment.
+
 After completing the configuration, you can start creating and managing container instances through the web interface.
 
 ## Requirements

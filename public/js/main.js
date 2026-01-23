@@ -663,6 +663,7 @@ async function loadCompartments() {
                 if (savedConfig.compartmentId) {
                     loadSubnets();
                     loadLogGroups();
+                    generateDynamicGroupAndPolicies(savedConfig.compartmentId);
                 }
                 // Update footer with compartment name
                 updateContainerInstancesFooter();
@@ -674,6 +675,193 @@ async function loadCompartments() {
         console.error('Could not load compartments:', error);
         const compartmentSelect = document.getElementById('compartmentId');
         compartmentSelect.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+    }
+}
+
+// Generate dynamic group rule and policies based on selected compartment
+async function generateDynamicGroupAndPolicies(compartmentId) {
+    if (!compartmentId) {
+        document.getElementById('dynamicGroupRule').value = '';
+        document.getElementById('policiesText').value = '';
+        // Reset label
+        const labelElement = document.getElementById('dynamicGroupRuleLabel');
+        if (labelElement) {
+            labelElement.textContent = 'Dynamic Group Rule for dynamic-group "ci-compose" for your active domain';
+        }
+        return;
+    }
+    
+    try {
+        // Get compartment name for policies
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        // Get compartment details
+        const compartmentResponse = await fetch(`/api/oci/compartments/${compartmentId}?${params.toString()}`);
+        const compartmentData = await compartmentResponse.json();
+        
+        let compartmentName = 'your-compartment';
+        if (compartmentData.success && compartmentData.data) {
+            compartmentName = compartmentData.data.name || compartmentName;
+        }
+        
+        // Get active domain from root compartment
+        const domainResponse = await fetch(`/api/oci/identity/active-domain?${params.toString()}`);
+        const domainData = await domainResponse.json();
+        
+        // Update label with domain name if available
+        const labelElement = document.getElementById('dynamicGroupRuleLabel');
+        if (labelElement) {
+            if (domainData.success && domainData.domainName) {
+                labelElement.textContent = `Dynamic Group Rule for dynamic-group "ci-compose" for your active domain (${domainData.domainName})`;
+            } else {
+                labelElement.textContent = 'Dynamic Group Rule for dynamic-group "ci-compose" for your active domain';
+            }
+        }
+        
+        // Dynamic group name for policies uses format: oracleidentitycloudservice/<domain_name>
+        // The actual dynamic group name is "ci-compose"
+        let dynamicGroupNameForPolicies = 'oracleidentitycloudservice/ci-compose';
+        if (domainData.success && domainData.domainName) {
+            // Use domain name in the format: oracleidentitycloudservice/<domain_name>
+            dynamicGroupNameForPolicies = `oracleidentitycloudservice/${domainData.domainName}`;
+        }
+        
+        // Generate dynamic group rule
+        const dynamicGroupRule = `ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${compartmentId}'}`;
+        document.getElementById('dynamicGroupRule').value = dynamicGroupRule;
+        
+        // Generate policies
+        const policies = [
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage object-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage secret-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage virtual-network-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage instance-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-stacks in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-jobs in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage compute-container-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage file-family in compartment ${compartmentName}`
+        ];
+        
+        document.getElementById('policiesText').value = policies.join('\n');
+    } catch (error) {
+        console.error('Error generating dynamic group and policies:', error);
+        showNotification('Error generating dynamic group and policies: ' + error.message, 'error');
+    }
+}
+
+// Create or update dynamic group
+async function createDynamicGroup() {
+    const compartmentId = document.getElementById('compartmentId').value;
+    const dynamicGroupRule = document.getElementById('dynamicGroupRule').value;
+    
+    if (!compartmentId) {
+        showNotification('Please select a compartment first', 'error');
+        return;
+    }
+    
+    if (!dynamicGroupRule) {
+        showNotification('Dynamic group rule is empty. Please select a compartment to generate it.', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Creating/updating dynamic group...', 'info');
+        
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        const response = await fetch(`/api/oci/identity/dynamic-group?${params.toString()}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: 'ci-compose',
+                description: 'Dynamic group for CI Compose container instances',
+                matchingRule: dynamicGroupRule
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification('Dynamic group created/updated successfully!', 'success');
+        } else {
+            throw new Error(data.error || 'Failed to create/update dynamic group');
+        }
+    } catch (error) {
+        console.error('Error creating dynamic group:', error);
+        showNotification('Error creating dynamic group: ' + error.message, 'error');
+    }
+}
+
+// Create or update policies
+async function createPolicies() {
+    const compartmentId = document.getElementById('compartmentId').value;
+    const policiesText = document.getElementById('policiesText').value;
+    
+    if (!compartmentId) {
+        showNotification('Please select a compartment first', 'error');
+        return;
+    }
+    
+    if (!policiesText || !policiesText.trim()) {
+        showNotification('Policies are empty. Please select a compartment to generate them.', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Creating/updating policies...', 'info');
+        
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        // Parse policies from text
+        const policies = policiesText.split('\n').filter(p => p.trim().length > 0);
+        
+        const response = await fetch(`/api/oci/identity/policies?${params.toString()}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                compartmentId: compartmentId,
+                policies: policies
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showNotification(`Policies created/updated successfully! (${policies.length} policies)`, 'success');
+        } else {
+            throw new Error(data.error || 'Failed to create/update policies');
+        }
+    } catch (error) {
+        console.error('Error creating policies:', error);
+        showNotification('Error creating policies: ' + error.message, 'error');
     }
 }
 
