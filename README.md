@@ -37,6 +37,8 @@ Starting with version 0.1.1, CI Compose features a modern dark theme with a teal
 
 The new color scheme maintains excellent accessibility while providing a contemporary developer-focused aesthetic that aligns with modern development tools and IDEs.
 
+**To load and run the latest version**, ensure you have the latest code by running `git pull origin main` before starting the application with `npm run dev` or `npm run prod`.
+
 ## Custom Sidecars
 
 If you want to add a custom sidecar to this project, please contact [@mikarinneoracle](https://github.com/mikarinneoracle).
