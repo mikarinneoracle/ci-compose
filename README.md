@@ -32,6 +32,8 @@ Starting with version 0.1.1, CI Compose features a modern dark theme with a teal
 - **Enhanced Readability**: Improved contrast ratios and carefully selected text colors ensure optimal readability in all lighting conditions
 - **Consistent Styling**: All UI components including tables, modals, buttons, and forms have been updated to match the new dark theme
 - **Terminal-Style Logs**: Container logs are displayed with a black background and white text, providing a familiar terminal-like experience
+- **Dynamic Group & Policies Setup**: The Configuration modal now includes automatic generation and creation of OCI dynamic group rules and policies. After selecting a compartment, the dynamic group rule and required policies are automatically generated and can be created with a single click
+- **Container Instance Duplication**: Added a "Duplicate" button in the Container Instance details modal that allows you to quickly create a new instance with the same configuration. The instance name is automatically incremented (e.g., "pets 2" → "pets 3")
 
 The new color scheme maintains excellent accessibility while providing a contemporary developer-focused aesthetic that aligns with modern development tools and IDEs.
 
