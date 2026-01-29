@@ -23,6 +23,8 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Import Docker Compose YAML files to quickly set up Container Instances
 - CI/CD integration: Export to OCI Resource Manager for automated deployments using OCI CLI
 
+> **No Lock-in:** Everything created with CI Compose is a standard OCI Container Instance. You can stop using CI Compose at any time and continue managing your container instances directly through the OCI Console, CLI, or any other OCI-compatible tool. There is no vendor lock-in or proprietary format.
+
 ## UI Changes (Version 0.1.1)
 
 Starting with version 0.1.1, CI Compose features a modern dark theme with a teal/cyan color palette, replacing the previous light theme. This update provides:
