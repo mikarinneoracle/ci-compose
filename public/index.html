@@ -715,6 +715,9 @@
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="refreshLogsBtn" onclick="refreshContainerLogs()" title="Refresh logs">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -783,7 +786,7 @@
                         </p>
                         <ul>
                             <li><strong>Dynamic Group Rule:</strong> Matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.</li>
-                            <li><strong>Policies:</strong> Required permissions for the dynamic group to manage resources, including Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, and File Storage.</li>
+                            <li><strong>Policies:</strong> Required permissions for the dynamic group to manage resources, including Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, File Storage, and Autonomous Database.</li>
                         </ul>
                         <p class="small text-muted">
                             Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons in the Configuration modal to apply these settings. 

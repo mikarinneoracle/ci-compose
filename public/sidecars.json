@@ -46,7 +46,7 @@
             },
             {
                 "var": "secret_ocid",
-                "value": "***put here secrets OCID***"
+                "value": "***put here secret OCID***"
             }
         ],
         "mem": "16",
@@ -76,6 +76,39 @@
             {
                 "var": "log_header",
                 "value": "***logs header***"
+            }
+        ],
+        "mem": "16",
+        "ocpu": "1",
+        "arch": "x86"
+    },
+    {
+        "id": "7",
+        "name": "AdbWallet",
+        "image": "mikarinneoracle/ci-sidecar-adbwallet:0.1.1",
+        "port": "",
+        "volumes": [
+            {
+                "name": "wallet",
+                "path": "/wallet"
+            }
+        ],
+        "envs": [
+            {
+                "var": "wallet_path",
+                "value": "/wallet"
+            },
+            {
+                "var": "adb_ocid",
+                "value": "***put here ADB OCID***"
+            },
+            {
+                "var": "wallet_password",
+                "value": "***put here wallet password***"
+            },
+            {
+                "var": "reload_delay",
+                "value": "0"
             }
         ],
         "mem": "16",
@@ -129,7 +162,7 @@
             },
             {
                 "var": "secret_ocid",
-                "value": "***put here secrets OCID***"
+                "value": "***put here secret OCID***"
             }
         ],
         "mem": "6",
@@ -159,6 +192,39 @@
             {
                 "var": "log_header",
                 "value": "***logs header***"
+            }
+        ],
+        "mem": "6",
+        "ocpu": "1",
+        "arch": "ARM64"
+    },
+    {
+        "id": "8",
+        "name": "AdbWallet",
+        "image": "mikarinneoracle/ci-sidecar-adbwallet:0.1.1-arm",
+        "port": "",
+        "volumes": [
+            {
+                "name": "wallet",
+                "path": "/wallet"
+            }
+        ],
+        "envs": [
+            {
+                "var": "wallet_path",
+                "value": "/wallet"
+            },
+            {
+                "var": "adb_ocid",
+                "value": "***put here ADB OCID***"
+            },
+            {
+                "var": "wallet_password",
+                "value": "***put here wallet password***"
+            },
+            {
+                "var": "reload_delay",
+                "value": "0"
             }
         ],
         "mem": "6",

@@ -747,7 +747,8 @@ async function generateDynamicGroupAndPolicies(compartmentId) {
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-stacks in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-jobs in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage compute-container-family in compartment ${compartmentName}`,
-            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage file-family in compartment ${compartmentName}`
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage file-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage autonomous-database in compartment ${compartmentName}`
         ];
         
         document.getElementById('policiesText').value = policies.join('\n');
@@ -7079,8 +7080,16 @@ async function fetchData() {
     }
 }
 
+// Store current log context for refresh functionality
+let currentLogOcid = null;
+let currentContainerName = null;
+
 // Show container logs modal using log OCID
 async function showContainerLogs(logOcid, containerName) {
+    // Store for refresh functionality
+    currentLogOcid = logOcid;
+    currentContainerName = containerName;
+    
     const modalElement = document.getElementById('containerLogsModal');
     const modal = new bootstrap.Modal(modalElement);
     const logsContent = document.getElementById('containerLogsContent');
@@ -7094,6 +7103,24 @@ async function showContainerLogs(logOcid, containerName) {
     
     modal.show();
     
+    // Fetch and display logs
+    await fetchAndDisplayLogs(logOcid, logsContent);
+}
+
+// Refresh container logs
+async function refreshContainerLogs() {
+    if (!currentLogOcid || !currentContainerName) {
+        return;
+    }
+    
+    const logsContent = document.getElementById('containerLogsContent');
+    logsContent.innerHTML = '<p style="color: #ffffff;">Refreshing logs...</p>';
+    
+    await fetchAndDisplayLogs(currentLogOcid, logsContent);
+}
+
+// Fetch and display logs (extracted for reuse)
+async function fetchAndDisplayLogs(logOcid, logsContent) {
     try {
         // Get log group ID from config if available
         const config = getConfiguration();
