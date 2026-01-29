@@ -663,7 +663,7 @@
                                             </div>
                                             
                                             <hr class="my-4">
-                                            <h6 class="mb-3">OCI Dynamic Group & Policies Setup</h6>
+                                            <h6 class="mb-3">OCI Dynamic Group & Policies Setup for Sidecars</h6>
                                             
                                             <div class="mb-3">
                                                 <label for="dynamicGroupRule" class="form-label" id="dynamicGroupRuleLabel">Dynamic Group Rule for dynamic-group "ci-compose" for your active domain</label>
@@ -779,7 +779,7 @@
                     </div>
                     
                     <div class="mb-4">
-                        <h5 class="mb-3">Dynamic Group & Policies Setup</h5>
+                        <h5 class="mb-3">Dynamic Group & Policies Setup for Sidecars</h5>
                         <p>
                             CI Compose requires an OCI Dynamic Group and policies to enable resource principal authentication for container instances. 
                             After selecting a compartment in the Configuration modal, the application will automatically generate:
@@ -792,6 +792,9 @@
                             Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons in the Configuration modal to apply these settings. 
                             The dynamic group is created in the root compartment, while policies are created in the selected compartment.
                         </p>
+                        <div class="alert alert-info mt-2 mb-0">
+                            <strong>Note:</strong> These dynamic group and policies are required because sidecars in Container Instance deployments run as resource principal and need these permissions to access OCI services (Object Storage, Vault, Autonomous Database, etc.).
+                        </div>
                     </div>
                     
                     <div class="mb-4">
