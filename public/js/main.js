@@ -2737,21 +2737,20 @@ function refreshDetailsContainersTable(instanceId) {
             return cEnvVars.log_ocid && config.logGroupId;
         });
         
-        // Apply red background if port overlaps
+        // Apply red background only to port cell if port overlaps
         const isOverlapping = overlappingIndices.has(idx);
-        const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
-        const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        const portCellStyle = isOverlapping ? 'background-color: #dc3545 !important; color: #ffffff !important;' : '';
         
-        let html = `<tr class="container-row-hover" style="${rowStyle}" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">`;
+        let html = `<tr class="container-row-hover" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">`;
         
-        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${getStateBadgeHtml(container.lifecycleState)}</td>`;
-        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><strong class="text-primary">${containerName}</strong></td>`;
-        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>`;
-        html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl}</code></td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6;">${getStateBadgeHtml(container.lifecycleState)}</td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6;"><strong class="text-primary">${containerName}</strong></td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6; ${portCellStyle}">${portDisplay}</td>`;
+        html += `<td style="border-bottom: 1px solid #dee2e6;"><code>${container.imageUrl}</code></td>`;
         
         // Actions column - visibility controlled by edit mode
         const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
-        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay}; white-space: nowrap; text-align: right; border-bottom: 1px solid #dee2e6; ${cellStyle}">`;
+        html += `<td id="containerActions_${idx}" style="display: ${actionsDisplay}; white-space: nowrap; text-align: right; border-bottom: 1px solid #dee2e6;">`;
         html += `<button class="btn btn-info btn-sm me-1" onclick="editContainerInDetails(${idx}, '${instanceId}')">Edit</button>`;
         html += `<button class="btn btn-danger btn-sm" onclick="deleteContainerInDetails(${idx}, '${instanceId}')">Delete</button>`;
         html += `</td>`;
@@ -2760,14 +2759,14 @@ function refreshDetailsContainersTable(instanceId) {
         if (!isInEditMode) {
             const logOcid = envVars.log_ocid;
             if (logOcid && config.logGroupId) {
-                html += `<td style="white-space: nowrap; border-bottom: 1px solid #dee2e6; ${cellStyle}">`;
+                html += `<td style="white-space: nowrap; border-bottom: 1px solid #dee2e6;">`;
                 html += `<button class="btn btn-secondary btn-sm" onclick="showContainerLogs('${escapeHtml(logOcid)}', '${escapeHtml(containerName)}')" title="View container logs">`;
                 html += `<i class="bi bi-file-text"></i> Log`;
                 html += `</button>`;
                 html += `</td>`;
             } else if (hasLogColumn) {
                 // Add empty cell to maintain column alignment if log column exists but this container doesn't have logs
-                html += `<td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"></td>`;
+                html += `<td style="border-bottom: 1px solid #dee2e6;"></td>`;
             }
         }
         
@@ -4953,10 +4952,9 @@ function updateContainersTable() {
             }
         }
         
-        // Apply red background if port overlaps
+        // Apply red background only to port cell if port overlaps
         const isOverlapping = overlappingIndices.has(index);
-        const cellStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
-        const rowStyle = isOverlapping ? 'background-color: #ffcdd2 !important;' : '';
+        const portCellStyle = isOverlapping ? 'background-color: #dc3545 !important; color: #ffffff !important;' : '';
         
         // Prepare tooltip data attributes
         const envVars = container.environmentVariables || {};
@@ -4967,13 +4965,13 @@ function updateContainersTable() {
         const argsJson = escapeHtmlAttribute(JSON.stringify(args));
         
         return `
-            <tr class="container-row-hover" style="${rowStyle}" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${container.displayName || 'N/A'}</td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}"><code>${container.imageUrl || 'N/A'}</code></td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${portDisplay}</td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${memory}</td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">${vcpus}</td>
-                <td style="border-bottom: 1px solid #dee2e6; ${cellStyle}">
+            <tr class="container-row-hover" data-env-vars="${envVarsJson}" data-cmd="${cmdJson}" data-args="${argsJson}">
+                <td style="border-bottom: 1px solid #dee2e6;">${container.displayName || 'N/A'}</td>
+                <td style="border-bottom: 1px solid #dee2e6;"><code>${container.imageUrl || 'N/A'}</code></td>
+                <td style="border-bottom: 1px solid #dee2e6; ${portCellStyle}">${portDisplay}</td>
+                <td style="border-bottom: 1px solid #dee2e6;">${memory}</td>
+                <td style="border-bottom: 1px solid #dee2e6;">${vcpus}</td>
+                <td style="border-bottom: 1px solid #dee2e6;">
                     <button type="button" class="btn btn-info btn-sm me-1" onclick="editContainer(${index})"><i class="bi bi-pencil"></i></button>
                     <button type="button" class="btn btn-danger btn-sm" onclick="deleteContainer(${index})"><i class="bi bi-trash"></i></button>
                 </td>
