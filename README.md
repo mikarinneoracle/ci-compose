@@ -25,6 +25,25 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 
 > **No Lock-in:** Everything created with CI Compose is a standard OCI Container Instance. You can stop using CI Compose at any time and continue managing your container instances directly through the OCI Console, CLI, or any other OCI-compatible tool. There is no vendor lock-in or proprietary format.
 
+## Benefits of using sidecars
+
+- **Faster changes without full redeploys**
+Update configs, certs, or tooling by rebuilding only the sidecar container.
+- **Clear separation of concerns**
+Application logic stays isolated from configuration, observability, and automation.
+- **Shared volumes for dynamic configuration**
+Sidecars can update files that the main container consumes instantly.
+- **Improved security and least privilege**
+Application containers run without OCI credentials; sidecars handle OCI API access.
+- **Observability without code changes**
+Add or modify logging, metrics, and debugging tools independently of the app.
+- **CI/CD-friendly lifecycle management**
+CI Compose detects container-level changes and avoids unnecessary stack recreations.
+- **Polyglot tooling support**
+Use any runtime or tooling in sidecars without impacting the application image.
+- **Kubernetes-style patterns, simplified**
+Gain multi-container and sidecar benefits without managing Kubernetes clusters.
+
 ## UI Changes (Version 0.1.1)
 
 Starting with version 0.1.1, CI Compose features a modern dark theme with a teal/cyan color palette, replacing the previous light theme. This update provides:
