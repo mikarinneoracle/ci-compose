@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="banner.png" alt="CI Compose Banner" width="100%">
+  <img src="Boost-your-OCI-container-workflow.png" alt="CI Compose Banner" width="100%">
 </div>
 
 # CI Compose
