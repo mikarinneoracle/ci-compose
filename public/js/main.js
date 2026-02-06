@@ -592,6 +592,88 @@ async function showConfigModal() {
     modal.show();
 }
 
+// Show Policies Setup modal
+async function showPoliciesSetupModal() {
+    await loadPoliciesCompartments();
+    
+    // Restore saved compartment if exists
+    const savedConfig = getConfiguration();
+    const policiesCompartmentSelect = document.getElementById('policiesCompartmentId');
+    if (savedConfig.compartmentId && policiesCompartmentSelect) {
+        policiesCompartmentSelect.value = savedConfig.compartmentId;
+        // Load dynamic group and policies for saved compartment
+        if (savedConfig.compartmentId) {
+            await loadPoliciesCompartmentData(savedConfig.compartmentId);
+        }
+    }
+    
+    const modal = new bootstrap.Modal(document.getElementById('policiesSetupModal'));
+    modal.show();
+}
+
+// Load compartments for Policies Setup modal
+async function loadPoliciesCompartments() {
+    try {
+        const config = getConfiguration();
+        const params = new URLSearchParams();
+        
+        if (config.ociConfigFile) {
+            params.append('configPath', config.ociConfigFile);
+        }
+        if (config.ociConfigProfile) {
+            params.append('profile', config.ociConfigProfile);
+        }
+        
+        // First get the tenancy ID
+        const tenancyResponse = await fetch(`/api/oci/config/tenancy?${params.toString()}`);
+        const tenancyData = await tenancyResponse.json();
+        
+        if (!tenancyData.success || !tenancyData.tenancyId) {
+            throw new Error('Could not get tenancy ID');
+        }
+        
+        // Then get compartments
+        params.append('tenancyId', tenancyData.tenancyId);
+        const response = await fetch(`/api/oci/compartments?${params.toString()}`);
+        const data = await response.json();
+        
+        const compartmentSelect = document.getElementById('policiesCompartmentId');
+        
+        if (data.success && data.compartments) {
+            // Clear existing options
+            compartmentSelect.innerHTML = '<option value="">Select a compartment...</option>';
+            
+            // Add compartments to dropdown
+            data.compartments.forEach(comp => {
+                const option = document.createElement('option');
+                option.value = comp.id;
+                option.textContent = comp.name + (comp.description ? ` - ${comp.description}` : '');
+                compartmentSelect.appendChild(option);
+            });
+        } else {
+            compartmentSelect.innerHTML = '<option value="">Error loading compartments</option>';
+        }
+    } catch (error) {
+        console.error('Could not load compartments:', error);
+        const compartmentSelect = document.getElementById('policiesCompartmentId');
+        compartmentSelect.innerHTML = '<option value="">Error: ' + error.message + '</option>';
+    }
+}
+
+// Load dynamic group and policies when compartment is selected in Policies Setup modal
+async function loadPoliciesCompartmentData(compartmentId) {
+    if (!compartmentId) {
+        return;
+    }
+    
+    await generatePoliciesDynamicGroupAndPolicies(
+        compartmentId,
+        'policiesDynamicGroupRule',
+        'policiesText',
+        'policiesDynamicGroupRuleLabel'
+    );
+}
+
 async function loadRegionFromConfig() {
     try {
         const config = getConfiguration();
@@ -663,7 +745,6 @@ async function loadCompartments() {
                 if (savedConfig.compartmentId) {
                     loadSubnets();
                     loadLogGroups();
-                    generateDynamicGroupAndPolicies(savedConfig.compartmentId);
                 }
                 // Update footer with compartment name
                 updateContainerInstancesFooter();
@@ -678,13 +759,21 @@ async function loadCompartments() {
     }
 }
 
-// Generate dynamic group rule and policies based on selected compartment
+// Generate dynamic group rule and policies based on selected compartment (for Policies Setup modal)
 async function generateDynamicGroupAndPolicies(compartmentId) {
+    // This function is kept for backward compatibility but now delegates to the policies modal version
+    await generatePoliciesDynamicGroupAndPolicies(compartmentId, 'dynamicGroupRule', 'policiesText', 'dynamicGroupRuleLabel');
+}
+
+// Generate dynamic group rule and policies based on selected compartment (for Policies Setup modal)
+async function generatePoliciesDynamicGroupAndPolicies(compartmentId, ruleElementId, policiesElementId, labelElementId) {
     if (!compartmentId) {
-        document.getElementById('dynamicGroupRule').value = '';
-        document.getElementById('policiesText').value = '';
+        const ruleElement = document.getElementById(ruleElementId);
+        const policiesElement = document.getElementById(policiesElementId);
+        if (ruleElement) ruleElement.value = '';
+        if (policiesElement) policiesElement.value = '';
         // Reset label
-        const labelElement = document.getElementById('dynamicGroupRuleLabel');
+        const labelElement = document.getElementById(labelElementId);
         if (labelElement) {
             labelElement.textContent = 'Dynamic Group Rule for dynamic-group "ci-compose" for your active domain';
         }
@@ -717,7 +806,7 @@ async function generateDynamicGroupAndPolicies(compartmentId) {
         const domainData = await domainResponse.json();
         
         // Update label with domain name if available
-        const labelElement = document.getElementById('dynamicGroupRuleLabel');
+        const labelElement = document.getElementById(labelElementId);
         if (labelElement) {
             if (domainData.success && domainData.domainName) {
                 labelElement.textContent = `Dynamic Group Rule for dynamic-group "ci-compose" for your active domain (${domainData.domainName})`;
@@ -736,7 +825,10 @@ async function generateDynamicGroupAndPolicies(compartmentId) {
         
         // Generate dynamic group rule
         const dynamicGroupRule = `ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${compartmentId}'}`;
-        document.getElementById('dynamicGroupRule').value = dynamicGroupRule;
+        const ruleElement = document.getElementById(ruleElementId);
+        if (ruleElement) {
+            ruleElement.value = dynamicGroupRule;
+        }
         
         // Generate policies
         const policies = [
@@ -751,17 +843,20 @@ async function generateDynamicGroupAndPolicies(compartmentId) {
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage autonomous-database in compartment ${compartmentName}`
         ];
         
-        document.getElementById('policiesText').value = policies.join('\n');
+        const policiesElement = document.getElementById(policiesElementId);
+        if (policiesElement) {
+            policiesElement.value = policies.join('\n');
+        }
     } catch (error) {
         console.error('Error generating dynamic group and policies:', error);
         showNotification('Error generating dynamic group and policies: ' + error.message, 'error');
     }
 }
 
-// Create or update dynamic group
-async function createDynamicGroup() {
-    const compartmentId = document.getElementById('compartmentId').value;
-    const dynamicGroupRule = document.getElementById('dynamicGroupRule').value;
+// Create or update dynamic group (for Policies Setup modal)
+async function createPoliciesDynamicGroup() {
+    const compartmentId = document.getElementById('policiesCompartmentId').value;
+    const dynamicGroupRule = document.getElementById('policiesDynamicGroupRule').value;
     
     if (!compartmentId) {
         showNotification('Please select a compartment first', 'error');
@@ -811,9 +906,9 @@ async function createDynamicGroup() {
     }
 }
 
-// Create or update policies
-async function createPolicies() {
-    const compartmentId = document.getElementById('compartmentId').value;
+// Create or update policies (for Policies Setup modal)
+async function createPoliciesPolicies() {
+    const compartmentId = document.getElementById('policiesCompartmentId').value;
     const policiesText = document.getElementById('policiesText').value;
     
     if (!compartmentId) {
@@ -864,6 +959,17 @@ async function createPolicies() {
         console.error('Error creating policies:', error);
         showNotification('Error creating policies: ' + error.message, 'error');
     }
+}
+
+// Legacy functions for backward compatibility (kept for any remaining references)
+async function createDynamicGroup() {
+    // Redirect to policies modal version
+    await createPoliciesDynamicGroup();
+}
+
+async function createPolicies() {
+    // Redirect to policies modal version
+    await createPoliciesPolicies();
 }
 
 async function loadLogGroups() {

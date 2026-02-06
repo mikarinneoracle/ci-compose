@@ -44,7 +44,7 @@ Use any runtime or tooling in sidecars without impacting the application image.
 - **Kubernetes-style patterns, simplified**
 Gain multi-container and sidecar benefits without managing Kubernetes clusters.
 
-## UI Changes (Version 0.1.1)
+## UI Changes & Updates (Version 0.1.1)
 
 Starting with version 0.1.1, CI Compose features a modern dark theme with a teal/cyan color palette, replacing the previous light theme. This update provides:
 
@@ -53,8 +53,9 @@ Starting with version 0.1.1, CI Compose features a modern dark theme with a teal
 - **Enhanced Readability**: Improved contrast ratios and carefully selected text colors ensure optimal readability in all lighting conditions
 - **Consistent Styling**: All UI components including tables, modals, buttons, and forms have been updated to match the new dark theme
 - **Terminal-Style Logs**: Container logs are displayed with a black background and white text, providing a familiar terminal-like experience
-- **Dynamic Group & Policies Setup**: The Configuration modal now includes automatic generation and creation of OCI dynamic group rules and policies. After selecting a compartment, the dynamic group rule and required policies are automatically generated and can be created with a single click
 - **Container Instance Duplication**: Added a "Duplicate" button in the Container Instance details modal that allows you to quickly create a new instance with the same configuration. The instance name is automatically incremented (e.g., "pets 2" → "pets 3")
+- **Policies moved to dedicated menu**: Dynamic group and policies setup has been moved from the Configuration modal to a dedicated **Policies Setup** menu item. Use **Policies Setup** in the navigation to configure OCI dynamic groups and policies for sidecars.
+- **Sidecars with your own IAM credentials**: Sidecars can now be built and run using your own IAM credentials (e.g. OCI CLI config) instead of the default resource principal setting. See the **Policies Setup** modal, section "Running sidecars with your own IAM credentials", for instructions.
 
 The new color scheme maintains excellent accessibility while providing a contemporary developer-focused aesthetic that aligns with modern development tools and IDEs.
 
@@ -131,23 +132,22 @@ Once the application is running, access the Configuration menu to set up your en
    - Region (auto-loaded from config file when available)
    - Auto-Reload Time (in seconds, 0 to disable)
 
-6. **Dynamic Group & Policies Setup for Sidecars:** After selecting a compartment, the Configuration modal will automatically generate:
-   - **Dynamic Group Rule:** A rule that matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.
-   - **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for:
-     - Object Storage (object-family)
-     - Vault/Secrets (secret-family)
-     - Networking (virtual-network-family)
-     - Compute Instances (instance-family)
-     - Resource Manager (orm-stacks, orm-jobs)
-     - Container Instances (compute-container-family)
-     - File Storage (file-family)
-     - Autonomous Database (autonomous-database-family)
-   
-   Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations to your OCI tenancy. The dynamic group is created in the root compartment, while policies are created in the selected compartment.
-   
-   > **Note:** These dynamic group and policies are required because sidecars in Container Instance deployments run as resource principal and need these permissions to access OCI services (Object Storage, Vault, Autonomous Database, etc.).
+For **Dynamic Group & Policies Setup for Sidecars**, use the **Policies Setup** menu (see [Policies Setup](#policies-setup) below).
 
 After completing the configuration, you can start creating and managing container instances through the web interface.
+
+### Policies Setup
+
+Use **Policies Setup** in the navigation to configure OCI dynamic groups and policies for sidecars.
+
+**Dynamic Group & Policies Setup for Sidecars:** CI Compose can use an OCI Dynamic Group and policies to enable resource principal authentication for container instances. After selecting a compartment in the Policies Setup modal, the application will generate:
+
+- **Dynamic Group Rule:** A rule that matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.
+- **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, File Storage, and Autonomous Database.
+
+Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations. The dynamic group is created in the root compartment, while policies are created in the selected compartment. These are required when sidecars run as resource principal to access OCI services.
+
+**Using your own IAM credentials:** Instead of resource principal, you can use your own IAM credentials by rebuilding sidecars with your OCI CLI setup. See the **Policies Setup** modal, section "Running sidecars with your own IAM credentials", for step-by-step instructions.
 
 ## Requirements
 

@@ -25,6 +25,9 @@
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showConfigModal()">Configuration</button>
                     </li>
                     <li class="nav-item">
+                        <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showPoliciesSetupModal()">Policies Setup</button>
+                    </li>
+                    <li class="nav-item">
                         <button class="nav-link btn btn-link text-white text-decoration-none" onclick="showSidecarGalleryModal()">Sidecar Gallery</button>
                     </li>
                     <li class="nav-item">
@@ -628,7 +631,7 @@
                                             <div class="mb-3">
                                                 <label for="compartmentId" class="form-label">Compartment <span class="text-danger">*</span></label>
                                                 <div class="input-group">
-                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets(); loadLogGroups(); generateDynamicGroupAndPolicies(this.value);">
+                                                    <select class="form-select" id="compartmentId" required onchange="loadSubnets(); loadLogGroups();">
                                                         <option value="">Loading compartments...</option>
                                                     </select>
                                                     <button class="btn btn-outline-secondary" type="button" onclick="loadCompartments()">
@@ -662,27 +665,6 @@
                                                 <small class="form-text text-muted">Auto-reload interval in seconds (0 = disabled)</small>
                                             </div>
                                             
-                                            <hr class="my-4">
-                                            <h6 class="mb-3">OCI Dynamic Group & Policies Setup for Sidecars</h6>
-                                            
-                                            <div class="mb-3">
-                                                <label for="dynamicGroupRule" class="form-label" id="dynamicGroupRuleLabel">Dynamic Group Rule for dynamic-group "ci-compose" for your active domain</label>
-                                                <textarea class="form-control" id="dynamicGroupRule" rows="3" readonly></textarea>
-                                                <small class="form-text text-muted">Dynamic group rule for container instances in the selected compartment. Select a compartment to generate the rule.</small>
-                                                <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createDynamicGroup()">
-                                                    <i class="bi bi-cloud-upload"></i> Create/Update Dynamic Group
-                                                </button>
-                                            </div>
-                                            
-                                            <div class="mb-3">
-                                                <label for="policiesText" class="form-label">Policies</label>
-                                                <textarea class="form-control" id="policiesText" rows="8" readonly></textarea>
-                                                <small class="form-text text-muted">Policies for the dynamic group. These will be created in the selected compartment.</small>
-                                                <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createPolicies()">
-                                                    <i class="bi bi-cloud-upload"></i> Create/Update Policies
-                                                </button>
-                                            </div>
-                                            
                                             <div class="alert alert-info">
                                                 <strong>Note:</strong> These settings are stored in your browser's local storage and are used for API requests.
                                             </div>
@@ -691,6 +673,163 @@
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                         <button type="button" class="btn btn-primary" onclick="saveConfiguration()">Save Configuration</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Policies Setup Modal -->
+                        <div class="modal fade" id="policiesSetupModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title">Policies Setup</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="policiesSetupForm">
+                                            <p class="mb-4">
+                                                CI Compose can use an OCI Dynamic Group and policies to enable resource principal authentication for container instances, so sidecars can access OCI services (Object Storage, Vault, Autonomous Database, etc.). 
+                                                Alternatively, you can use your own IAM credentials by rebuilding sidecars with your OCI CLI setup as instructed below.
+                                            </p>
+
+                                            <!-- Section 1: Using default sidecars as resource principal -->
+                                            <div class="mb-4">
+                                                <h5 class="mb-3 border-bottom pb-2">Using default sidecars as resource principal</h5>
+                                                <p class="text-muted small mb-3">
+                                                    Configure OCI Dynamic Group and policies to enable resource principal authentication for container instances. 
+                                                    This allows sidecars to access OCI services (Object Storage, Vault, Autonomous Database, etc.) using resource principal authentication.
+                                                </p>
+                                                
+                                                <div class="mb-3">
+                                                    <label for="policiesCompartmentId" class="form-label">Compartment <span class="text-danger">*</span></label>
+                                                    <div class="input-group">
+                                                        <select class="form-select" id="policiesCompartmentId" required onchange="loadPoliciesCompartmentData(this.value);">
+                                                            <option value="">Loading compartments...</option>
+                                                        </select>
+                                                        <button class="btn btn-outline-secondary" type="button" onclick="loadPoliciesCompartments()">
+                                                            <small>Refresh</small>
+                                                        </button>
+                                                    </div>
+                                                    <small class="form-text text-muted">Select a compartment to generate dynamic group rules and policies</small>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <label for="policiesDynamicGroupRule" class="form-label" id="policiesDynamicGroupRuleLabel">Dynamic Group Rule for dynamic-group "ci-compose" for your active domain</label>
+                                                    <textarea class="form-control" id="policiesDynamicGroupRule" rows="3" readonly></textarea>
+                                                    <small class="form-text text-muted">Dynamic group rule for container instances in the selected compartment. Select a compartment to generate the rule.</small>
+                                                    <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createPoliciesDynamicGroup()">
+                                                        <i class="bi bi-cloud-upload"></i> Create/Update Dynamic Group
+                                                    </button>
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <label for="policiesText" class="form-label">Policies</label>
+                                                    <textarea class="form-control" id="policiesText" rows="8" readonly></textarea>
+                                                    <small class="form-text text-muted">Policies for the dynamic group. These will be created in the selected compartment.</small>
+                                                    <button type="button" class="btn btn-primary btn-sm mt-2" onclick="createPoliciesPolicies()">
+                                                        <i class="bi bi-cloud-upload"></i> Create/Update Policies
+                                                    </button>
+                                                </div>
+                                                
+                                                <div class="alert alert-info">
+                                                    <strong>Note:</strong> The dynamic group is created in the root compartment, while policies are created in the selected compartment.
+                                                </div>
+                                            </div>
+
+                                            <!-- Section 2: Running sidecars with your own IAM credentials -->
+                                            <div class="mb-4">
+                                                <h5 class="mb-3 border-bottom pb-2">Running sidecars with your own IAM credentials</h5>
+                                                <p class="text-muted small mb-3">
+                                                    Build sidecars with your own OCI CLI credentials instead of using resource principal authentication. 
+                                                    This allows you to use specific IAM users and API keys for sidecar authentication.
+                                                </p>
+                                                
+                                                <div class="alert alert-warning mb-3">
+                                                    <strong>Security Warning:</strong> Containers built with this method contain OCI credentials. 
+                                                    Always push images to a <strong>private</strong> OCIR registry and never distribute them publicly.
+                                                </div>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 1: Prepare OCI CLI Configuration</h6>
+                                                <p class="small text-muted mb-2">Copy your OCI CLI configuration directory to the same directory as the Dockerfile:</p>
+                                                <ol class="small mb-3">
+                                                    <li>Ensure you have OCI CLI configured with a profile (default is 'DEFAULT')</li>
+                                                    <li>Copy your <code>~/.oci</code> directory to the directory containing <code>Dockerfile.oci_cli</code></li>
+                                                    <li>The directory should contain:
+                                                        <ul>
+                                                            <li><code>.oci/config</code> - OCI configuration file</li>
+                                                            <li><code>.oci/oci_api_key.pem</code> - Private key file</li>
+                                                        </ul>
+                                                    </li>
+                                                </ol>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 2: Select Base Image</h6>
+                                                <p class="small text-muted mb-2">Edit <code>Dockerfile.oci_cli</code> and uncomment/select the base image you want to use:</p>
+                                                <pre class="bg-light p-3 rounded small mb-3"><code># Select the base image for the sidecar
+FROM mikarinneoracle/ci-sidecar-os:0.1.1
+#FROM mikarinneoracle/ci-sidecar-log:0.1.1
+#FROM mikarinneoracle/ci-sidecar-vault:0.1.1
+#FROM mikarinneoracle/ci-sidecar-adbwallet:0.1.1
+# For ARM64 architecture, use:
+#FROM mikarinneoracle/ci-sidecar-os:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-log:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-vault:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-adbwallet:0.1.1-arm</code></pre>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 3: Adjust Configuration (if needed)</h6>
+                                                <p class="small text-muted mb-2">
+                                                    The Dockerfile uses OCI CLI default settings with profile 'DEFAULT'. 
+                                                    If you need to use a different profile or configuration, edit <code>Dockerfile.oci_cli</code> accordingly.
+                                                </p>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 4: Build Docker Image</h6>
+                                                <p class="small text-muted mb-2">Build the Docker image using the Dockerfile:</p>
+                                                <pre class="bg-light p-3 rounded small mb-3"><code>docker build -f Dockerfile.oci_cli -t &lt;your-registry&gt;/&lt;your-tenancy-namespace&gt;/&lt;image-name&gt;:&lt;tag&gt; .</code></pre>
+                                                <p class="small text-muted mb-3">
+                                                    Example: <code>docker build -f Dockerfile.oci_cli -t fra.ocir.io/mytenancy/my-sidecar:1.0.0 .</code>
+                                                </p>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 5: Push to OCIR Private Registry</h6>
+                                                <p class="small text-muted mb-2">
+                                                    <strong>Important:</strong> Always push to a <strong>private</strong> registry to protect your credentials.
+                                                </p>
+                                                <ol class="small mb-3">
+                                                    <li>Log in to OCIR:
+                                                        <pre class="bg-light p-2 rounded mt-2 mb-2"><code>docker login &lt;region&gt;.ocir.io</code></pre>
+                                                        Example: <code>docker login fra.ocir.io</code>
+                                                    </li>
+                                                    <li>Push the image:
+                                                        <pre class="bg-light p-2 rounded mt-2 mb-2"><code>docker push &lt;your-registry&gt;/&lt;your-tenancy-namespace&gt;/&lt;image-name&gt;:&lt;tag&gt;</code></pre>
+                                                        Example: <code>docker push fra.ocir.io/mytenancy/my-sidecar:1.0.0</code>
+                                                    </li>
+                                                    <li>Ensure the repository is set to <strong>Private</strong> in OCIR (OCI Console → Developer Services → Container Registry)</li>
+                                                </ol>
+                                                
+                                                <h6 class="mt-4 mb-3">Step 6: Add as Custom Sidecar</h6>
+                                                <p class="small text-muted mb-2">Add the new image to the Sidecar Gallery as a custom sidecar:</p>
+                                                <ol class="small mb-3">
+                                                    <li>Go to <strong>Sidecar Gallery</strong> in the navigation menu</li>
+                                                    <li>Click <strong>Add Custom Sidecar</strong></li>
+                                                    <li>Enter the sidecar details:
+                                                        <ul>
+                                                            <li><strong>Name:</strong> A descriptive name for your sidecar</li>
+                                                            <li><strong>Image:</strong> The full OCIR image path (e.g., <code>fra.ocir.io/mytenancy/my-sidecar:1.0.0</code>)</li>
+                                                            <li><strong>Architecture:</strong> Select x86 or ARM64 based on your base image</li>
+                                                            <li>Configure memory, OCPUs, ports, and environment variables as needed</li>
+                                                        </ul>
+                                                    </li>
+                                                    <li>Click <strong>Save</strong></li>
+                                                </ol>
+                                                
+                                                <div class="alert alert-info mt-3">
+                                                    <strong>Note:</strong> The sidecar will use your OCI CLI credentials (config and private key) instead of resource principal authentication. 
+                                                    Make sure the IAM user associated with the credentials has the necessary permissions for the OCI services the sidecar needs to access.
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                                     </div>
                                 </div>
                             </div>
@@ -776,25 +915,6 @@
                             Supported features: <code>image</code>, <code>command</code>, <code>entrypoint</code>, 
                             <code>environment</code>, <code>ports</code>, <code>volumes</code>, and <code>depends_on</code>.
                         </p>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <h5 class="mb-3">Dynamic Group & Policies Setup for Sidecars</h5>
-                        <p>
-                            CI Compose requires an OCI Dynamic Group and policies to enable resource principal authentication for container instances. 
-                            After selecting a compartment in the Configuration modal, the application will automatically generate:
-                        </p>
-                        <ul>
-                            <li><strong>Dynamic Group Rule:</strong> Matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.</li>
-                            <li><strong>Policies:</strong> Required permissions for the dynamic group to manage resources, including Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, File Storage, and Autonomous Database.</li>
-                        </ul>
-                        <p class="small text-muted">
-                            Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons in the Configuration modal to apply these settings. 
-                            The dynamic group is created in the root compartment, while policies are created in the selected compartment.
-                        </p>
-                        <div class="alert alert-info mt-2 mb-0">
-                            <strong>Note:</strong> These dynamic group and policies are required because sidecars in Container Instance deployments run as resource principal and need these permissions to access OCI services (Object Storage, Vault, Autonomous Database, etc.).
-                        </div>
                     </div>
                     
                     <div class="mb-4">

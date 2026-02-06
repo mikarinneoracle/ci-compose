@@ -1,0 +1,22 @@
+# Select the base image for the sidecar that you want to build with your own IAM credentials with OCI CLI config
+FROM mikarinneoracle/ci-sidecar-os:0.1.1
+#FROM mikarinneoracle/ci-sidecar-log:0.1.1
+#FROM mikarinneoracle/ci-sidecar-vault:0.1.1
+#FROM mikarinneoracle/ci-sidecar-adbwallet:0.1.1
+#FROM mikarinneoracle/ci-sidecar-os:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-log:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-vault:0.1.1-arm
+#FROM mikarinneoracle/ci-sidecar-adbwallet:0.1.1-arm
+
+RUN echo "**** WARNING ***"
+RUN echo "**** THIS CONTAINER CONTAINS OCI CREDENTIALS - DO NOT DISTRIBUTE ***"
+RUN echo "Copy your OCI CLI .oci dir under this dir before running this Dockerfile"
+RUN echo "This build expects a default OCI CLI config with profile 'DEFAULT', adjust as necessary"
+ADD .oci/config /
+ADD .oci/oci_api_key.pem /
+RUN chmod 777 /config
+RUN chmod 777 /oci_api_key.pem
+RUN sed -i '/^key_file/d' /config
+RUN echo "key_file = /oci_api_key.pem" >> /config
+
+CMD [ "node", "index.js" ]
