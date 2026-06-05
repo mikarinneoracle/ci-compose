@@ -18,6 +18,8 @@ function escapeHtmlAttribute(jsonString) {
         .replace(/>/g, '&gt;');
 }
 
+const ENABLE_CONTAINER_ROW_TOOLTIPS = false;
+
 // Helper function to throttle API calls - process in batches with delays
 async function throttleApiCalls(items, batchSize, delayMs, asyncFn) {
     const results = [];
@@ -112,6 +114,10 @@ function initializeContainerTooltips() {
     const existingTooltip = document.querySelector('.container-tooltip');
     if (existingTooltip) {
         existingTooltip.remove();
+    }
+
+    if (!ENABLE_CONTAINER_ROW_TOOLTIPS) {
+        return;
     }
     
     const containerRows = document.querySelectorAll('.container-row-hover');
@@ -489,6 +495,18 @@ function getConfiguration() {
     return config;
 }
 
+function getCurrentOCIConfigSelection() {
+    const savedConfig = getConfiguration();
+    const configFileInput = document.getElementById('ociConfigFile');
+    const profileInput = document.getElementById('ociConfigProfile');
+
+    return {
+        ...savedConfig,
+        ociConfigFile: configFileInput ? (configFileInput.value.trim() || '~/.oci/config') : (savedConfig.ociConfigFile || '~/.oci/config'),
+        ociConfigProfile: profileInput ? (profileInput.value.trim() || 'DEFAULT') : (savedConfig.ociConfigProfile || 'DEFAULT')
+    };
+}
+
 // Container Instance Creation Functions - declare arrays early so they're accessible to save/load functions
 let containersData = []; // Array to store container data for creation
 let volumesData = []; // Array to store volume data for creation
@@ -676,7 +694,7 @@ async function loadPoliciesCompartmentData(compartmentId) {
 
 async function loadRegionFromConfig() {
     try {
-        const config = getConfiguration();
+        const config = getCurrentOCIConfigSelection();
         const params = new URLSearchParams();
         
         if (config.ociConfigFile) {
@@ -700,7 +718,7 @@ async function loadRegionFromConfig() {
 
 async function loadCompartments() {
     try {
-        const config = getConfiguration();
+        const config = getCurrentOCIConfigSelection();
         const params = new URLSearchParams();
         
         if (config.ociConfigFile) {
@@ -988,11 +1006,7 @@ async function loadLogGroups() {
     try {
         logGroupSelect.innerHTML = '<option value="">Loading log groups...</option>';
         
-        const config = getConfiguration();
-        const params = new URLSearchParams();
-        params.append('compartmentId', compartmentId);
-        
-        const response = await fetch(`/api/oci/logging/log-groups?${params.toString()}`);
+        const response = await fetch(buildOCIUrl('/api/oci/logging/log-groups', { compartmentId }, getCurrentOCIConfigSelection()));
         const data = await response.json();
         
         if (data.success && data.data) {
@@ -1030,10 +1044,7 @@ async function loadSubnets() {
     try {
         subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
         
-        const params = new URLSearchParams();
-        params.append('compartmentId', compartmentId);
-        
-        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const response = await fetch(buildOCIUrl('/api/oci/networking/subnets', { compartmentId }, getCurrentOCIConfigSelection()));
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
@@ -1081,10 +1092,7 @@ async function loadSubnetsForCI(compartmentId) {
     try {
         subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
         
-        const params = new URLSearchParams();
-        params.append('compartmentId', compartmentId);
-        
-        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const response = await fetch(buildOCIUrl('/api/oci/networking/subnets', { compartmentId }));
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
@@ -1132,10 +1140,7 @@ async function loadSubnetsForDetails(compartmentId, currentSubnetId, providedDef
     try {
         subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
         
-        const params = new URLSearchParams();
-        params.append('compartmentId', compartmentId);
-        
-        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const response = await fetch(buildOCIUrl('/api/oci/networking/subnets', { compartmentId }));
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
@@ -1311,21 +1316,33 @@ async function checkServerStatus() {
 }
 
 // Helper function to build query string with configuration
-function buildQueryString(additionalParams = {}) {
-    const config = getConfiguration();
+function buildQueryString(additionalParams = {}, configOverride = null) {
+    const config = configOverride || getConfiguration();
     const params = new URLSearchParams();
+    const hasAdditionalParam = (key) => Object.prototype.hasOwnProperty.call(additionalParams, key);
+    const appendIfPresent = (key, value) => {
+        if (value !== undefined && value !== null && value !== '') {
+            params.append(key, value);
+        }
+    };
     
-    if (config.compartmentId) params.append('compartmentId', config.compartmentId);
-    if (config.namespace) params.append('namespace', config.namespace);
+    appendIfPresent('compartmentId', hasAdditionalParam('compartmentId') ? additionalParams.compartmentId : config.compartmentId);
+    appendIfPresent('namespace', hasAdditionalParam('namespace') ? additionalParams.namespace : config.namespace);
+    appendIfPresent('configPath', hasAdditionalParam('configPath') ? additionalParams.configPath : (config.ociConfigFile || '~/.oci/config'));
+    appendIfPresent('profile', hasAdditionalParam('profile') ? additionalParams.profile : (config.ociConfigProfile || 'DEFAULT'));
     
     // Add any additional parameters
     Object.keys(additionalParams).forEach(key => {
-        if (additionalParams[key]) {
-            params.append(key, additionalParams[key]);
-        }
+        if (key === 'compartmentId' || key === 'namespace' || key === 'configPath' || key === 'profile') return;
+        appendIfPresent(key, additionalParams[key]);
     });
     
     return params.toString();
+}
+
+function buildOCIUrl(path, additionalParams = {}, configOverride = null) {
+    const queryString = buildQueryString(additionalParams, configOverride);
+    return queryString ? `${path}?${queryString}` : path;
 }
 
 // Load and display container instances
@@ -1463,7 +1480,7 @@ async function displayContainerInstancesWithDetails(instances) {
             // If vnicId not in list response, fetch instance details
             if (!vnicId && instance.id) {
                 try {
-                    const instanceResponse = await fetch(`/api/oci/container-instances/${instance.id}`);
+                    const instanceResponse = await fetch(buildOCIUrl(`/api/oci/container-instances/${instance.id}`));
                     const instanceData = await instanceResponse.json();
                     if (instanceData.success && instanceData.data && instanceData.data.vnics && instanceData.data.vnics.length > 0) {
                         vnicId = instanceData.data.vnics[0].vnicId || instanceData.data.vnics[0].id;
@@ -1486,7 +1503,7 @@ async function displayContainerInstancesWithDetails(instances) {
             // Now fetch VNIC details to get IPs
             if (vnicId) {
                 try {
-                    const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
+                    const vnicResponse = await fetch(buildOCIUrl(`/api/oci/networking/vnics/${vnicId}`));
                     const vnicData = await vnicResponse.json();
                     const vnic = vnicData.vnic || vnicData.data;
                     if (vnic) {
@@ -1688,7 +1705,7 @@ async function refreshContainerInstanceModal(instanceId) {
     const detailsDiv = document.getElementById('containerInstanceDetails');
     
     try {
-        const response = await fetch(`/api/oci/container-instances/${instanceId}`);
+        const response = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}`));
         const data = await response.json();
         
         if (data.success && data.data) {
@@ -1700,7 +1717,7 @@ async function refreshContainerInstanceModal(instanceId) {
                 await delay(100); // Small delay before VNIC call
                 try {
                     const vnicId = instanceDetails.vnics[0].vnicId;
-                    const vnicResponse = await fetch(`/api/oci/networking/vnics/${vnicId}`);
+                    const vnicResponse = await fetch(buildOCIUrl(`/api/oci/networking/vnics/${vnicId}`));
                     const vnicData = await vnicResponse.json();
                     // Try vnic property first, then fallback to data
                     const vnic = vnicData.vnic || vnicData.data;
@@ -1729,7 +1746,7 @@ async function refreshContainerInstanceModal(instanceId) {
             if (instanceDetails.subnetId) {
                 await delay(100); // Small delay before subnet call
                 try {
-                    const subnetResponse = await fetch(`/api/oci/networking/subnets?subnetId=${instanceDetails.subnetId}`);
+                    const subnetResponse = await fetch(buildOCIUrl('/api/oci/networking/subnets', { subnetId: instanceDetails.subnetId }));
                     const subnetData = await subnetResponse.json();
                     if (subnetData.success && subnetData.data) {
                         instanceDetails.subnetName = subnetData.data.displayName || subnetData.data.name;
@@ -1744,7 +1761,7 @@ async function refreshContainerInstanceModal(instanceId) {
             if (instanceDetails.compartmentId) {
                 await delay(100); // Small delay before compartment call
                 try {
-                    const compartmentResponse = await fetch(`/api/oci/compartments/${instanceDetails.compartmentId}`);
+                    const compartmentResponse = await fetch(buildOCIUrl(`/api/oci/compartments/${instanceDetails.compartmentId}`));
                     const compartmentData = await compartmentResponse.json();
                     if (compartmentData.success && compartmentData.data) {
                         instanceDetails.compartmentName = compartmentData.data.name;
@@ -1772,7 +1789,7 @@ async function refreshContainerInstanceModal(instanceId) {
                             const containerId = container.containerId || container.id;
                             if (containerId) {
                                 try {
-                                    const containerResponse = await fetch(`/api/oci/containers/${containerId}`);
+                                    const containerResponse = await fetch(buildOCIUrl(`/api/oci/containers/${containerId}`));
                                     const containerData = await containerResponse.json();
                                     
                                     if (containerData.success && containerData.data) {
@@ -3295,11 +3312,11 @@ async function saveCIChanges(instanceId) {
         
         // Validate sidecar configurations before proceeding with delete
         showNotification('Validating sidecar configurations...', 'info');
-        const tenancyResponse = await fetch('/api/oci/config/tenancy').catch(() => null);
+        const tenancyResponse = await fetch(buildOCIUrl('/api/oci/config/tenancy')).catch(() => null);
         const tenancyData = tenancyResponse ? await tenancyResponse.json().catch(() => ({})) : {};
         const tenancyId = tenancyData.tenancyId || config.tenancyId;
         
-        const validateResponse = await fetch('/api/oci/container-instances/validate', {
+        const validateResponse = await fetch(buildOCIUrl('/api/oci/container-instances/validate'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -3349,7 +3366,7 @@ async function saveCIChanges(instanceId) {
         
         // Step 1: Delete the old container instance
         showNotification('Deleting old container instance...', 'info');
-        const deleteResponse = await fetch(`/api/oci/container-instances/${instanceId}`, {
+        const deleteResponse = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}`), {
             method: 'DELETE'
         });
         
@@ -3363,7 +3380,7 @@ async function saveCIChanges(instanceId) {
         
         // Step 2: Create new container instance with same name
         showNotification('Creating new container instance...', 'info');
-        const createResponse = await fetch('/api/oci/container-instances', {
+        const createResponse = await fetch(buildOCIUrl('/api/oci/container-instances'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -3650,7 +3667,7 @@ function closeDetailsModal() {
 async function restartContainerInstance(instanceId) {
     try {
         // First, check the actual instance state
-        const instanceResponse = await fetch(`/api/oci/container-instances/${instanceId}`);
+        const instanceResponse = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}`));
         const instanceData = await instanceResponse.json();
         
         let isDeleted = false;
@@ -3718,7 +3735,7 @@ async function restartContainerInstance(instanceId) {
                         const containerId = container.containerId || container.id;
                         if (containerId) {
                             try {
-                                const containerResponse = await fetch(`/api/oci/containers/${containerId}`);
+                                const containerResponse = await fetch(buildOCIUrl(`/api/oci/containers/${containerId}`));
                                 const containerData = await containerResponse.json();
                                 
                                 if (containerData.success && containerData.data) {
@@ -3919,7 +3936,7 @@ async function restartContainerInstance(instanceId) {
                 }
                 
                 // Create the container instance
-                const response = await fetch('/api/oci/container-instances', {
+                const response = await fetch(buildOCIUrl('/api/oci/container-instances'), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -3960,7 +3977,7 @@ async function restartContainerInstance(instanceId) {
     try {
         showNotification('Restarting container instance...', 'info');
         
-        const response = await fetch(`/api/oci/container-instances/${instanceId}/restart`, {
+        const response = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}/restart`), {
             method: 'POST'
         });
         
@@ -4004,7 +4021,7 @@ async function stopContainerInstance(instanceId) {
     try {
         showNotification('Stopping container instance...', 'info');
         
-        const response = await fetch(`/api/oci/container-instances/${instanceId}/stop`, {
+        const response = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}/stop`), {
             method: 'POST'
         });
         
@@ -4208,7 +4225,7 @@ variable "region" {
         // Send to backend to create Resource Manager stack
         showNotification('Creating Resource Manager stack...', 'info');
         
-        const response = await fetch('/api/oci/resource-manager/stacks', {
+        const response = await fetch(buildOCIUrl('/api/oci/resource-manager/stacks'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -4243,7 +4260,7 @@ async function deleteContainerInstance(instanceId) {
     try {
         showNotification('Deleting container instance...', 'info');
         
-        const response = await fetch(`/api/oci/container-instances/${instanceId}`, {
+        const response = await fetch(buildOCIUrl(`/api/oci/container-instances/${instanceId}`), {
             method: 'DELETE'
         });
         
@@ -4508,7 +4525,7 @@ async function showCreateContainerInstanceModal() {
     // Load compartment name
     try {
         if (config.compartmentId) {
-            const compResponse = await fetch(`/api/oci/compartments/${config.compartmentId}`);
+            const compResponse = await fetch(buildOCIUrl(`/api/oci/compartments/${config.compartmentId}`));
             const compData = await compResponse.json();
             if (compData.success && compData.data) {
                 document.getElementById('ciCompartmentName').value = compData.data.name || config.compartmentId;
@@ -7060,11 +7077,11 @@ async function confirmCreateContainerInstance() {
     try {
         // Validate sidecar configurations before creating
         showNotification('Validating sidecar configurations...', 'info');
-        const tenancyResponse = await fetch('/api/oci/config/tenancy').catch(() => null);
+        const tenancyResponse = await fetch(buildOCIUrl('/api/oci/config/tenancy')).catch(() => null);
         const tenancyData = tenancyResponse ? await tenancyResponse.json().catch(() => ({})) : {};
         const tenancyId = tenancyData.tenancyId || config.tenancyId;
         
-        const validateResponse = await fetch('/api/oci/container-instances/validate', {
+        const validateResponse = await fetch(buildOCIUrl('/api/oci/container-instances/validate'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -7107,7 +7124,7 @@ async function confirmCreateContainerInstance() {
             });
         }
         
-        const response = await fetch('/api/oci/container-instances', {
+        const response = await fetch(buildOCIUrl('/api/oci/container-instances'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -7234,7 +7251,7 @@ async function fetchAndDisplayLogs(logOcid, logsContent) {
             params.append('logGroupId', config.logGroupId);
         }
         
-        const response = await fetch(`/api/oci/logging/logs/${encodeURIComponent(logOcid)}?${params.toString()}`);
+        const response = await fetch(buildOCIUrl(`/api/oci/logging/logs/${encodeURIComponent(logOcid)}`, Object.fromEntries(params.entries())));
         const data = await response.json();
         
         if (data.success && data.data) {
@@ -7456,10 +7473,7 @@ async function loadImportSubnets(compartmentId) {
     try {
         subnetSelect.innerHTML = '<option value="">Loading subnets...</option>';
         
-        const params = new URLSearchParams();
-        params.append('compartmentId', compartmentId);
-        
-        const response = await fetch(`/api/oci/networking/subnets?${params.toString()}`);
+        const response = await fetch(buildOCIUrl('/api/oci/networking/subnets', { compartmentId }));
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
@@ -7795,4 +7809,3 @@ async function pasteComposeYaml() {
         showNotification("Failed to paste from clipboard. Please paste manually.", "error");
     }
 }
-

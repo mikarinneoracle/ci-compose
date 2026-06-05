@@ -23,55 +23,64 @@ const yaml = require('js-yaml');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// OCI Configuration Provider
-// This will read from environment variables or use default profile from ~/.oci/config
-const configurationFilePath = process.env.OCI_CONFIG_FILE || '~/.oci/config';
-const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
-const provider = new common.ConfigFileAuthenticationDetailsProvider(
-  configurationFilePath,
-  profile
-);
+const DEFAULT_OCI_CONFIG_FILE = process.env.OCI_CONFIG_FILE || '~/.oci/config';
+const DEFAULT_OCI_CONFIG_PROFILE = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
 
-// Initialize OCI Clients
-const identityClient = new identity.IdentityClient({
-  authenticationDetailsProvider: provider
-});
+function normalizeOCIProfile(profileName) {
+  const normalizedProfile = profileName ? String(profileName).trim() : '';
+  return normalizedProfile || DEFAULT_OCI_CONFIG_PROFILE;
+}
 
-const computeClient = new core.ComputeClient({
-  authenticationDetailsProvider: provider
-});
+function getOCIRequestConfig(req = {}) {
+  const query = req.query || {};
+  const body = req.body || {};
 
-const objectStorageClient = new objectstorage.ObjectStorageClient({
-  authenticationDetailsProvider: provider
-});
+  return {
+    configPath: query.configPath || body.configPath || DEFAULT_OCI_CONFIG_FILE,
+    profile: normalizeOCIProfile(query.profile || body.profile || DEFAULT_OCI_CONFIG_PROFILE)
+  };
+}
 
-const containerInstancesClient = new containerinstances.ContainerInstanceClient({
-  authenticationDetailsProvider: provider
-});
+function createOCIProvider({ configPath, profile }) {
+  return new common.ConfigFileAuthenticationDetailsProvider(
+    configPath || DEFAULT_OCI_CONFIG_FILE,
+    normalizeOCIProfile(profile)
+  );
+}
 
-const virtualNetworkClient = new core.VirtualNetworkClient({
-  authenticationDetailsProvider: provider
-});
+function createOCIClients(config) {
+  const requestProvider = createOCIProvider(config);
 
-const loggingManagementClient = new logging.LoggingManagementClient({
-  authenticationDetailsProvider: provider
-});
-
-const logSearchClient = new loggingsearch.LogSearchClient({
-  authenticationDetailsProvider: provider
-});
-
-const resourceManagerClient = new resourcemanager.ResourceManagerClient({
-  authenticationDetailsProvider: provider
-});
-
-const vaultClient = new vault.VaultsClient({
-  authenticationDetailsProvider: provider
-});
-
-const secretsClient = new secrets.SecretsClient({
-  authenticationDetailsProvider: provider
-});
+  return {
+    identityClient: new identity.IdentityClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    computeClient: new core.ComputeClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    objectStorageClient: new objectstorage.ObjectStorageClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    containerInstancesClient: new containerinstances.ContainerInstanceClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    virtualNetworkClient: new core.VirtualNetworkClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    loggingManagementClient: new logging.LoggingManagementClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    logSearchClient: new loggingsearch.LogSearchClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    resourceManagerClient: new resourcemanager.ResourceManagerClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    vaultClient: new vault.VaultsClient({
+      authenticationDetailsProvider: requestProvider
+    })
+  };
+}
 
 // Middleware
 app.use(cors());
@@ -130,14 +139,10 @@ app.get('/api/health', (req, res) => {
 // Get OCI config region
 app.get('/api/oci/config/region', (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     
     // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
+    const requestProvider = createOCIProvider({ configPath, profile });
     
     // Get region from provider
     let region;
@@ -169,19 +174,8 @@ app.get('/api/oci/config/region', (req, res) => {
 // Get OCI namespace from Object Storage service
 app.get('/api/oci/config/namespace', async (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
-    
-    // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
-    
-    // Create Object Storage client with the provider
-    const osClient = new objectstorage.ObjectStorageClient({
-      authenticationDetailsProvider: requestProvider
-    });
+    const { configPath, profile } = getOCIRequestConfig(req);
+    const { objectStorageClient: osClient } = createOCIClients({ configPath, profile });
     
     // Get namespace from Object Storage API
     const getNamespaceRequest = {};
@@ -202,14 +196,10 @@ app.get('/api/oci/config/namespace', async (req, res) => {
 // Get OCI tenancy ID from config
 app.get('/api/oci/config/tenancy', (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     
     // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
+    const requestProvider = createOCIProvider({ configPath, profile });
     
     // Get tenancy ID from provider
     let tenancyId;
@@ -240,24 +230,14 @@ app.get('/api/oci/config/tenancy', (req, res) => {
 // List all compartments for a tenancy
 app.get('/api/oci/compartments', async (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     const tenancyId = req.query.tenancyId;
     
     if (!tenancyId) {
       return res.status(400).json({ error: 'tenancyId is required' });
     }
     
-    // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
-    
-    // Create Identity client with the provider
-    const idClient = new identity.IdentityClient({
-      authenticationDetailsProvider: requestProvider
-    });
+    const { identityClient: idClient } = createOCIClients({ configPath, profile });
     
     // List all compartments
     const listCompartmentsRequest = {
@@ -281,6 +261,7 @@ app.get('/api/oci/compartments', async (req, res) => {
 // Get compartment details by compartment ID
 app.get('/api/oci/compartments/:compartmentId', async (req, res) => {
   try {
+    const { identityClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = req.params.compartmentId;
     
     const getCompartmentRequest = {
@@ -302,14 +283,10 @@ app.get('/api/oci/compartments/:compartmentId', async (req, res) => {
 // Get active domain from root compartment
 app.get('/api/oci/identity/active-domain', async (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     
     // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
+    const requestProvider = createOCIProvider({ configPath, profile });
     
     // Get tenancy ID
     let tenancyId;
@@ -324,10 +301,7 @@ app.get('/api/oci/identity/active-domain', async (req, res) => {
       return res.status(404).json({ error: 'Tenancy ID not found in config file' });
     }
     
-    // Create Identity client
-    const idClient = new identity.IdentityClient({
-      authenticationDetailsProvider: requestProvider
-    });
+    const { identityClient: idClient } = createOCIClients({ configPath, profile });
     
     // List domains in root compartment (tenancy)
     const listDomainsRequest = {
@@ -358,8 +332,7 @@ app.get('/api/oci/identity/active-domain', async (req, res) => {
 // Create or update dynamic group
 app.post('/api/oci/identity/dynamic-group', async (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     const { name, description, matchingRule } = req.body;
     
     if (!name || !matchingRule) {
@@ -367,10 +340,7 @@ app.post('/api/oci/identity/dynamic-group', async (req, res) => {
     }
     
     // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
+    const requestProvider = createOCIProvider({ configPath, profile });
     
     // Get tenancy ID
     let tenancyId;
@@ -385,10 +355,7 @@ app.post('/api/oci/identity/dynamic-group', async (req, res) => {
       return res.status(404).json({ error: 'Tenancy ID not found in config file' });
     }
     
-    // Create Identity client
-    const idClient = new identity.IdentityClient({
-      authenticationDetailsProvider: requestProvider
-    });
+    const { identityClient: idClient } = createOCIClients({ configPath, profile });
     
     // Check if dynamic group already exists
     const listDynamicGroupsRequest = {
@@ -448,24 +415,14 @@ app.post('/api/oci/identity/dynamic-group', async (req, res) => {
 // Create or update policies
 app.post('/api/oci/identity/policies', async (req, res) => {
   try {
-    const configPath = req.query.configPath || process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = req.query.profile || process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+    const { configPath, profile } = getOCIRequestConfig(req);
     const { compartmentId, policies } = req.body;
     
     if (!compartmentId || !policies || !Array.isArray(policies) || policies.length === 0) {
       return res.status(400).json({ error: 'compartmentId and policies array are required' });
     }
     
-    // Create a provider for the requested config/profile
-    const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
-      configPath,
-      profile
-    );
-    
-    // Create Identity client
-    const idClient = new identity.IdentityClient({
-      authenticationDetailsProvider: requestProvider
-    });
+    const { identityClient: idClient } = createOCIClients({ configPath, profile });
     
     // Policy name is fixed as "ci-compose"
     const policyName = 'ci-compose';
@@ -550,6 +507,7 @@ app.post('/api/data', (req, res) => {
 // Identity Service - List Availability Domains
 app.get('/api/oci/availability-domains', async (req, res) => {
   try {
+    const { identityClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -573,6 +531,7 @@ app.get('/api/oci/availability-domains', async (req, res) => {
 // Core Service - List Instances
 app.get('/api/oci/instances', async (req, res) => {
   try {
+    const { computeClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -596,6 +555,7 @@ app.get('/api/oci/instances', async (req, res) => {
 // Object Storage - List Namespaces
 app.get('/api/oci/object-storage/namespaces', async (req, res) => {
   try {
+    const { objectStorageClient } = createOCIClients(getOCIRequestConfig(req));
     const getNamespaceRequest = {};
     const response = await objectStorageClient.getNamespace(getNamespaceRequest);
     res.json({
@@ -611,6 +571,7 @@ app.get('/api/oci/object-storage/namespaces', async (req, res) => {
 // Object Storage - List Buckets
 app.get('/api/oci/object-storage/buckets', async (req, res) => {
   try {
+    const { objectStorageClient } = createOCIClients(getOCIRequestConfig(req));
     const namespaceName = process.env.OCI_NAMESPACE || req.query.namespace;
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     
@@ -639,6 +600,7 @@ app.get('/api/oci/object-storage/buckets', async (req, res) => {
 // Container Instances - List Container Instances
 app.get('/api/oci/container-instances', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -662,6 +624,7 @@ app.get('/api/oci/container-instances', async (req, res) => {
 // Logging - List Log Groups
 app.get('/api/oci/logging/log-groups', async (req, res) => {
   try {
+    const { loggingManagementClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -683,14 +646,14 @@ app.get('/api/oci/logging/log-groups', async (req, res) => {
 });
 
 // Sidecar validation functions
-async function validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId) {
+async function validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId, clients) {
   try {
     // First try in the specified compartment
     let listBucketsRequest = {
       namespaceName: namespaceName,
       compartmentId: compartmentId
     };
-    let response = await objectStorageClient.listBuckets(listBucketsRequest);
+    let response = await clients.objectStorageClient.listBuckets(listBucketsRequest);
     let bucket = response.items.find(b => b.name === bucketName);
     
     // If not found and tenancyId is available, search in all accessible compartments
@@ -700,7 +663,7 @@ async function validateBucketExists(bucketName, compartmentId, namespaceName, te
         compartmentId: tenancyId,
         compartmentIdInSubtree: true
       };
-      response = await objectStorageClient.listBuckets(listBucketsRequest);
+      response = await clients.objectStorageClient.listBuckets(listBucketsRequest);
       bucket = response.items.find(b => b.name === bucketName);
     }
     
@@ -713,7 +676,7 @@ async function validateBucketExists(bucketName, compartmentId, namespaceName, te
   }
 }
 
-async function validateLogExists(logOcid, logGroupId) {
+async function validateLogExists(logOcid, logGroupId, clients) {
   try {
     // Validate log OCID format - log OCIDs start with "ocid1.log."
     if (!logOcid || typeof logOcid !== 'string') {
@@ -731,7 +694,7 @@ async function validateLogExists(logOcid, logGroupId) {
           logGroupId: logGroupId,
           logId: logOcid
         };
-        await loggingManagementClient.getLog(getLogRequest);
+        await clients.loggingManagementClient.getLog(getLogRequest);
         return true;
       } catch (error) {
         if (error.statusCode === 404) {
@@ -771,14 +734,14 @@ async function validateVaultExists(vaultOcid) {
   }
 }
 
-async function getVaultOcidFromSecret(secretOcid) {
+async function getVaultOcidFromSecret(secretOcid, clients) {
   try {
     // Use VaultsClient.getSecret() to get secret metadata including vaultId
     // VaultsClient manages secrets and vaults, SecretsClient only retrieves secret content via getSecretBundle()
     const getSecretRequest = {
       secretId: secretOcid
     };
-    const secretResponse = await vaultClient.getSecret(getSecretRequest);
+    const secretResponse = await clients.vaultClient.getSecret(getSecretRequest);
     const vaultId = secretResponse.secret.vaultId;
     if (!vaultId) {
       throw new Error(`Secret '${secretOcid}' does not have a vaultId`);
@@ -792,7 +755,7 @@ async function getVaultOcidFromSecret(secretOcid) {
   }
 }
 
-async function validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId) {
+async function validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId, clients) {
   const errors = [];
   const warnings = [];
   
@@ -800,7 +763,7 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
   let namespaceName;
   try {
     const getNamespaceRequest = {};
-    const namespaceResponse = await objectStorageClient.getNamespace(getNamespaceRequest);
+    const namespaceResponse = await clients.objectStorageClient.getNamespace(getNamespaceRequest);
     namespaceName = namespaceResponse.value;
   } catch (error) {
     warnings.push(`Could not get namespace for bucket validation: ${error.message}`);
@@ -826,7 +789,7 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
           errors.push(`Container '${containerName}': Cannot validate bucket '${bucketName}' - namespace not available`);
         } else {
           try {
-            await validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId);
+            await validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId, clients);
           } catch (error) {
             errors.push(`Container '${containerName}': ${error.message}`);
           }
@@ -845,7 +808,7 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
       } else if (logOcid) {
         // Validate log exists only if not a placeholder
         try {
-          await validateLogExists(logOcid, logGroupId);
+          await validateLogExists(logOcid, logGroupId, clients);
         } catch (error) {
           errors.push(`Container '${containerName}': ${error.message}`);
         }
@@ -861,7 +824,7 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
       } else if (secretOcid) {
         // Validate secret and vault exist only if not a placeholder
         try {
-          const vaultOcid = await getVaultOcidFromSecret(secretOcid);
+          const vaultOcid = await getVaultOcidFromSecret(secretOcid, clients);
           await validateVaultExists(vaultOcid);
         } catch (error) {
           errors.push(`Container '${containerName}': ${error.message}`);
@@ -876,6 +839,8 @@ async function validateSidecarConfigs(containers, compartmentId, tenancyId, logG
 // Container Instances - Validate Sidecar Configs (before create/update)
 app.post('/api/oci/container-instances/validate', async (req, res) => {
   try {
+    const requestConfig = getOCIRequestConfig(req);
+    const clients = createOCIClients(requestConfig);
     const {
       containers,
       compartmentId,
@@ -900,13 +865,11 @@ app.post('/api/oci/container-instances/validate', async (req, res) => {
     // Get tenancyId from config if not provided
     let tenancyIdToUse = tenancyId;
     if (!tenancyIdToUse) {
-      const configPath = process.env.OCI_CONFIG_FILE || '~/.oci/config';
-      const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
-      const ociConfig = readOCIConfig(configPath, profile);
+      const ociConfig = readOCIConfig(requestConfig.configPath, requestConfig.profile);
       tenancyIdToUse = ociConfig?.tenancy;
     }
 
-    const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyIdToUse, logGroupId);
+    const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyIdToUse, logGroupId, clients);
     
     res.json({
       success: validationResult.errors.length === 0,
@@ -927,6 +890,13 @@ app.post('/api/oci/container-instances/validate', async (req, res) => {
 // Container Instances - Create Container Instance
 app.post('/api/oci/container-instances', async (req, res) => {
   try {
+    const requestConfig = getOCIRequestConfig(req);
+    const clients = createOCIClients(requestConfig);
+    const {
+      identityClient,
+      containerInstancesClient,
+      virtualNetworkClient
+    } = clients;
     
     const {
       displayName,
@@ -951,14 +921,12 @@ app.post('/api/oci/container-instances', async (req, res) => {
 
     // Get availability domain - required for container instances
     // Extract tenancy ID from config file
-    const configPath = process.env.OCI_CONFIG_FILE || '~/.oci/config';
-    const profile = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
-    const ociConfig = readOCIConfig(configPath, profile);
+    const ociConfig = readOCIConfig(requestConfig.configPath, requestConfig.profile);
     const tenancyId = ociConfig?.tenancy || req.body.tenancyId;
     
     // Validate sidecar configurations (bucket, log, vault)
     try {
-      const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId);
+      const validationResult = await validateSidecarConfigs(containers, compartmentId, tenancyId, logGroupId, clients);
       if (validationResult.errors.length > 0) {
         return res.status(400).json({
           success: false,
@@ -1181,6 +1149,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
 // Container Instances - Get Container Instance Details
 app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const instanceId = req.params.instanceId;
 
     const getContainerInstanceRequest = {
@@ -1203,6 +1172,7 @@ app.get('/api/oci/container-instances/:instanceId', async (req, res) => {
 // Container Instances - Delete Container Instance
 app.delete('/api/oci/container-instances/:instanceId', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const instanceId = req.params.instanceId;
 
     const deleteContainerInstanceRequest = {
@@ -1227,6 +1197,7 @@ app.delete('/api/oci/container-instances/:instanceId', async (req, res) => {
 // Container Instances - Restart Container Instance
 app.post('/api/oci/container-instances/:instanceId/restart', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const instanceId = req.params.instanceId;
 
     const restartContainerInstanceRequest = {
@@ -1250,6 +1221,7 @@ app.post('/api/oci/container-instances/:instanceId/restart', async (req, res) =>
 
 app.post('/api/oci/container-instances/:instanceId/stop', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const instanceId = req.params.instanceId;
 
     const stopContainerInstanceRequest = {
@@ -1274,6 +1246,7 @@ app.post('/api/oci/container-instances/:instanceId/stop', async (req, res) => {
 // Container Instances - Get Container Details
 app.get('/api/oci/containers/:containerId', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const containerId = req.params.containerId;
 
     const getContainerRequest = {
@@ -1296,6 +1269,7 @@ app.get('/api/oci/containers/:containerId', async (req, res) => {
 // We'll use the Unified Logging Search API via REST call
 app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
   try {
+    const { loggingManagementClient, logSearchClient } = createOCIClients(getOCIRequestConfig(req));
     const logOcid = req.params.logOcid;
     const tail = parseInt(req.query.tail) || 10; // Default to last 10 lines
     const logGroupIdFromQuery = req.query.logGroupId; // Optional: allow log group ID from query param
@@ -1495,6 +1469,7 @@ app.get('/api/oci/logging/logs/:logOcid', async (req, res) => {
 // Logging Service - Test Search Logs by Log Group ID (for testing)
 app.get('/api/oci/logging/test-search/:logGroupId', async (req, res) => {
   try {
+    const { loggingManagementClient, logSearchClient } = createOCIClients(getOCIRequestConfig(req));
     const logGroupId = req.params.logGroupId;
     const tail = parseInt(req.query.tail) || 100; // Default to last 100 lines
     
@@ -1585,6 +1560,7 @@ app.get('/api/oci/logging/test-search/:logGroupId', async (req, res) => {
 // Networking Service - List VCNs
 app.get('/api/oci/networking/vcns', async (req, res) => {
   try {
+    const { virtualNetworkClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     if (!compartmentId) {
       return res.status(400).json({ error: 'compartmentId is required' });
@@ -1608,6 +1584,7 @@ app.get('/api/oci/networking/vcns', async (req, res) => {
 // Networking Service - List Subnets
 app.get('/api/oci/networking/subnets', async (req, res) => {
   try {
+    const { virtualNetworkClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     const vcnId = req.query.vcnId;
     const subnetId = req.query.subnetId;
@@ -1647,6 +1624,7 @@ app.get('/api/oci/networking/subnets', async (req, res) => {
 // Networking Service - List Security Lists
 app.get('/api/oci/networking/security-lists', async (req, res) => {
   try {
+    const { virtualNetworkClient } = createOCIClients(getOCIRequestConfig(req));
     const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
     const vcnId = req.query.vcnId;
     
@@ -1673,6 +1651,7 @@ app.get('/api/oci/networking/security-lists', async (req, res) => {
 // Networking Service - Get VCN Details
 app.get('/api/oci/networking/vcns/:vcnId', async (req, res) => {
   try {
+    const { virtualNetworkClient } = createOCIClients(getOCIRequestConfig(req));
     const vcnId = req.params.vcnId;
     
     const getVcnRequest = {
@@ -1693,6 +1672,7 @@ app.get('/api/oci/networking/vcns/:vcnId', async (req, res) => {
 // Networking Service - Get VNIC Details
 app.get('/api/oci/networking/vnics/:vnicId', async (req, res) => {
   try {
+    const { virtualNetworkClient } = createOCIClients(getOCIRequestConfig(req));
     const vnicId = req.params.vnicId;
     
     const getVnicRequest = {
@@ -1715,6 +1695,7 @@ app.get('/api/oci/networking/vnics/:vnicId', async (req, res) => {
 // Resource Manager - Create Stack
 app.post('/api/oci/resource-manager/stacks', async (req, res) => {
   try {
+    const { resourceManagerClient } = createOCIClients(getOCIRequestConfig(req));
     const {
       displayName,
       description,
@@ -1872,6 +1853,7 @@ app.post('/api/docker-compose/parse', (req, res) => {
 // Docker Compose - Export OCI instance to YAML
 app.post('/api/docker-compose/export', async (req, res) => {
   try {
+    const { containerInstancesClient } = createOCIClients(getOCIRequestConfig(req));
     const { instanceId, payload } = req.body;
 
     let ociPayload = payload;
