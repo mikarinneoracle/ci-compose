@@ -400,13 +400,92 @@ function loadConfiguration() {
     if (config.projectName) document.getElementById('projectName').value = config.projectName;
     if (config.region) document.getElementById('region').value = config.region;
     if (config.ociConfigFile) document.getElementById('ociConfigFile').value = config.ociConfigFile;
-    if (config.ociConfigProfile) document.getElementById('ociConfigProfile').value = config.ociConfigProfile;
+    setOCIProfileValue(config.ociConfigProfile || 'DEFAULT');
     if (config.logGroupId) {
         const logGroupSelect = document.getElementById('logGroupId');
         logGroupSelect.value = config.logGroupId;
     }
     if (config.autoReloadTime !== undefined) {
         document.getElementById('autoReloadTime').value = config.autoReloadTime;
+    }
+}
+
+function setOCIProfileValue(profileName) {
+    const profileSelect = document.getElementById('ociConfigProfile');
+    if (!profileSelect) return;
+
+    const selectedProfile = (profileName || 'DEFAULT').trim() || 'DEFAULT';
+    const hasOption = Array.from(profileSelect.options).some(option => option.value === selectedProfile);
+
+    if (!hasOption) {
+        const option = document.createElement('option');
+        option.value = selectedProfile;
+        option.textContent = selectedProfile;
+        profileSelect.appendChild(option);
+    }
+
+    profileSelect.value = selectedProfile;
+}
+
+function normalizeOCIProfileOptions(profiles, selectedProfile = 'DEFAULT') {
+    const profileSet = new Set(['DEFAULT']);
+    if (selectedProfile) {
+        profileSet.add(selectedProfile);
+    }
+
+    (profiles || []).forEach(profile => {
+        const profileName = String(profile || '').trim();
+        if (profileName) {
+            profileSet.add(profileName);
+        }
+    });
+
+    return ['DEFAULT', ...Array.from(profileSet).filter(profile => profile !== 'DEFAULT')];
+}
+
+async function loadOCIProfiles() {
+    const profileSelect = document.getElementById('ociConfigProfile');
+    if (!profileSelect) return;
+
+    const currentConfig = getCurrentOCIConfigSelection();
+    const selectedProfile = currentConfig.ociConfigProfile || 'DEFAULT';
+
+    try {
+        profileSelect.innerHTML = '<option value="">Loading profiles...</option>';
+
+        const params = new URLSearchParams();
+        if (currentConfig.ociConfigFile) {
+            params.append('configPath', currentConfig.ociConfigFile);
+        }
+
+        const response = await fetch(`/api/oci/config/profiles?${params.toString()}`);
+        const data = await response.json();
+
+        if (!data.success || !Array.isArray(data.profiles) || data.profiles.length === 0) {
+            throw new Error(data.error || 'No profiles found');
+        }
+
+        const profiles = normalizeOCIProfileOptions(data.profiles, selectedProfile);
+
+        profileSelect.innerHTML = '';
+        profiles.forEach(profile => {
+            const option = document.createElement('option');
+            option.value = profile;
+            option.textContent = profile;
+            profileSelect.appendChild(option);
+        });
+
+        setOCIProfileValue(profiles.includes(selectedProfile) ? selectedProfile : 'DEFAULT');
+    } catch (error) {
+        console.error('Could not load OCI profiles:', error);
+        profileSelect.innerHTML = '';
+        normalizeOCIProfileOptions([], selectedProfile).forEach(profile => {
+            const option = document.createElement('option');
+            option.value = profile;
+            option.textContent = profile;
+            profileSelect.appendChild(option);
+        });
+        setOCIProfileValue(selectedProfile || 'DEFAULT');
     }
 }
 
@@ -599,6 +678,7 @@ function loadPortsAndVolumesForCINameForDetails(ciName) {
 
 async function showConfigModal() {
     loadConfiguration();
+    await loadOCIProfiles();
     
     // Fetch region and compartments from OCI config
     await Promise.all([

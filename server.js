@@ -131,9 +131,72 @@ function readOCIConfig(configPath, profile) {
   }
 }
 
+function readOCIConfigProfiles(configPath) {
+  try {
+    const expandedPath = configPath.replace('~', os.homedir());
+
+    if (!fs.existsSync(expandedPath)) {
+      return null;
+    }
+
+    const configContent = fs.readFileSync(expandedPath, 'utf8');
+    const profiles = [];
+
+    for (const line of configContent.split('\n')) {
+      const trimmedLine = line.trim();
+
+      if (trimmedLine.startsWith('[') && trimmedLine.endsWith(']')) {
+        const profileName = trimmedLine.slice(1, -1).trim();
+        if (profileName && !profiles.includes(profileName)) {
+          profiles.push(profileName);
+        }
+      }
+    }
+
+    return profiles;
+  } catch (error) {
+    console.error('Error reading OCI config profiles:', error);
+    return null;
+  }
+}
+
+function normalizeOCIConfigProfiles(profiles) {
+  const profileSet = new Set(['DEFAULT']);
+
+  (profiles || []).forEach(profile => {
+    const profileName = String(profile || '').trim();
+    if (profileName) {
+      profileSet.add(profileName);
+    }
+  });
+
+  return ['DEFAULT', ...Array.from(profileSet).filter(profile => profile !== 'DEFAULT')];
+}
+
 // Sample API routes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
+});
+
+// Get OCI config profiles
+app.get('/api/oci/config/profiles', (req, res) => {
+  try {
+    const { configPath } = getOCIRequestConfig(req);
+    const profiles = readOCIConfigProfiles(configPath);
+
+    if (!profiles) {
+      return res.status(404).json({ error: 'OCI config file not found or could not be read' });
+    }
+
+    res.json({
+      success: true,
+      profiles: normalizeOCIConfigProfiles(profiles),
+      configPath: configPath
+    });
+  } catch (error) {
+    console.error('Error getting OCI config profiles:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Get OCI config region

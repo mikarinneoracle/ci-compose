@@ -615,7 +615,14 @@
                                             </div>
                                             <div class="mb-3">
                                                 <label for="ociConfigProfile" class="form-label">OCI Config Profile</label>
-                                                <input type="text" class="form-control" id="ociConfigProfile" placeholder="DEFAULT">
+                                                <div class="input-group">
+                                                    <select class="form-select" id="ociConfigProfile" onchange="loadRegionFromConfig(); loadCompartments();">
+                                                        <option value="DEFAULT">DEFAULT</option>
+                                                    </select>
+                                                    <button class="btn btn-outline-secondary" type="button" onclick="loadOCIProfiles()">
+                                                        <small>Refresh</small>
+                                                    </button>
+                                                </div>
                                                 <small class="form-text text-muted">Profile name in OCI config file</small>
                                             </div>
                                             <div class="mb-3">
