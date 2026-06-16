@@ -9,6 +9,7 @@ const identity = require('oci-identity');
 const core = require('oci-core');
 const objectstorage = require('oci-objectstorage');
 const containerinstances = require('oci-containerinstances');
+const filestorage = require('oci-filestorage');
 const logging = require('oci-logging');
 const loggingsearch = require('oci-loggingsearch');
 const resourcemanager = require('oci-resourcemanager');
@@ -25,6 +26,7 @@ const PORT = process.env.PORT || 3000;
 
 const DEFAULT_OCI_CONFIG_FILE = process.env.OCI_CONFIG_FILE || '~/.oci/config';
 const DEFAULT_OCI_CONFIG_PROFILE = process.env.OCI_CONFIG_PROFILE || 'DEFAULT';
+const CREATE_CONTAINER_INSTANCE_TIMEOUT_MS = 120000;
 
 function normalizeOCIProfile(profileName) {
   const normalizedProfile = profileName ? String(profileName).trim() : '';
@@ -37,19 +39,31 @@ function getOCIRequestConfig(req = {}) {
 
   return {
     configPath: query.configPath || body.configPath || DEFAULT_OCI_CONFIG_FILE,
-    profile: normalizeOCIProfile(query.profile || body.profile || DEFAULT_OCI_CONFIG_PROFILE)
+    profile: normalizeOCIProfile(query.profile || body.profile || DEFAULT_OCI_CONFIG_PROFILE),
+    region: query.region || body.region || null
   };
 }
 
 function createOCIProvider({ configPath, profile }) {
-  return new common.ConfigFileAuthenticationDetailsProvider(
+  const requestProvider = new common.ConfigFileAuthenticationDetailsProvider(
     configPath || DEFAULT_OCI_CONFIG_FILE,
     normalizeOCIProfile(profile)
   );
+
+  return requestProvider;
+}
+
+function createOCIProviderWithRegion(config) {
+  const requestProvider = createOCIProvider(config);
+  if (config.region && typeof requestProvider.setRegion === 'function') {
+    requestProvider.setRegion(config.region);
+  }
+
+  return requestProvider;
 }
 
 function createOCIClients(config) {
-  const requestProvider = createOCIProvider(config);
+  const requestProvider = createOCIProviderWithRegion(config);
 
   return {
     identityClient: new identity.IdentityClient({
@@ -62,6 +76,9 @@ function createOCIClients(config) {
       authenticationDetailsProvider: requestProvider
     }),
     containerInstancesClient: new containerinstances.ContainerInstanceClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    fileStorageClient: new filestorage.FileStorageClient({
       authenticationDetailsProvider: requestProvider
     }),
     virtualNetworkClient: new core.VirtualNetworkClient({
@@ -79,6 +96,135 @@ function createOCIClients(config) {
     vaultClient: new vault.VaultsClient({
       authenticationDetailsProvider: requestProvider
     })
+  };
+}
+
+function hasOciFssVolumes(volumes = []) {
+  return Array.isArray(volumes) && volumes.some(volume => volume.volumeType === 'OCI_FSS_FILE_SYSTEM');
+}
+
+function shortOcid(value) {
+  const ocid = value ? String(value) : '';
+  if (!ocid || ocid.length <= 28) return ocid || null;
+  return `${ocid.slice(0, 18)}...${ocid.slice(-8)}`;
+}
+
+function summarizeCreateContainerInstanceDetails(details = {}) {
+  return {
+    displayName: details.displayName,
+    compartmentId: shortOcid(details.compartmentId),
+    availabilityDomain: details.availabilityDomain,
+    shape: details.shape,
+    shapeConfig: details.shapeConfig,
+    containerRestartPolicy: details.containerRestartPolicy,
+    containers: Array.isArray(details.containers)
+      ? details.containers.map(container => ({
+          displayName: container.displayName,
+          imageUrl: container.imageUrl,
+          volumeMounts: Array.isArray(container.volumeMounts)
+            ? container.volumeMounts.map(mount => ({
+                volumeName: mount.volumeName,
+                mountPath: mount.mountPath,
+                subPath: mount.subPath || null,
+                isReadOnly: typeof mount.isReadOnly === 'boolean' ? mount.isReadOnly : null
+              }))
+            : []
+        }))
+      : [],
+    volumes: Array.isArray(details.volumes)
+      ? details.volumes.map(volume => ({
+          name: volume.name,
+          volumeType: volume.volumeType,
+          mountTargetId: shortOcid(volume.mountTarget?.id),
+          exportId: shortOcid(volume.export?.id),
+          subnetId: shortOcid(volume.subnetId),
+          mountOptions: volume.mountCommand?.mountOptions || [],
+          isEncryptedInTransit: volume.security?.isEncryptedInTransit
+        }))
+      : [],
+    vnics: Array.isArray(details.vnics)
+      ? details.vnics.map(vnic => ({
+          subnetId: shortOcid(vnic.subnetId),
+          purpose: vnic.purpose || null,
+          isPublicIpAssigned: typeof vnic.isPublicIpAssigned === 'boolean' ? vnic.isPublicIpAssigned : null
+        }))
+      : []
+  };
+}
+
+async function createContainerInstanceRaw(requestConfig, containerInstancesClient, createContainerInstanceDetails) {
+  const requestProvider = createOCIProviderWithRegion(requestConfig);
+  const signer = new common.DefaultRequestSigner(requestProvider);
+  const endpoint = containerInstancesClient.endpoint;
+
+  const request = await common.composeRequest({
+    baseEndpoint: endpoint,
+    defaultHeaders: {},
+    path: '/containerInstances',
+    method: 'POST',
+    bodyContent: JSON.stringify(createContainerInstanceDetails),
+    pathParams: {},
+    headerParams: {
+      'Content-Type': common.Constants.APPLICATION_JSON
+    },
+    queryParams: {}
+  });
+
+  await signer.signHttpRequest({
+    method: request.method,
+    headers: request.headers,
+    uri: request.uri,
+    body: request.body
+  }, false);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CREATE_CONTAINER_INSTANCE_TIMEOUT_MS);
+  let response;
+
+  try {
+    response = await fetch(request.uri, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error(`OCI createContainerInstance timed out after ${CREATE_CONTAINER_INSTANCE_TIMEOUT_MS / 1000}s`);
+      timeoutError.statusCode = 504;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const responseText = await response.text();
+  let responseBody = {};
+  if (responseText) {
+    try {
+      responseBody = JSON.parse(responseText);
+    } catch (parseError) {
+      responseBody = { message: responseText };
+    }
+  }
+
+  if (!response.ok) {
+    const requestId = response.headers.get('opc-request-id');
+    const message = responseBody.message || responseBody.code || response.statusText || 'Unknown OCI error';
+    const error = new Error(`OCI createContainerInstance failed (${response.status}${requestId ? `, opc-request-id: ${requestId}` : ''}): ${message}`);
+    error.statusCode = response.status;
+    error.opcRequestId = requestId;
+    error.ociCode = responseBody.code;
+    error.ociMessage = responseBody.message;
+    error.ociResponseBody = responseBody;
+    throw error;
+  }
+
+  return {
+    containerInstance: responseBody,
+    opcWorkRequestId: response.headers.get('opc-work-request-id'),
+    opcRequestId: response.headers.get('opc-request-id')
   };
 }
 
@@ -967,6 +1113,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
       shape,
       shapeConfig,
       subnetId,
+      vnics,
       containers,
       volumes,
       containerRestartPolicy,
@@ -975,7 +1122,11 @@ app.post('/api/oci/container-instances', async (req, res) => {
       logGroupId
     } = req.body;
 
-    if (!displayName || !compartmentId || !shape || !subnetId || !containers || containers.length === 0) {
+    const requestedVnics = Array.isArray(vnics) ? vnics.filter(Boolean) : [];
+    const requestedPrimaryVnic = requestedVnics.find((vnic) => String(vnic.purpose || '').toUpperCase() === 'PRIMARY') || requestedVnics[0];
+    const primarySubnetId = subnetId || requestedPrimaryVnic?.subnetId;
+
+    if (!displayName || !compartmentId || !shape || !primarySubnetId || !containers || containers.length === 0) {
       return res.status(400).json({ 
         success: false,
         error: 'Missing required fields: displayName, compartmentId, shape, subnetId, and at least one container are required' 
@@ -1109,7 +1260,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
     let isPublicIpAssigned = true; // Default to true for public subnets
     try {
       const getSubnetRequest = {
-        subnetId: subnetId
+        subnetId: primarySubnetId
       };
       const subnetResponse = await virtualNetworkClient.getSubnet(getSubnetRequest);
       const subnet = subnetResponse.subnet;
@@ -1124,8 +1275,57 @@ app.post('/api/oci/container-instances', async (req, res) => {
       isPublicIpAssigned = true;
     }
 
-    // Build container instance configuration
-    // Note: OCI SDK accepts plain objects, but ensure all required fields are present
+    const hasExplicitPrimaryVnic = requestedVnics.some((vnic) => String(vnic.purpose || '').toUpperCase() === 'PRIMARY');
+    const normalizedVnics = requestedVnics.length > 0
+      ? requestedVnics.map((vnic, index) => {
+          if (!vnic.subnetId) {
+            throw new Error(`Invalid VNIC ${index + 1}: subnetId is required`);
+          }
+
+          const purpose = String(vnic.purpose || (index === 0 && !hasExplicitPrimaryVnic ? 'PRIMARY' : 'SECONDARY')).toUpperCase();
+          if (!['PRIMARY', 'SECONDARY'].includes(purpose)) {
+            throw new Error(`Invalid VNIC ${index + 1}: purpose must be PRIMARY or SECONDARY`);
+          }
+
+          const normalizedVnic = {
+            subnetId: vnic.subnetId,
+            isPublicIpAssigned: purpose === 'PRIMARY' ? isPublicIpAssigned : false
+          };
+
+          if (purpose) {
+            normalizedVnic.purpose = purpose;
+          }
+          if (vnic.displayName) {
+            normalizedVnic.displayName = vnic.displayName;
+          }
+          if (vnic.hostnameLabel) {
+            normalizedVnic.hostnameLabel = vnic.hostnameLabel;
+          }
+          if (typeof vnic.skipSourceDestCheck === 'boolean') {
+            normalizedVnic.skipSourceDestCheck = vnic.skipSourceDestCheck;
+          }
+          if (Array.isArray(vnic.nsgIds) && vnic.nsgIds.length > 0) {
+            normalizedVnic.nsgIds = vnic.nsgIds;
+          }
+          if (vnic.privateIp) {
+            normalizedVnic.privateIp = vnic.privateIp;
+          }
+          if (vnic.freeformTags && typeof vnic.freeformTags === 'object') {
+            normalizedVnic.freeformTags = vnic.freeformTags;
+          }
+          if (vnic.definedTags && typeof vnic.definedTags === 'object') {
+            normalizedVnic.definedTags = vnic.definedTags;
+          }
+
+          return normalizedVnic;
+        })
+      : [{
+          subnetId: primarySubnetId,
+          isPublicIpAssigned: isPublicIpAssigned
+        }];
+
+    // Build container instance configuration. FSS volumes use a raw REST fallback below
+    // because the bundled SDK version predates OCI_FSS_FILE_SYSTEM volume models.
     const containerInstanceDetails = {
       displayName: displayName,
       compartmentId: compartmentId,
@@ -1136,10 +1336,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
         memoryInGBs: shapeConfigToUse.memoryInGBs
       },
       containers: containerDetails,
-      vnics: [{
-        subnetId: subnetId,
-        isPublicIpAssigned: isPublicIpAssigned
-      }],
+      vnics: normalizedVnics,
       containerRestartPolicy: containerRestartPolicy || 'NEVER'
     };
     
@@ -1152,6 +1349,31 @@ app.post('/api/oci/container-instances', async (req, res) => {
     if (volumes && volumes.length > 0) {
       containerInstanceDetails.volumes = volumes.map((volume, index) => {
         const volumeName = volume.name || `volume-${index}`;
+        if (volume.volumeType === 'OCI_FSS_FILE_SYSTEM') {
+          if (!volume.mountTarget || !volume.mountTarget.id || !volume.export || !volume.export.id) {
+            throw new Error(`Invalid FSS volume "${volumeName}": mountTarget.id and export.id are required`);
+          }
+
+          const fssVolume = {
+            name: volumeName,
+            volumeType: 'OCI_FSS_FILE_SYSTEM',
+            mountTarget: volume.mountTarget,
+            export: volume.export
+          };
+
+          if (volume.security) {
+            fssVolume.security = volume.security;
+          }
+          if (volume.mountCommand) {
+            fssVolume.mountCommand = volume.mountCommand;
+          }
+          if (volume.subnetId) {
+            fssVolume.subnetId = volume.subnetId;
+          }
+
+          return fssVolume;
+        }
+
         return {
           name: volumeName,
           volumeType: volume.volumeType || 'EMPTYDIR',
@@ -1173,10 +1395,17 @@ app.post('/api/oci/container-instances', async (req, res) => {
             // Check if volumeName exists in volumes (optional validation)
             if (!volumeNames.includes(mount.volumeName)) {
             }
-            return {
+            const normalizedMount = {
               mountPath: mount.mountPath,
               volumeName: mount.volumeName
             };
+            if (mount.subPath) {
+              normalizedMount.subPath = mount.subPath;
+            }
+            if (typeof mount.isReadOnly === 'boolean') {
+              normalizedMount.isReadOnly = mount.isReadOnly;
+            }
+            return normalizedMount;
           });
         }
       });
@@ -1190,10 +1419,19 @@ app.post('/api/oci/container-instances', async (req, res) => {
       createContainerInstanceDetails: containerInstanceDetails
     };
 
-    containerDetails.forEach((cd, idx) => {
-    });
+    const createSummary = summarizeCreateContainerInstanceDetails(containerInstanceDetails);
+    console.log('Creating container instance:', JSON.stringify(createSummary, null, 2));
 
-    const response = await containerInstancesClient.createContainerInstance(createContainerInstanceRequest);
+    const response = hasOciFssVolumes(containerInstanceDetails.volumes)
+      ? await createContainerInstanceRaw(requestConfig, containerInstancesClient, containerInstanceDetails)
+      : await containerInstancesClient.createContainerInstance(createContainerInstanceRequest);
+
+    console.log('Container instance create submitted:', JSON.stringify({
+      displayName,
+      id: shortOcid(response.containerInstance?.id),
+      opcWorkRequestId: shortOcid(response.opcWorkRequestId),
+      opcRequestId: shortOcid(response.opcRequestId)
+    }));
     
     res.json({
       success: true,
@@ -1201,11 +1439,21 @@ app.post('/api/oci/container-instances', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating container instance:', error);
-    console.error('Error details:', error);
-    res.status(500).json({ 
+    if (error.ociResponseBody) {
+      console.error('OCI createContainerInstance response body:', JSON.stringify(error.ociResponseBody, null, 2));
+    }
+
+    const responseBody = {
       success: false,
-      error: error.message 
-    });
+      error: error.message
+    };
+
+    if (error.statusCode) responseBody.statusCode = error.statusCode;
+    if (error.opcRequestId) responseBody.opcRequestId = error.opcRequestId;
+    if (error.ociCode) responseBody.ociCode = error.ociCode;
+    if (error.ociMessage) responseBody.ociMessage = error.ociMessage;
+
+    res.status(error.statusCode || 500).json(responseBody);
   }
 });
 
@@ -1681,6 +1929,135 @@ app.get('/api/oci/networking/subnets', async (req, res) => {
   } catch (error) {
     console.error('Error listing subnets:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// File Storage Service - List Mount Targets
+app.get('/api/oci/filestorage/mount-targets', async (req, res) => {
+  try {
+    const requestConfig = getOCIRequestConfig(req);
+    const { identityClient, fileStorageClient } = createOCIClients(requestConfig);
+    const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
+    const requestedAvailabilityDomain = req.query.availabilityDomain;
+
+    if (!compartmentId) {
+      return res.status(400).json({ success: false, error: 'compartmentId is required' });
+    }
+
+    let availabilityDomains = requestedAvailabilityDomain ? [{ name: requestedAvailabilityDomain }] : [];
+    if (availabilityDomains.length === 0) {
+      const ociConfig = readOCIConfig(requestConfig.configPath, requestConfig.profile);
+      const tenancyId = ociConfig?.tenancy || req.query.tenancyId;
+      if (!tenancyId) {
+        return res.status(400).json({
+          success: false,
+          error: 'tenancyId is required to list availability domains for mount targets'
+        });
+      }
+
+      const adResponse = await identityClient.listAvailabilityDomains({ compartmentId: tenancyId });
+      availabilityDomains = adResponse.items || [];
+    }
+
+    const mountTargets = [];
+    for (const availabilityDomain of availabilityDomains) {
+      const iterator = fileStorageClient.listMountTargetsRecordIterator({
+        compartmentId,
+        availabilityDomain: availabilityDomain.name,
+        lifecycleState: 'ACTIVE',
+        sortBy: 'DISPLAYNAME',
+        sortOrder: 'ASC'
+      });
+
+      for await (const mountTarget of iterator) {
+        mountTargets.push({
+          id: mountTarget.id,
+          displayName: mountTarget.displayName,
+          availabilityDomain: mountTarget.availabilityDomain || availabilityDomain.name,
+          compartmentId: mountTarget.compartmentId,
+          exportSetId: mountTarget.exportSetId,
+          subnetId: mountTarget.subnetId,
+          lifecycleState: mountTarget.lifecycleState,
+          privateIpIds: mountTarget.privateIpIds || []
+        });
+      }
+    }
+
+    mountTargets.sort((a, b) => {
+      const nameCompare = (a.displayName || '').localeCompare(b.displayName || '');
+      return nameCompare !== 0 ? nameCompare : (a.availabilityDomain || '').localeCompare(b.availabilityDomain || '');
+    });
+
+    res.json({
+      success: true,
+      data: mountTargets
+    });
+  } catch (error) {
+    console.error('Error listing FSS mount targets:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// File Storage Service - List Exports
+app.get('/api/oci/filestorage/exports', async (req, res) => {
+  try {
+    const { fileStorageClient } = createOCIClients(getOCIRequestConfig(req));
+    const compartmentId = process.env.OCI_COMPARTMENT_ID || req.query.compartmentId;
+    const mountTargetId = req.query.mountTargetId;
+    let exportSetId = req.query.exportSetId;
+
+    if (!exportSetId && mountTargetId) {
+      const mountTargetResponse = await fileStorageClient.getMountTarget({ mountTargetId });
+      exportSetId = mountTargetResponse.mountTarget?.exportSetId;
+    }
+
+    if (!exportSetId && !compartmentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'exportSetId, mountTargetId or compartmentId is required'
+      });
+    }
+
+    const listExportsRequest = {
+      lifecycleState: 'ACTIVE',
+      sortBy: 'PATH',
+      sortOrder: 'ASC'
+    };
+    if (exportSetId) {
+      listExportsRequest.exportSetId = exportSetId;
+    } else {
+      listExportsRequest.compartmentId = compartmentId;
+    }
+
+    const exports = [];
+    const iterator = fileStorageClient.listExportsRecordIterator(listExportsRequest);
+    for await (const fssExport of iterator) {
+      let exportOptions = [];
+      try {
+        const exportResponse = await fileStorageClient.getExport({ exportId: fssExport.id });
+        exportOptions = exportResponse.export?.exportOptions || [];
+      } catch (exportOptionsError) {
+        console.warn(`Could not load export options for ${fssExport.id}:`, exportOptionsError.message || exportOptionsError);
+      }
+
+      exports.push({
+        id: fssExport.id,
+        path: fssExport.path,
+        exportSetId: fssExport.exportSetId,
+        fileSystemId: fssExport.fileSystemId,
+        lifecycleState: fssExport.lifecycleState,
+        exportOptions,
+        hasUnprivilegedSourcePort: exportOptions.some((option) => option.requirePrivilegedSourcePort === false)
+      });
+    }
+
+    res.json({
+      success: true,
+      data: exports
+    });
+  } catch (error) {
+    console.error('Error listing FSS exports:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

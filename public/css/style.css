@@ -240,12 +240,83 @@ body {
     color: var(--text-muted);
 }
 
+.form-control:disabled,
+.form-control[readonly],
+.form-select:disabled {
+    background-color: #293548;
+    border-color: #3b4a5f;
+    color: #7f8da1;
+    opacity: 1;
+    cursor: not-allowed;
+}
+
+.form-control:disabled::placeholder,
+.form-control[readonly]::placeholder {
+    color: #7f8da1;
+}
+
 .form-label {
     color: var(--text-secondary);
 }
 
 .form-text {
     color: var(--text-muted);
+}
+
+.fss-info-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.35rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    line-height: 1;
+    vertical-align: text-top;
+}
+
+.fss-info-button:hover,
+.fss-info-button:focus {
+    color: var(--teal-light);
+    outline: none;
+}
+
+.fss-requirement-hint {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.fss-requirement-hint i {
+    color: var(--warning);
+    margin-top: 0.1rem;
+}
+
+.fss-requirement-hint.is-ok {
+    border-color: rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.fss-requirement-hint.is-ok i {
+    color: var(--success);
+}
+
+.fss-requirement-hint.is-error {
+    border-color: rgba(239, 68, 68, 0.55);
+    background: rgba(239, 68, 68, 0.14);
+}
+
+.fss-requirement-hint.is-error i {
+    color: var(--danger);
 }
 
 /* Tables */
@@ -345,9 +416,11 @@ table td strong,
     color: var(--text-primary) !important;
 }
 
-/* Specific fix for ports table header */
+/* Specific fix for compact side table headers */
 #portsTable thead th,
-#portsTable th {
+#portsTable th,
+#fileStoragesTable thead th,
+#fileStoragesTable th {
     border: none !important;
     border-bottom: none !important;
     border-top: none !important;
@@ -577,6 +650,31 @@ a:hover {
     border-top-color: var(--bg-tertiary);
 }
 
+/* Popovers */
+.popover {
+    --bs-popover-max-width: 380px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.popover-header {
+    background-color: #293548;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.popover-body {
+    color: var(--text-secondary);
+}
+
+.popover .popover-arrow::before,
+.popover .popover-arrow::after {
+    border-top-color: var(--bg-tertiary);
+    border-bottom-color: var(--bg-tertiary);
+}
+
 /* Container tooltip */
 .container-tooltip {
     background-color: var(--bg-card) !important;
@@ -763,6 +861,10 @@ h1, h2, h3, h4, h5, h6 {
 
 .form-select:focus {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2314b8a6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+
+.form-select:disabled {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%237f8da1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
 }
 
 /* Container Logs Modal */

@@ -41,8 +41,24 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function initializeStaticPopovers() {
+    if (!window.bootstrap || !bootstrap.Popover) {
+        return;
+    }
+
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach((popoverTriggerEl) => {
+        if (!bootstrap.Popover.getInstance(popoverTriggerEl)) {
+            new bootstrap.Popover(popoverTriggerEl, {
+                container: 'body'
+            });
+        }
+    });
+}
+
 // Handle modal stacking so nested modals/backdrops overlay correctly
 document.addEventListener('DOMContentLoaded', () => {
+    initializeStaticPopovers();
+
     document.addEventListener('show.bs.modal', (event) => {
         const modal = event.target;
         const openCount = document.querySelectorAll('.modal.show').length; // modals already open before this one
@@ -309,6 +325,7 @@ async function loadPageContent() {
         loadPortsAndVolumesForCIName(config.projectName);
         updatePortsTable();
         updateVolumesTable();
+        updateFileStoragesTable();
     }
     
     // Load container instances if we have required config
@@ -541,6 +558,7 @@ async function saveConfiguration() {
         loadPortsAndVolumesForCIName(config.projectName);
         updatePortsTable();
         updateVolumesTable();
+        updateFileStoragesTable();
     }
     
     // Close modal
@@ -586,34 +604,47 @@ function getCurrentOCIConfigSelection() {
     };
 }
 
+function getSavedOCIConfigSelection() {
+    const savedConfig = getConfiguration();
+    return {
+        ...savedConfig,
+        ociConfigFile: savedConfig.ociConfigFile || '~/.oci/config',
+        ociConfigProfile: savedConfig.ociConfigProfile || 'DEFAULT'
+    };
+}
+
 // Container Instance Creation Functions - declare arrays early so they're accessible to save/load functions
 let containersData = []; // Array to store container data for creation
 let volumesData = []; // Array to store volume data for creation
 let portsData = []; // Array to store port data for creation
+let fileStoragesData = []; // Array to store OCI File System data for creation
 let containerInstancesCount = 0; // Count of container instances found on front page (total including deleted)
 let showDeletedCIs = false; // Toggle state for showing/hiding deleted CIs
 
-// Save ports and volumes for a specific CI name (projectName)
+// Save ports, volumes and file systems for a specific CI name (projectName)
 function savePortsAndVolumesForCIName(ciName) {
     if (!ciName) return;
     
     const key = `ciPortsVolumes_${ciName}`;
     const data = {
         ports: portsData,
-        volumes: volumesData
+        volumes: volumesData,
+        fileStorages: fileStoragesData
     };
     localStorage.setItem(key, JSON.stringify(data));
-    console.log(`Saved ${portsData.length} ports and ${volumesData.length} volumes for CI name: ${ciName}`);
+    console.log(`Saved ${portsData.length} ports, ${volumesData.length} volumes and ${fileStoragesData.length} file systems for CI name: ${ciName}`);
 }
 
-// Load ports and volumes for a specific CI name (projectName)
+// Load ports, volumes and file systems for a specific CI name (projectName)
 function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
     if (!ciName) {
         volumesData = [];
         portsData = [];
+        fileStoragesData = [];
         if (updateTables) {
             updatePortsTable();
             updateVolumesTable();
+            updateFileStoragesTable();
         }
         return;
     }
@@ -626,35 +657,41 @@ function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
             const data = JSON.parse(saved);
             portsData = data.ports || [];
             volumesData = data.volumes || [];
-            console.log(`Loaded ${portsData.length} ports and ${volumesData.length} volumes for CI name: ${ciName}`);
+            fileStoragesData = data.fileStorages || [];
+            console.log(`Loaded ${portsData.length} ports, ${volumesData.length} volumes and ${fileStoragesData.length} file systems for CI name: ${ciName}`);
             if (updateTables) {
                 updatePortsTable();
                 updateVolumesTable();
+                updateFileStoragesTable();
             }
         } catch (error) {
             console.error('Error loading ports and volumes:', error);
             volumesData = [];
             portsData = [];
+            fileStoragesData = [];
             if (updateTables) {
                 updatePortsTable();
                 updateVolumesTable();
+                updateFileStoragesTable();
             }
         }
     } else {
         console.log(`No saved ports/volumes found for CI name: ${ciName}`);
         volumesData = [];
         portsData = [];
+        fileStoragesData = [];
         if (updateTables) {
             updatePortsTable();
             updateVolumesTable();
+            updateFileStoragesTable();
         }
     }
 }
 
-// Load ports and volumes for details edit mode (returns data, doesn't modify global variables)
+// Load ports, volumes and file systems for details edit mode (returns data, doesn't modify global variables)
 function loadPortsAndVolumesForCINameForDetails(ciName) {
     if (!ciName) {
-        return { ports: [], volumes: [] };
+        return { ports: [], volumes: [], fileStorages: [] };
     }
     
     const key = `ciPortsVolumes_${ciName}`;
@@ -665,15 +702,208 @@ function loadPortsAndVolumesForCINameForDetails(ciName) {
             const data = JSON.parse(saved);
             return {
                 ports: data.ports || [],
-                volumes: data.volumes || []
+                volumes: data.volumes || [],
+                fileStorages: data.fileStorages || []
             };
         } catch (error) {
             console.error('Error loading ports and volumes:', error);
-            return { ports: [], volumes: [] };
+            return { ports: [], volumes: [], fileStorages: [] };
         }
     } else {
-        return { ports: [], volumes: [] };
+        return { ports: [], volumes: [], fileStorages: [] };
     }
+}
+
+function getFileStorageName(fileStorage, index) {
+    return (fileStorage.name && fileStorage.name.trim()) || `fss-${index}`;
+}
+
+const FSS_MOUNT_OPTIONS_WITHOUT_VALUE = new Set(['sync', 'async', 'ro', 'rw', 'soft', 'hard', 'ac', 'noac']);
+const DEFAULT_FSS_MOUNT_OPTIONS = 'hard,noac,retrans=11';
+
+function normalizeMountOptions(mountOptions) {
+    if (!mountOptions) {
+        return [];
+    }
+
+    if (Array.isArray(mountOptions)) {
+        return mountOptions
+            .map((item) => {
+                if (!item) return null;
+                if (typeof item === 'string') {
+                    const [option, ...valueParts] = item.split('=');
+                    const normalized = { option: option.trim().toLowerCase() };
+                    const value = valueParts.join('=').trim();
+                    if (value) normalized.value = value;
+                    return normalized.option ? normalized : null;
+                }
+                if (typeof item === 'object' && item.option) {
+                    const normalized = { option: String(item.option).trim().toLowerCase() };
+                    if (item.value !== undefined && item.value !== null && String(item.value).trim() !== '') {
+                        normalized.value = String(item.value).trim();
+                    }
+                    return normalized.option ? normalized : null;
+                }
+                return null;
+            })
+            .filter(Boolean);
+    }
+
+    return String(mountOptions)
+        .split(',')
+        .map((rawOption) => rawOption.trim())
+        .filter(Boolean)
+        .map((rawOption) => {
+            const [option, ...valueParts] = rawOption.split('=');
+            const normalized = { option: option.trim().toLowerCase() };
+            const value = valueParts.join('=').trim();
+            if (value) {
+                normalized.value = value;
+            }
+            return normalized;
+        })
+        .filter((item) => item.option);
+}
+
+function validateFssMountOptions(mountOptions) {
+    const normalizedMountOptions = normalizeMountOptions(mountOptions);
+    for (const mountOption of normalizedMountOptions) {
+        if (mountOption.option === 'retrans') {
+            if (!mountOption.value || !/^\d+$/.test(mountOption.value)) {
+                return 'retrans requires a digits-only value, for example retrans=11.';
+            }
+            continue;
+        }
+
+        if (!FSS_MOUNT_OPTIONS_WITHOUT_VALUE.has(mountOption.option)) {
+            return `Unsupported FSS mount option "${mountOption.option}".`;
+        }
+
+        if (mountOption.value) {
+            return `${mountOption.option} does not support a value.`;
+        }
+    }
+
+    return null;
+}
+
+function formatMountOptions(mountOptions) {
+    return normalizeMountOptions(mountOptions)
+        .map((item) => item.value ? `${item.option}=${item.value}` : item.option)
+        .join(',');
+}
+
+function buildEmptyDirVolumes() {
+    return volumesData.map((v, idx) => {
+        const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+        return {
+            name: volumeName,
+            volumeType: 'EMPTYDIR',
+            backingStore: 'EPHEMERAL_STORAGE'
+        };
+    });
+}
+
+function buildFileStorageVolumes(sourceFileStorages = fileStoragesData) {
+    return sourceFileStorages.map((fileStorage, idx) => {
+        const volume = {
+            name: getFileStorageName(fileStorage, idx),
+            volumeType: 'OCI_FSS_FILE_SYSTEM',
+            mountTarget: {
+                ociFssMountTargetType: 'OCID',
+                id: fileStorage.mountTargetId
+            },
+            export: {
+                ociFssExportType: 'OCID',
+                id: fileStorage.exportId
+            },
+            security: {
+                auth: 'SYS',
+                isEncryptedInTransit: fileStorage.isEncryptedInTransit !== false
+            }
+        };
+
+        const mountOptions = normalizeMountOptions(fileStorage.mountOptions);
+        if (mountOptions.length > 0) {
+            volume.mountCommand = { mountOptions };
+        }
+
+        if (fileStorage.subnetId && fileStorage.subnetId.trim()) {
+            volume.subnetId = fileStorage.subnetId.trim();
+        }
+
+        return volume;
+    });
+}
+
+function buildAllStorageVolumes() {
+    return [
+        ...buildEmptyDirVolumes(),
+        ...buildFileStorageVolumes()
+    ];
+}
+
+function buildEmptyDirVolumeMounts() {
+    return volumesData.map((v, idx) => {
+        const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
+        return {
+            mountPath: v.path,
+            volumeName: volumeName
+        };
+    });
+}
+
+function buildFileStorageVolumeMounts(sourceFileStorages = fileStoragesData) {
+    return sourceFileStorages.map((fileStorage, idx) => {
+        const volumeMount = {
+            mountPath: fileStorage.mountPath,
+            volumeName: getFileStorageName(fileStorage, idx)
+        };
+
+        if (fileStorage.subPath && fileStorage.subPath.trim()) {
+            volumeMount.subPath = fileStorage.subPath.trim();
+        }
+
+        if (typeof fileStorage.isReadOnly === 'boolean') {
+            volumeMount.isReadOnly = fileStorage.isReadOnly;
+        }
+
+        return volumeMount;
+    });
+}
+
+function buildAllStorageVolumeMounts() {
+    return [
+        ...buildEmptyDirVolumeMounts(),
+        ...buildFileStorageVolumeMounts()
+    ];
+}
+
+function buildVnicsWithFileStorageSubnets(primarySubnetId, sourceFileStorages = fileStoragesData) {
+    const trimmedPrimarySubnetId = (primarySubnetId || '').trim();
+    if (!trimmedPrimarySubnetId) {
+        return [];
+    }
+
+    const vnics = [{
+        subnetId: trimmedPrimarySubnetId,
+        purpose: 'PRIMARY'
+    }];
+
+    const secondarySubnetIds = Array.from(new Set(
+        (sourceFileStorages || [])
+            .map((fileStorage) => (fileStorage.subnetId || '').trim())
+            .filter((subnetId) => subnetId && subnetId !== trimmedPrimarySubnetId)
+    ));
+
+    secondarySubnetIds.forEach((subnetId) => {
+        vnics.push({
+            subnetId,
+            purpose: 'SECONDARY'
+        });
+    });
+
+    return vnics;
 }
 
 async function showConfigModal() {
@@ -1408,12 +1638,13 @@ function buildQueryString(additionalParams = {}, configOverride = null) {
     
     appendIfPresent('compartmentId', hasAdditionalParam('compartmentId') ? additionalParams.compartmentId : config.compartmentId);
     appendIfPresent('namespace', hasAdditionalParam('namespace') ? additionalParams.namespace : config.namespace);
+    appendIfPresent('region', hasAdditionalParam('region') ? additionalParams.region : config.region);
     appendIfPresent('configPath', hasAdditionalParam('configPath') ? additionalParams.configPath : (config.ociConfigFile || '~/.oci/config'));
     appendIfPresent('profile', hasAdditionalParam('profile') ? additionalParams.profile : (config.ociConfigProfile || 'DEFAULT'));
     
     // Add any additional parameters
     Object.keys(additionalParams).forEach(key => {
-        if (key === 'compartmentId' || key === 'namespace' || key === 'configPath' || key === 'profile') return;
+        if (key === 'compartmentId' || key === 'namespace' || key === 'region' || key === 'configPath' || key === 'profile') return;
         appendIfPresent(key, additionalParams[key]);
     });
     
@@ -2236,6 +2467,13 @@ function displayContainerInstanceDetails(instance) {
             volumesList = existingData.volumes.map(v => ({ name: v.name || '', path: v.path || '' }));
         }
     }
+
+    let detailsFileStoragesData = [];
+    if (config.projectName) {
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        detailsFileStoragesData = (existingData.fileStorages || []).map((fileStorage) => ({ ...fileStorage }));
+    }
+    window[`detailsFileStorages_${containerInstanceId}`] = detailsFileStoragesData;
     
     html += '</div>';
     html += '</div>';
@@ -2284,6 +2522,28 @@ function displayContainerInstanceDetails(instance) {
         html += '<tbody id="detailsVolumesTableBody_' + containerInstanceId + '"></tbody>';
     }
     
+    html += '</div>';
+    html += '</div>';
+
+    // File Systems Information
+    html += '<div class="row mt-3">';
+    html += '<div class="col-12 mb-4">';
+    html += '<div class="d-flex justify-content-between align-items-center mb-3">';
+    html += '<h5 class="border-bottom pb-2 mb-0">File Systems</h5>';
+    html += `<button class="btn btn-success btn-sm" id="detailsAddFileSystemBtn" onclick="addFileSystemToDetails('${containerInstanceId}')" style="display: none;"><i class="bi bi-plus"></i> Add File System</button>`;
+    html += '</div>';
+    html += '<p class="text-muted small mb-2">OCI File Storage exports are mounted into the containers through their mount paths.</p>';
+    html += '<div class="table-responsive"><table class="table table-sm">';
+    html += '<thead class="table-light"><tr><th>Name</th><th>Mount Path</th><th colspan="2">Export</th></tr></thead>';
+    html += '<tbody id="detailsFileSystemsTableBody_' + containerInstanceId + '">';
+
+    if (detailsFileStoragesData.length > 0) {
+        html += detailsFileStoragesData.map((fileStorage, idx) => renderDetailsFileSystemRow(fileStorage, idx, containerInstanceId)).join('');
+    } else {
+        html += '<tr><td colspan="4" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No file systems</td></tr>';
+    }
+
+    html += '</tbody></table></div>';
     html += '</div>';
     html += '</div>';
     
@@ -2361,9 +2621,15 @@ function enterEditMode(instanceId) {
     
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'inline-block';
+
+    const addFileSystemBtn = document.getElementById('detailsAddFileSystemBtn');
+    if (addFileSystemBtn) addFileSystemBtn.style.display = 'inline-block';
     
     // Initialize and display volumes table
     refreshDetailsVolumesTable(instanceId);
+
+    // Initialize and display file systems table
+    refreshDetailsFileSystemsTable(instanceId);
     
     // Refresh containers table to hide log column and show action buttons
     refreshDetailsContainersTable(instanceId);
@@ -2372,6 +2638,13 @@ function enterEditMode(instanceId) {
     const volumes = window[`detailsVolumes_${instanceId}`] || [];
     volumes.forEach((volume, idx) => {
         const actionsCell = document.getElementById(`volumeActions_${idx}`);
+        if (actionsCell) actionsCell.style.display = 'table-cell';
+    });
+
+    // Show Edit/Delete buttons for file systems
+    const fileSystems = window[`detailsFileStorages_${instanceId}`] || [];
+    fileSystems.forEach((fileSystem, idx) => {
+        const actionsCell = document.getElementById(`fileSystemActions_${idx}`);
         if (actionsCell) actionsCell.style.display = 'table-cell';
     });
     
@@ -3059,6 +3332,7 @@ function deleteVolumeInDetails(index, instanceId) {
             const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
             volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
             portsData = existingData.ports || [];
+            fileStoragesData = existingData.fileStorages || [];
             savePortsAndVolumesForCIName(config.projectName);
             
             // Reload from localStorage to ensure consistency
@@ -3067,6 +3341,7 @@ function deleteVolumeInDetails(index, instanceId) {
             // Update index page tables
             updatePortsTable();
             updateVolumesTable();
+            updateFileStoragesTable();
         }
         
         // Refresh the display by re-rendering the volumes table
@@ -3197,6 +3472,187 @@ function refreshDetailsVolumesTable(instanceId) {
     }).join('');
 }
 
+function getFileStorageDetailsTooltip(fileStorage) {
+    return [
+        `Mount path: ${fileStorage.mountPath || 'N/A'}`,
+        `Export: ${fileStorage.exportId || 'N/A'}`,
+        `Mount target: ${fileStorage.mountTargetId || 'N/A'}`,
+        fileStorage.subnetId ? `Subnet: ${fileStorage.subnetId}` : null,
+        fileStorage.subPath ? `Sub path: ${fileStorage.subPath}` : null
+    ].filter(Boolean).join(' | ');
+}
+
+function renderDetailsFileSystemRow(fileStorage, idx, instanceId) {
+    const displayName = getFileStorageName(fileStorage, idx);
+    const mountPath = fileStorage.mountPath || 'N/A';
+    const exportId = fileStorage.exportId || '';
+    const exportDisplay = getShortOcid(exportId) || 'N/A';
+    const tooltip = getFileStorageDetailsTooltip(fileStorage);
+    const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
+
+    return `
+        <tr>
+            <td style="border-bottom: 1px solid #dee2e6;">
+                <span title="${escapeHtmlAttribute(tooltip)}">${escapeHtml(displayName)}</span>
+            </td>
+            <td style="border-bottom: 1px solid #dee2e6;">
+                <code>${escapeHtml(mountPath)}</code>
+            </td>
+            <td style="border-bottom: 1px solid #dee2e6;">
+                <code title="${escapeHtmlAttribute(exportId)}">${escapeHtml(exportDisplay)}</code>
+            </td>
+            <td id="fileSystemActions_${idx}" style="display: ${actionsDisplay}; border-bottom: 1px solid #dee2e6; white-space: nowrap;">
+                <button class="btn btn-success btn-sm me-1" onclick="editFileSystemInDetails(${idx}, '${instanceId}')"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-danger btn-sm" onclick="deleteFileSystemInDetails(${idx}, '${instanceId}')"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>
+    `;
+}
+
+function persistDetailsFileStorages(instanceId, fileStorages) {
+    const config = getConfiguration();
+    if (!config.projectName) return;
+
+    const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+    portsData = existingData.ports || [];
+    volumesData = existingData.volumes || [];
+    fileStoragesData = fileStorages.map((fileStorage) => ({ ...fileStorage }));
+    savePortsAndVolumesForCIName(config.projectName);
+
+    loadPortsAndVolumesForCIName(config.projectName);
+    updatePortsTable();
+    updateVolumesTable();
+    updateFileStoragesTable();
+}
+
+async function addFileSystemToDetails(instanceId) {
+    isInEditMode = true;
+    editingDetailsContext = { type: 'details', instanceId: instanceId, itemType: 'fileSystem' };
+
+    document.getElementById('editFileStorageForm').reset();
+    document.getElementById('editFileStorageIndex').value = '';
+    document.getElementById('editFileStorageMountOptions').value = DEFAULT_FSS_MOUNT_OPTIONS;
+    document.getElementById('editFileStorageEncrypted').checked = true;
+    document.getElementById('editFileStorageReadOnly').checked = false;
+    setSelectMessage(document.getElementById('editFileStorageMountTargetId'), 'Loading mount targets...');
+    setSelectMessage(document.getElementById('editFileStorageExportId'), 'Select a mount target first...');
+    setSelectMessage(document.getElementById('editFileStorageSubnetId'), 'Loading subnets...');
+
+    const fileStorageModalTitle = document.querySelector('#editFileStorageModal .modal-title');
+    if (fileStorageModalTitle) fileStorageModalTitle.textContent = 'Add File System';
+
+    const modalElement = document.getElementById('editFileStorageModal');
+    const modal = new bootstrap.Modal(modalElement);
+
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'fileSystem') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+
+    modal.show();
+    await loadFileStorageSelectors();
+}
+
+async function editFileSystemInDetails(index, instanceId) {
+    const fileStorages = window[`detailsFileStorages_${instanceId}`] || [];
+    const fileStorage = fileStorages[index];
+    if (!fileStorage) return;
+
+    isInEditMode = true;
+    editingDetailsContext = { type: 'details', instanceId: instanceId, index: index, itemType: 'fileSystem' };
+
+    document.getElementById('editFileStorageIndex').value = index;
+    document.getElementById('editFileStorageName').value = fileStorage.name || '';
+    document.getElementById('editFileStorageMountPath').value = fileStorage.mountPath || '';
+    setSelectMessage(document.getElementById('editFileStorageMountTargetId'), 'Loading mount targets...');
+    setSelectMessage(document.getElementById('editFileStorageExportId'), 'Select a mount target first...');
+    setSelectMessage(document.getElementById('editFileStorageSubnetId'), 'Loading subnets...');
+    document.getElementById('editFileStorageSubPath').value = fileStorage.subPath || '';
+    document.getElementById('editFileStorageMountOptions').value = formatMountOptions(fileStorage.mountOptions);
+    document.getElementById('editFileStorageReadOnly').checked = fileStorage.isReadOnly === true;
+    document.getElementById('editFileStorageEncrypted').checked = fileStorage.isEncryptedInTransit !== false;
+
+    const fileStorageModalTitle = document.querySelector('#editFileStorageModal .modal-title');
+    if (fileStorageModalTitle) fileStorageModalTitle.textContent = 'Edit File System';
+
+    const modalElement = document.getElementById('editFileStorageModal');
+    const modal = new bootstrap.Modal(modalElement);
+
+    modalElement.addEventListener('hidden.bs.modal', function() {
+        if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'fileSystem') {
+            isInEditMode = false;
+            editingDetailsContext = null;
+        }
+    }, { once: true });
+
+    modal.show();
+    await loadFileStorageSelectors(fileStorage);
+}
+
+function deleteFileSystemInDetails(index, instanceId) {
+    const fileStorages = window[`detailsFileStorages_${instanceId}`] || [];
+    const fileStorage = fileStorages[index];
+    if (!fileStorage) return;
+
+    if (confirm('Are you sure you want to delete this file system?')) {
+        fileStorages.splice(index, 1);
+        window[`detailsFileStorages_${instanceId}`] = fileStorages;
+        persistDetailsFileStorages(instanceId, fileStorages);
+        refreshDetailsFileSystemsTable(instanceId);
+    }
+}
+
+function refreshDetailsFileSystemsTable(instanceId) {
+    let tbody = document.getElementById(`detailsFileSystemsTableBody_${instanceId}`);
+    const fileStorages = window[`detailsFileStorages_${instanceId}`] || [];
+
+    if (!tbody || !tbody.closest('table')) {
+        const addFileSystemBtn = document.getElementById('detailsAddFileSystemBtn');
+        const fileSystemsContainer = addFileSystemBtn?.closest('.col-12');
+
+        if (!fileSystemsContainer) {
+            console.error('Could not find file systems container');
+            return;
+        }
+
+        const tableHtml = `
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr><th>Name</th><th>Mount Path</th><th colspan="2">Export</th></tr>
+                    </thead>
+                    <tbody id="detailsFileSystemsTableBody_${instanceId}"></tbody>
+                </table>
+            </div>
+        `;
+
+        const headerRow = fileSystemsContainer.querySelector('.d-flex');
+        if (headerRow) {
+            headerRow.insertAdjacentHTML('afterend', tableHtml);
+        } else {
+            fileSystemsContainer.insertAdjacentHTML('beforeend', tableHtml);
+        }
+
+        tbody = document.getElementById(`detailsFileSystemsTableBody_${instanceId}`);
+    }
+
+    if (!tbody) {
+        console.error('Could not find or create file systems table body');
+        return;
+    }
+
+    if (fileStorages.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No file systems</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = fileStorages
+        .map((fileStorage, idx) => renderDetailsFileSystemRow(fileStorage, idx, instanceId))
+        .join('');
+}
+
 // Save CI changes by deleting old CI and creating new one with same name
 async function saveCIChanges(instanceId) {
     if (!currentEditingInstance || currentEditingInstance.id !== instanceId) {
@@ -3232,10 +3688,31 @@ async function saveCIChanges(instanceId) {
         const containers = window[`detailsContainers_${instanceId}`] || [];
         const volumes = window[`detailsVolumes_${instanceId}`] || [];
         const ports = window[`detailsPorts_${instanceId}`] || [];
+        const savedPortsVolumes = loadPortsAndVolumesForCINameForDetails(config.projectName || currentEditingInstance.displayName);
+        const detailsFileStorages = window[`detailsFileStorages_${instanceId}`];
+        const fileStorages = Array.isArray(detailsFileStorages) ? detailsFileStorages : (savedPortsVolumes.fileStorages || []);
         
         if (containers.length === 0) {
             showNotification('Error: At least one container is required', 'error');
             return;
+        }
+
+        const invalidFileStorageIndex = fileStorages.findIndex(fileStorage =>
+            !fileStorage.mountPath ||
+            !fileStorage.mountTargetId ||
+            !fileStorage.exportId
+        );
+        if (invalidFileStorageIndex !== -1) {
+            showNotification(`Error: File System ${invalidFileStorageIndex + 1} is missing mount path, mount target OCID or export OCID.`, 'error');
+            return;
+        }
+
+        for (const [index, fileStorage] of fileStorages.entries()) {
+            const mountOptionsError = validateFssMountOptions(fileStorage.mountOptions);
+            if (mountOptionsError) {
+                showNotification(`Error: File System ${index + 1} has invalid mount options: ${mountOptionsError}`, 'error');
+                return;
+            }
         }
         
         // Build containers payload (similar to confirmCreateContainerInstance)
@@ -3263,19 +3740,27 @@ async function saveCIChanges(instanceId) {
         });
         
         // Build volumes payload
-        const volumesPayload = volumes.map((v, idx) => ({
-            name: v.name || `volume-${idx}`,
-            volumeType: 'EMPTYDIR',
-            backingStore: 'EPHEMERAL_STORAGE'
-        }));
+        const volumesPayload = [
+            ...volumes.map((v, idx) => ({
+                name: v.name || `volume-${idx}`,
+                volumeType: 'EMPTYDIR',
+                backingStore: 'EPHEMERAL_STORAGE'
+            })),
+            ...buildFileStorageVolumes(fileStorages)
+        ];
         
         // Map volumes to containers
         if (volumesPayload.length > 0) {
+            const emptyDirVolumeMounts = volumes.map((v, idx) => ({
+                mountPath: v.path,
+                volumeName: v.name || `volume-${idx}`
+            }));
+            const fileStorageVolumeMounts = buildFileStorageVolumeMounts(fileStorages);
             cleanedContainers.forEach(container => {
-                container.volumeMounts = volumesPayload.map((v, idx) => ({
-                    mountPath: volumes[idx].path,
-                    volumeName: v.name
-                }));
+                container.volumeMounts = [
+                    ...emptyDirVolumeMounts,
+                    ...fileStorageVolumeMounts
+                ];
             });
         }
         
@@ -3389,6 +3874,10 @@ async function saveCIChanges(instanceId) {
             freeformTags: Object.keys(baseFreeformTags).length > 0 ? baseFreeformTags : undefined,
             logGroupId: config.logGroupId || null
         };
+
+        if (fileStorages.length > 0) {
+            payload.vnics = buildVnicsWithFileStorageSubnets(subnetId, fileStorages);
+        }
         
         // Validate sidecar configurations before proceeding with delete
         showNotification('Validating sidecar configurations...', 'info');
@@ -3564,8 +4053,15 @@ async function duplicateContainerInstance(instanceId) {
             path: v.path || ''
         }));
 
+        const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
+        const detailsFileStorages = window[`detailsFileStorages_${instanceId}`];
+        fileStoragesData = Array.isArray(detailsFileStorages)
+            ? detailsFileStorages.map((fileStorage) => ({ ...fileStorage }))
+            : (existingData.fileStorages || []);
+
         updatePortsTable();
         updateVolumesTable();
+        updateFileStoragesTable();
 
         // Build containersData from detailsContainers for this instance
         const detailsContainers = window[`detailsContainers_${instanceId}`] || [];
@@ -3634,6 +4130,9 @@ function exitEditMode() {
     
     const addVolumeBtn = document.getElementById('detailsAddVolumeBtn');
     if (addVolumeBtn) addVolumeBtn.style.display = 'none';
+
+    const addFileSystemBtn = document.getElementById('detailsAddFileSystemBtn');
+    if (addFileSystemBtn) addFileSystemBtn.style.display = 'none';
     
     // Hide all container action buttons
     const containerActions = document.querySelectorAll('[id^="containerActions_"]');
@@ -3642,6 +4141,10 @@ function exitEditMode() {
     // Hide all volume action buttons
     const volumeActions = document.querySelectorAll('[id^="volumeActions_"]');
     volumeActions.forEach(el => el.style.display = 'none');
+
+    // Hide all file system action buttons
+    const fileSystemActions = document.querySelectorAll('[id^="fileSystemActions_"]');
+    fileSystemActions.forEach(el => el.style.display = 'none');
     
     // Refresh containers table to show log column and hide action buttons
     if (currentEditingInstance && currentEditingInstance.id) {
@@ -3776,7 +4279,8 @@ async function restartContainerInstance(instanceId) {
                     containerRestartPolicy: instance.containerRestartPolicy || 'NEVER',
                     freeformTags: instance.freeformTags || {},
                     containers: [],
-                    volumes: []
+                    volumes: [],
+                    fileStorages: []
                 };
                 
                 // Get volumes from current config (localStorage) for the CI name, not from deleted container
@@ -3785,6 +4289,7 @@ async function restartContainerInstance(instanceId) {
                 const ciName = config.projectName || restoreConfig.displayName;
                 const savedPortsVolumes = loadPortsAndVolumesForCINameForDetails(ciName);
                 const volumesFromStorage = savedPortsVolumes.volumes || [];
+                const fileStoragesFromStorage = savedPortsVolumes.fileStorages || [];
                 
                 console.log('Loading volumes for restore:', {
                     ciName: ciName,
@@ -3807,6 +4312,7 @@ async function restartContainerInstance(instanceId) {
                     restoreConfig.volumes = [];
                     console.log('No volumes found in current config for CI name:', ciName);
                 }
+                restoreConfig.fileStorages = fileStoragesFromStorage;
                 
                 // Fetch container details to get full configuration
                 // Note: We'll replace volumeMounts later with volumes from current config
@@ -3893,7 +4399,8 @@ async function restartContainerInstance(instanceId) {
                     shape: restoreConfig.shape,
                     subnetId: restoreConfig.subnetId,
                     containersCount: restoreConfig.containers.length,
-                    volumesCount: restoreConfig.volumes?.length || 0
+                    volumesCount: restoreConfig.volumes?.length || 0,
+                    fileStoragesCount: restoreConfig.fileStorages?.length || 0
                 });
                 
                 showNotification('Restoring container instance...', 'info');
@@ -3951,8 +4458,9 @@ async function restartContainerInstance(instanceId) {
                 
                 // Build volumes array from restore config (from current config/localStorage)
                 let volumesArray = [];
-                if (restoreConfig.volumes && restoreConfig.volumes.length > 0) {
-                    volumesArray = restoreConfig.volumes.map((vol) => {
+                const fileStorageVolumes = buildFileStorageVolumes(restoreConfig.fileStorages || []);
+                if ((restoreConfig.volumes && restoreConfig.volumes.length > 0) || fileStorageVolumes.length > 0) {
+                    const emptyDirVolumes = (restoreConfig.volumes || []).map((vol) => {
                         const volumeName = (vol.name && vol.name.trim()) || vol.name;
                         return {
                             name: volumeName,
@@ -3960,31 +4468,42 @@ async function restartContainerInstance(instanceId) {
                             backingStore: 'EPHEMERAL_STORAGE'
                         };
                     });
+                    volumesArray = [
+                        ...emptyDirVolumes,
+                        ...fileStorageVolumes
+                    ];
                     
                     // Map volumes from current config to all containers as volumeMounts
                     // Don't use old volumeMounts from deleted container - recreate from current volumes config
                     console.log('Mapping volumes to containers:', {
                         volumesCount: restoreConfig.volumes.length,
+                        fileStoragesCount: restoreConfig.fileStorages.length,
                         containersCount: cleanedContainers.length,
-                        volumes: restoreConfig.volumes
+                        volumes: restoreConfig.volumes,
+                        fileStorages: restoreConfig.fileStorages
                     });
+
+                    const emptyDirVolumeMounts = (restoreConfig.volumes || []).map((vol) => {
+                        const volumeName = (vol.name && vol.name.trim()) || `volume-${Date.now()}`;
+                        const mountPath = (vol.path && vol.path.trim()) || `/mnt/${volumeName}`;
+
+                        if (!volumeName || !mountPath) {
+                            console.error('Invalid volume mapping:', vol);
+                            throw new Error(`Invalid volume: name="${volumeName}", path="${mountPath}"`);
+                        }
+
+                        return {
+                            mountPath: mountPath,
+                            volumeName: volumeName
+                        };
+                    });
+                    const fileStorageVolumeMounts = buildFileStorageVolumeMounts(restoreConfig.fileStorages || []);
                     
                     cleanedContainers.forEach(container => {
-                        container.volumeMounts = restoreConfig.volumes.map((vol) => {
-                            // Ensure both mountPath and volumeName are present and valid
-                            const volumeName = (vol.name && vol.name.trim()) || `volume-${Date.now()}`;
-                            const mountPath = (vol.path && vol.path.trim()) || `/mnt/${volumeName}`;
-                            
-                            if (!volumeName || !mountPath) {
-                                console.error('Invalid volume mapping:', vol);
-                                throw new Error(`Invalid volume: name="${volumeName}", path="${mountPath}"`);
-                            }
-                            
-                            return {
-                                mountPath: mountPath,
-                                volumeName: volumeName
-                            };
-                        });
+                        container.volumeMounts = [
+                            ...emptyDirVolumeMounts,
+                            ...fileStorageVolumeMounts
+                        ];
                         console.log(`Set volumeMounts for container ${container.displayName}:`, container.volumeMounts);
                     });
                 } else {
@@ -4004,6 +4523,10 @@ async function restartContainerInstance(instanceId) {
                     containers: cleanedContainers,
                     containerRestartPolicy: restoreConfig.containerRestartPolicy || 'NEVER'
                 };
+
+                if ((restoreConfig.fileStorages || []).length > 0) {
+                    payload.vnics = buildVnicsWithFileStorageSubnets(restoreConfig.subnetId, restoreConfig.fileStorages || []);
+                }
                 
                 // Add freeformTags
                 if (Object.keys(baseFreeformTags).length > 0) {
@@ -4624,6 +5147,7 @@ async function showCreateContainerInstanceModal() {
     updateContainersTable();
     updateVolumesTable();
     updatePortsTable();
+    updateFileStoragesTable();
     
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('createContainerInstanceModal'));
@@ -5566,6 +6090,7 @@ function addSidecarToDetails(index) {
                 if (config.projectName) {
                     const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
                     volumesData = existingData.volumes || [];
+                    fileStoragesData = existingData.fileStorages || [];
                     portsData = detailsPorts.map(p => {
                         const portObj = {
                             port: typeof p.port === 'number' ? p.port : parseInt(p.port)
@@ -5634,6 +6159,8 @@ function addSidecarToDetails(index) {
         if (config.projectName) {
             const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
             volumesData = detailsVolumes;
+            portsData = existingData.ports || [];
+            fileStoragesData = existingData.fileStorages || [];
             savePortsAndVolumesForCIName(config.projectName);
             // Reload volumesData from localStorage to ensure consistency
             loadPortsAndVolumesForCIName(config.projectName);
@@ -6404,6 +6931,7 @@ function saveEditedVolume() {
             const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
             volumesData = volumes.map(v => ({ name: v.name, path: v.path }));
             portsData = existingData.ports || [];
+            fileStoragesData = existingData.fileStorages || [];
             savePortsAndVolumesForCIName(config.projectName);
             
             // Reload from localStorage to ensure consistency
@@ -6412,6 +6940,7 @@ function saveEditedVolume() {
             // Update index page tables
             updatePortsTable();
             updateVolumesTable();
+            updateFileStoragesTable();
         }
         
         editingDetailsContext = null;
@@ -6495,6 +7024,492 @@ function updateVolumesTable() {
                         <td style="border-bottom: 1px solid #dee2e6;">
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editVolume(${index})"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="deleteVolume(${index})"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    }
+}
+
+// File System CRUD functions
+let fileStorageMountTargetsCache = [];
+
+function getShortOcid(ocid) {
+    if (!ocid || ocid.length <= 24) {
+        return ocid || '';
+    }
+    return `${ocid.slice(0, 18)}...${ocid.slice(-8)}`;
+}
+
+function setSelectMessage(select, message, value = '') {
+    if (!select) return;
+    select.innerHTML = '';
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = message;
+    select.appendChild(option);
+}
+
+function addSelectOption(select, value, label, dataset = {}) {
+    if (!select || !value) return null;
+
+    let option = Array.from(select.options).find((existingOption) => existingOption.value === value);
+    if (!option) {
+        option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+    } else {
+        option.textContent = label;
+    }
+
+    Object.entries(dataset).forEach(([key, datasetValue]) => {
+        if (datasetValue !== undefined && datasetValue !== null && datasetValue !== '') {
+            option.dataset[key] = datasetValue;
+        }
+    });
+
+    return option;
+}
+
+function ensurePreviousSelectValue(select, value, labelPrefix) {
+    if (!select || !value) return;
+    const existingOption = Array.from(select.options).find((option) => option.value === value);
+    if (!existingOption) {
+        addSelectOption(select, value, `${labelPrefix}: ${getShortOcid(value)}`);
+    }
+    select.value = value;
+}
+
+function updateFileStorageExportRequirementMessage() {
+    const exportSelect = document.getElementById('editFileStorageExportId');
+    const hint = document.getElementById('editFileStorageExportRequirement');
+    if (!exportSelect || !hint) return;
+
+    const icon = hint.querySelector('i');
+    const text = hint.querySelector('span');
+    const selectedOption = exportSelect.options[exportSelect.selectedIndex];
+    const status = selectedOption?.dataset?.privilegedSourcePortStatus || '';
+    const optionCount = selectedOption?.dataset?.exportOptionsCount || '';
+
+    hint.classList.remove('is-ok', 'is-error');
+    if (icon) {
+        icon.className = 'bi bi-exclamation-triangle';
+    }
+
+    if (!exportSelect.value) {
+        if (text) {
+            text.textContent = 'CI FSS requires every NFS client export option to use Ports: Privileged.';
+        }
+        return;
+    }
+
+    if (status === 'invalid') {
+        hint.classList.add('is-error');
+        if (text) {
+            text.textContent = 'This export has at least one client option without Ports: Privileged. CI FSS create will fail until every option uses privileged source ports.';
+        }
+        return;
+    }
+
+    if (status === 'valid') {
+        hint.classList.add('is-ok');
+        if (icon) {
+            icon.className = 'bi bi-check-circle';
+        }
+        if (text) {
+            text.textContent = `Export options look compatible: ${optionCount || 'all'} client option(s) use privileged source ports.`;
+        }
+        return;
+    }
+
+    if (text) {
+        text.textContent = 'CI FSS requires every NFS client export option to use Ports: Privileged.';
+    }
+}
+
+async function loadFileStorageSubnets(selectedSubnetId = '') {
+    const subnetSelect = document.getElementById('editFileStorageSubnetId');
+    if (!subnetSelect) return;
+
+    const config = getSavedOCIConfigSelection();
+    const compartmentId = config.compartmentId;
+
+    if (!compartmentId) {
+        setSelectMessage(subnetSelect, 'Configure a compartment first...');
+        return;
+    }
+
+    try {
+        subnetSelect.disabled = true;
+        setSelectMessage(subnetSelect, 'Loading subnets...');
+
+        const response = await fetch(buildOCIUrl('/api/oci/networking/subnets', { compartmentId }, config));
+        const data = await response.json();
+
+        subnetSelect.innerHTML = '<option value="">Use CI primary subnet</option>';
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+            data.data.forEach((subnet) => {
+                let label = subnet.displayName || subnet.id;
+                if (subnet.cidrBlock) {
+                    label += ` (${subnet.cidrBlock})`;
+                }
+                addSelectOption(subnetSelect, subnet.id, label);
+            });
+        } else if (!data.success) {
+            setSelectMessage(subnetSelect, data.error || 'Error loading subnets');
+        }
+
+        ensurePreviousSelectValue(subnetSelect, selectedSubnetId, 'Previous subnet');
+        subnetSelect.value = selectedSubnetId || '';
+    } catch (error) {
+        console.error('Could not load FSS subnets:', error);
+        setSelectMessage(subnetSelect, 'Error loading subnets');
+        ensurePreviousSelectValue(subnetSelect, selectedSubnetId, 'Previous subnet');
+    } finally {
+        subnetSelect.disabled = false;
+    }
+}
+
+async function loadFileStorageMountTargets(selectedMountTargetId = '') {
+    const mountTargetSelect = document.getElementById('editFileStorageMountTargetId');
+    if (!mountTargetSelect) return;
+
+    const config = getSavedOCIConfigSelection();
+    const compartmentId = config.compartmentId;
+
+    if (!compartmentId) {
+        setSelectMessage(mountTargetSelect, 'Configure a compartment first...');
+        return;
+    }
+
+    try {
+        mountTargetSelect.disabled = true;
+        setSelectMessage(mountTargetSelect, 'Loading mount targets...');
+
+        const response = await fetch(buildOCIUrl('/api/oci/filestorage/mount-targets', { compartmentId }, config));
+        const data = await response.json();
+
+        fileStorageMountTargetsCache = Array.isArray(data.data) ? data.data : [];
+        mountTargetSelect.innerHTML = '<option value="">Select a mount target...</option>';
+
+        if (data.success && fileStorageMountTargetsCache.length > 0) {
+            fileStorageMountTargetsCache.forEach((mountTarget) => {
+                const labelParts = [
+                    mountTarget.displayName || 'Mount target',
+                    mountTarget.availabilityDomain,
+                    getShortOcid(mountTarget.id)
+                ].filter(Boolean);
+
+                addSelectOption(mountTargetSelect, mountTarget.id, labelParts.join(' - '), {
+                    exportSetId: mountTarget.exportSetId,
+                    subnetId: mountTarget.subnetId
+                });
+            });
+        } else if (!data.success) {
+            setSelectMessage(mountTargetSelect, data.error || 'Error loading mount targets');
+        } else {
+            setSelectMessage(mountTargetSelect, 'No mount targets found');
+        }
+
+        ensurePreviousSelectValue(mountTargetSelect, selectedMountTargetId, 'Previous mount target');
+        mountTargetSelect.value = selectedMountTargetId || '';
+    } catch (error) {
+        console.error('Could not load FSS mount targets:', error);
+        setSelectMessage(mountTargetSelect, 'Error loading mount targets');
+        ensurePreviousSelectValue(mountTargetSelect, selectedMountTargetId, 'Previous mount target');
+    } finally {
+        mountTargetSelect.disabled = false;
+    }
+}
+
+async function loadFileStorageExports(selectedExportId = '') {
+    const mountTargetSelect = document.getElementById('editFileStorageMountTargetId');
+    const exportSelect = document.getElementById('editFileStorageExportId');
+    if (!mountTargetSelect || !exportSelect) return;
+
+    const mountTargetId = mountTargetSelect.value;
+    if (!mountTargetId) {
+        setSelectMessage(exportSelect, 'Select a mount target first...');
+        exportSelect.disabled = true;
+        updateFileStorageExportRequirementMessage();
+        return;
+    }
+
+    const selectedMountTargetOption = mountTargetSelect.options[mountTargetSelect.selectedIndex];
+    const exportSetId = selectedMountTargetOption?.dataset?.exportSetId || '';
+    const config = getSavedOCIConfigSelection();
+
+    try {
+        exportSelect.disabled = true;
+        setSelectMessage(exportSelect, 'Loading exports...');
+
+        const response = await fetch(buildOCIUrl('/api/oci/filestorage/exports', {
+            compartmentId: config.compartmentId,
+            exportSetId,
+            mountTargetId
+        }, config));
+        const data = await response.json();
+
+        exportSelect.innerHTML = '<option value="">Select an export...</option>';
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+            data.data.forEach((fssExport) => {
+                const labelParts = [
+                    fssExport.path || 'Export',
+                    getShortOcid(fssExport.id)
+                ].filter(Boolean);
+                const exportOptions = Array.isArray(fssExport.exportOptions) ? fssExport.exportOptions : [];
+                const hasUnprivilegedSourcePort = exportOptions.some((option) => option.requirePrivilegedSourcePort === false);
+                const privilegedSourcePortStatus = hasUnprivilegedSourcePort
+                    ? 'invalid'
+                    : (exportOptions.length > 0 ? 'valid' : 'unknown');
+
+                addSelectOption(exportSelect, fssExport.id, labelParts.join(' - '), {
+                    fileSystemId: fssExport.fileSystemId,
+                    exportSetId: fssExport.exportSetId,
+                    exportOptionsCount: exportOptions.length.toString(),
+                    privilegedSourcePortStatus
+                });
+            });
+        } else if (!data.success) {
+            setSelectMessage(exportSelect, data.error || 'Error loading exports');
+        } else {
+            setSelectMessage(exportSelect, 'No exports found for mount target');
+        }
+
+        ensurePreviousSelectValue(exportSelect, selectedExportId, 'Previous export');
+        exportSelect.value = selectedExportId || '';
+        updateFileStorageExportRequirementMessage();
+    } catch (error) {
+        console.error('Could not load FSS exports:', error);
+        setSelectMessage(exportSelect, 'Error loading exports');
+        ensurePreviousSelectValue(exportSelect, selectedExportId, 'Previous export');
+        updateFileStorageExportRequirementMessage();
+    } finally {
+        exportSelect.disabled = false;
+    }
+}
+
+async function handleFileStorageMountTargetChange(selectedExportId = '') {
+    const mountTargetSelect = document.getElementById('editFileStorageMountTargetId');
+    const subnetSelect = document.getElementById('editFileStorageSubnetId');
+    const selectedMountTargetOption = mountTargetSelect?.options[mountTargetSelect.selectedIndex];
+
+    if (subnetSelect && selectedMountTargetOption?.dataset?.subnetId && !subnetSelect.value) {
+        const matchingSubnetOption = Array.from(subnetSelect.options).find((option) => option.value === selectedMountTargetOption.dataset.subnetId);
+        if (matchingSubnetOption) {
+            subnetSelect.value = selectedMountTargetOption.dataset.subnetId;
+        }
+    }
+
+    await loadFileStorageExports(selectedExportId);
+}
+
+async function loadFileStorageSelectors(fileStorage = {}) {
+    await Promise.all([
+        loadFileStorageSubnets(fileStorage.subnetId || ''),
+        loadFileStorageMountTargets(fileStorage.mountTargetId || '')
+    ]);
+    await handleFileStorageMountTargetChange(fileStorage.exportId || '');
+}
+
+async function addFileStorageToTable() {
+    document.getElementById('editFileStorageForm').reset();
+    document.getElementById('editFileStorageIndex').value = '';
+    document.getElementById('editFileStorageMountOptions').value = DEFAULT_FSS_MOUNT_OPTIONS;
+    document.getElementById('editFileStorageEncrypted').checked = true;
+    document.getElementById('editFileStorageReadOnly').checked = false;
+    const fileStorageModalTitle = document.querySelector('#editFileStorageModal .modal-title');
+    if (fileStorageModalTitle) fileStorageModalTitle.textContent = 'Add File System';
+
+    const modal = new bootstrap.Modal(document.getElementById('editFileStorageModal'));
+    modal.show();
+    await loadFileStorageSelectors();
+}
+
+async function editFileStorage(index) {
+    const fileStorage = fileStoragesData[index];
+    if (!fileStorage) return;
+
+    document.getElementById('editFileStorageIndex').value = index;
+    document.getElementById('editFileStorageName').value = fileStorage.name || '';
+    document.getElementById('editFileStorageMountPath').value = fileStorage.mountPath || '';
+    setSelectMessage(document.getElementById('editFileStorageMountTargetId'), 'Loading mount targets...');
+    setSelectMessage(document.getElementById('editFileStorageExportId'), 'Select a mount target first...');
+    setSelectMessage(document.getElementById('editFileStorageSubnetId'), 'Loading subnets...');
+    document.getElementById('editFileStorageSubPath').value = fileStorage.subPath || '';
+    document.getElementById('editFileStorageMountOptions').value = formatMountOptions(fileStorage.mountOptions);
+    document.getElementById('editFileStorageReadOnly').checked = fileStorage.isReadOnly === true;
+    document.getElementById('editFileStorageEncrypted').checked = fileStorage.isEncryptedInTransit !== false;
+
+    const fileStorageModalTitle = document.querySelector('#editFileStorageModal .modal-title');
+    if (fileStorageModalTitle) fileStorageModalTitle.textContent = 'Edit File System';
+
+    const modal = new bootstrap.Modal(document.getElementById('editFileStorageModal'));
+    modal.show();
+    await loadFileStorageSelectors(fileStorage);
+}
+
+function deleteFileStorage(index) {
+    if (confirm('Are you sure you want to delete this file system?')) {
+        fileStoragesData.splice(index, 1);
+
+        const config = getConfiguration();
+        savePortsAndVolumesForCIName(config.projectName);
+
+        updateFileStoragesTable();
+    }
+}
+
+function saveEditedFileStorage() {
+    const form = document.getElementById('editFileStorageForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const index = document.getElementById('editFileStorageIndex').value;
+    const exportSelect = document.getElementById('editFileStorageExportId');
+    const selectedExportOption = exportSelect?.options[exportSelect.selectedIndex];
+    if (selectedExportOption?.dataset?.privilegedSourcePortStatus === 'invalid') {
+        showNotification('Invalid FSS export options: every NFS client export option must use Ports: Privileged.', 'error');
+        exportSelect.focus();
+        return;
+    }
+
+    const fileStorage = {
+        mountPath: document.getElementById('editFileStorageMountPath').value.trim(),
+        mountTargetId: document.getElementById('editFileStorageMountTargetId').value.trim(),
+        exportId: exportSelect.value.trim(),
+        isReadOnly: document.getElementById('editFileStorageReadOnly').checked,
+        isEncryptedInTransit: document.getElementById('editFileStorageEncrypted').checked
+    };
+
+    const name = document.getElementById('editFileStorageName').value.trim();
+    if (name) {
+        fileStorage.name = name;
+    }
+
+    const subnetId = document.getElementById('editFileStorageSubnetId').value.trim();
+    if (subnetId) {
+        fileStorage.subnetId = subnetId;
+    }
+
+    const subPath = document.getElementById('editFileStorageSubPath').value.trim();
+    if (subPath) {
+        fileStorage.subPath = subPath;
+    }
+
+    const mountOptionsInput = document.getElementById('editFileStorageMountOptions');
+    const mountOptions = normalizeMountOptions(mountOptionsInput.value);
+    const mountOptionsError = validateFssMountOptions(mountOptions);
+    if (mountOptionsError) {
+        showNotification(`Invalid FSS mount options: ${mountOptionsError}`, 'error');
+        mountOptionsInput.focus();
+        return;
+    }
+
+    if (mountOptions.length > 0) {
+        fileStorage.mountOptions = mountOptions;
+    }
+
+    if (editingDetailsContext && editingDetailsContext.type === 'details' && editingDetailsContext.itemType === 'fileSystem') {
+        const instanceId = editingDetailsContext.instanceId;
+        const fileStorages = window[`detailsFileStorages_${instanceId}`] || [];
+
+        if (index === '' || index === null) {
+            fileStorages.push(fileStorage);
+        } else {
+            fileStorages[parseInt(index, 10)] = fileStorage;
+        }
+
+        window[`detailsFileStorages_${instanceId}`] = fileStorages;
+        persistDetailsFileStorages(instanceId, fileStorages);
+        refreshDetailsFileSystemsTable(instanceId);
+
+        editingDetailsContext = null;
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editFileStorageModal'));
+        modal.hide();
+        return;
+    }
+
+    if (index === '' || index === null) {
+        fileStoragesData.push(fileStorage);
+    } else {
+        fileStoragesData[parseInt(index, 10)] = fileStorage;
+    }
+
+    const config = getConfiguration();
+    savePortsAndVolumesForCIName(config.projectName);
+
+    updateFileStoragesTable();
+
+    const modal = bootstrap.Modal.getInstance(document.getElementById('editFileStorageModal'));
+    modal.hide();
+}
+
+function updateFileStoragesTable() {
+    const tbody = document.getElementById('fileStoragesTableBody');
+    if (tbody) {
+        if (fileStoragesData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No file systems added yet. Click "Add File System" to add one.</td></tr>';
+        } else {
+            const existingTooltips = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+            existingTooltips.forEach(el => {
+                const tooltipInstance = bootstrap.Tooltip.getInstance(el);
+                if (tooltipInstance) {
+                    tooltipInstance.dispose();
+                }
+            });
+
+            tbody.innerHTML = fileStoragesData.map((fileStorage, index) => {
+                const displayName = getFileStorageName(fileStorage, index);
+                const mountPath = fileStorage.mountPath || 'N/A';
+                const tooltip = [
+                    `Mount path: ${mountPath}`,
+                    `Mount target: ${fileStorage.mountTargetId || 'N/A'}`,
+                    `Export: ${fileStorage.exportId || 'N/A'}`
+                ].join(' | ');
+
+                return `
+                    <tr>
+                        <td style="border-bottom: 1px solid #dee2e6;">
+                            <span
+                                data-bs-toggle="tooltip"
+                                data-bs-placement="top"
+                                data-bs-title="${escapeHtmlAttribute(tooltip)}"
+                                style="cursor: default;"
+                            >${escapeHtml(displayName)} <code>${escapeHtml(mountPath)}</code></span>
+                        </td>
+                        <td style="border-bottom: 1px solid #dee2e6;">
+                            <button type="button" class="btn btn-success btn-sm me-1" onclick="editFileStorage(${index})"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteFileStorage(${index})"><i class="bi bi-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            const tooltipTriggerList = tbody.querySelectorAll('[data-bs-toggle="tooltip"]');
+            [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        }
+    }
+
+    const createTbody = document.getElementById('createFileStoragesTableBody');
+    if (createTbody) {
+        if (fileStoragesData.length === 0) {
+            createTbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No file systems added yet. Click "Add File System" to add one.</td></tr>';
+        } else {
+            createTbody.innerHTML = fileStoragesData.map((fileStorage, index) => {
+                return `
+                    <tr>
+                        <td style="border-bottom: 1px solid #dee2e6;">${escapeHtml(getFileStorageName(fileStorage, index))}</td>
+                        <td style="border-bottom: 1px solid #dee2e6;"><code>${escapeHtml(fileStorage.mountPath || 'N/A')}</code></td>
+                        <td style="border-bottom: 1px solid #dee2e6;"><code>${escapeHtml(fileStorage.exportId || 'N/A')}</code></td>
+                        <td style="border-bottom: 1px solid #dee2e6;">
+                            <button type="button" class="btn btn-success btn-sm me-1" onclick="editFileStorage(${index})"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteFileStorage(${index})"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
                 `;
@@ -6591,6 +7606,7 @@ function saveEditedPort() {
         if (config.projectName) {
             const existingData = loadPortsAndVolumesForCINameForDetails(config.projectName);
             volumesData = existingData.volumes || [];
+            fileStoragesData = existingData.fileStorages || [];
             // Ensure ports have proper structure for localStorage
             portsData = ports.map(p => {
                 const portObj = {
@@ -6609,6 +7625,7 @@ function saveEditedPort() {
             // Update index page tables
             updatePortsTable();
             updateVolumesTable();
+            updateFileStoragesTable();
         }
         
         // If container edit modal is open, store the port number to select BEFORE updating dropdown
@@ -6849,6 +7866,24 @@ function showCISummaryModal() {
         showNotification('Please add at least one container before creating the container instance.', 'error');
         return;
     }
+
+    const invalidFileStorageIndex = fileStoragesData.findIndex(fileStorage =>
+        !fileStorage.mountPath ||
+        !fileStorage.mountTargetId ||
+        !fileStorage.exportId
+    );
+    if (invalidFileStorageIndex !== -1) {
+        showNotification(`File System ${invalidFileStorageIndex + 1} is missing mount path, mount target OCID or export OCID.`, 'error');
+        return;
+    }
+
+    for (const [index, fileStorage] of fileStoragesData.entries()) {
+        const mountOptionsError = validateFssMountOptions(fileStorage.mountOptions);
+        if (mountOptionsError) {
+            showNotification(`File System ${index + 1} has invalid mount options: ${mountOptionsError}`, 'error');
+            return;
+        }
+    }
     
     const config = getConfiguration();
     const ciName = document.getElementById('ciName').value.trim();
@@ -6972,6 +8007,37 @@ function showCISummaryModal() {
         html += '<div class="col-12">';
         html += '<h5 class="border-bottom pb-2 mb-3">Volumes</h5>';
         html += '<p class="text-muted">No volumes configured</p>';
+        html += '</div>';
+        html += '</div>';
+    }
+
+    // File Systems
+    if (fileStoragesData.length > 0) {
+        html += '<div class="row mb-4">';
+        html += '<div class="col-12">';
+        html += '<h5 class="border-bottom pb-2 mb-3">File Systems</h5>';
+        html += '<div class="table-responsive"><table class="table table-sm">';
+        html += '<thead class="table-light"><tr><th>Name</th><th>Mount Path</th><th>Mount Target</th><th>Export</th><th>Read Only</th></tr></thead>';
+        html += '<tbody>';
+
+        fileStoragesData.forEach((fileStorage, index) => {
+            html += `<tr>`;
+            html += `<td>${escapeHtml(getFileStorageName(fileStorage, index))}</td>`;
+            html += `<td><code>${escapeHtml(fileStorage.mountPath || 'N/A')}</code></td>`;
+            html += `<td><code>${escapeHtml(fileStorage.mountTargetId || 'N/A')}</code></td>`;
+            html += `<td><code>${escapeHtml(fileStorage.exportId || 'N/A')}</code></td>`;
+            html += `<td>${fileStorage.isReadOnly ? 'Yes' : 'No'}</td>`;
+            html += `</tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        html += '</div>';
+        html += '</div>';
+    } else {
+        html += '<div class="row mb-4">';
+        html += '<div class="col-12">';
+        html += '<h5 class="border-bottom pb-2 mb-3">File Systems</h5>';
+        html += '<p class="text-muted">No file systems configured</p>';
         html += '</div>';
         html += '</div>';
     }
@@ -7106,6 +8172,7 @@ async function confirmCreateContainerInstance() {
     // Set shape based on architecture
     const ciShape = ciArchitecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
     
+    const primarySubnetId = document.getElementById('ciSubnetId').value;
     const payload = {
         displayName: document.getElementById('ciName').value.trim(),
         compartmentId: config.compartmentId,
@@ -7115,11 +8182,15 @@ async function confirmCreateContainerInstance() {
             ocpus: parseFloat(document.getElementById('ciShapeOcpus').value)
         },
         architecture: ciArchitecture,
-        subnetId: document.getElementById('ciSubnetId').value,
+        subnetId: primarySubnetId,
         containers: cleanedContainers,
         containerRestartPolicy: 'NEVER',
         logGroupId: config.logGroupId || null
     };
+
+    if (fileStoragesData.length > 0) {
+        payload.vnics = buildVnicsWithFileStorageSubnets(primarySubnetId, fileStoragesData);
+    }
     
     // Add freeformTags to CI instance (must match container tags per OCI requirement)
     // baseFreeformTags already includes arch, volumes, and ports
@@ -7127,27 +8198,14 @@ async function confirmCreateContainerInstance() {
         payload.freeformTags = baseFreeformTags;
     }
     
-    // Add volumes if any
-    if (volumesData.length > 0) {
-        payload.volumes = volumesData.map((v, idx) => {
-            // Ensure every volume has a name
-            const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
-            return {
-                name: volumeName,
-                volumeType: 'EMPTYDIR',
-                backingStore: 'EPHEMERAL_STORAGE'
-            };
-        });
-        
-        // Map volumes to all containers - attach all volumes to each container
+    const storageVolumes = buildAllStorageVolumes();
+    const storageVolumeMounts = buildAllStorageVolumeMounts();
+    if (storageVolumes.length > 0) {
+        payload.volumes = storageVolumes;
+
+        // Map volumes and file systems to all containers.
         cleanedContainers.forEach(container => {
-            container.volumeMounts = volumesData.map((v, idx) => {
-                const volumeName = (v.name && v.name.trim()) || `volume-${idx}`;
-                return {
-                    mountPath: v.path,
-                    volumeName: volumeName
-                };
-            });
+            container.volumeMounts = storageVolumeMounts;
         });
     }
     
@@ -7754,6 +8812,7 @@ async function importToCreateCI() {
         // Update UI tables
         updateVolumesTable();
         updatePortsTable();
+        updateFileStoragesTable();
         
         // Close import modal first
         const importModal = bootstrap.Modal.getInstance(document.getElementById('importDockerComposeModal'));
@@ -7766,6 +8825,7 @@ async function importToCreateCI() {
         loadPortsAndVolumesForCIName(config.projectName);
         updateVolumesTable();
         updatePortsTable();
+        updateFileStoragesTable();
         
         // Populate containers data AFTER modal is opened (to avoid being cleared)
         console.log('Importing containers from parsed data:', parsedComposeData.containers);

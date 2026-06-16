@@ -83,7 +83,7 @@
                         </div>
                     </div>
 
-                    <!-- Right Column: Ports and Volumes -->
+                    <!-- Right Column: Ports, Volumes and File Systems -->
                     <div class="col-md-4">
                         <!-- Ports Card -->
                         <div class="card shadow mb-4">
@@ -115,7 +115,7 @@
                         </div>
 
                         <!-- Volumes Card -->
-                        <div class="card shadow">
+                        <div class="card shadow mb-4">
                             <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                                 <h3 class="mb-0"><i class="bi bi-hdd"></i> Volumes</h3>
                                 <button class="btn btn-dark btn-sm" onclick="addVolumeToTable()">
@@ -140,6 +140,35 @@
                             </div>
                             <div class="card-footer bg-light">
                                 <small class="text-muted">Volumes are accessible to all containers in the deployment via their mounted paths.</small>
+                            </div>
+                        </div>
+
+                        <!-- File Systems Card -->
+                        <div class="card shadow">
+                            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                                <h3 class="mb-0"><i class="bi bi-folder2-open"></i> File Systems</h3>
+                                <button class="btn btn-dark btn-sm" onclick="addFileStorageToTable()">
+                                    + Add File System
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm" id="fileStoragesTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th colspan="2">File System</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="fileStoragesTableBody">
+                                            <tr>
+                                                <td colspan="2" class="text-center text-muted">No file systems added yet. Click "Add File System" to add one.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-light">
+                                <small class="text-muted">File system entries mount OCI File Storage exports into all containers at the configured mount path.</small>
                             </div>
                         </div>
                     </div>
@@ -307,6 +336,33 @@
                                                     </table>
                                                 </div>
                                             </div>
+
+                                            <!-- File Systems -->
+                                            <div class="mb-4">
+                                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                                    <h5 class="mb-0">File Systems</h5>
+                                                    <button type="button" class="btn btn-success btn-sm" onclick="addFileStorageToTable()">
+                                                        + Add File System
+                                                    </button>
+                                                </div>
+                                                <p class="text-muted small mb-2">OCI File Storage file systems are mounted into all containers via their configured exports and mount paths.</p>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm" id="createFileStoragesTable">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Name</th>
+                                                                <th>Mount Path</th>
+                                                                <th colspan="2">Export</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="createFileStoragesTableBody">
+                                                            <tr>
+                                                                <td colspan="4" class="text-center text-muted">No file systems added yet. Click "Add File System" to add one.</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
                                         </form>
                                     </div>
                                     <div class="modal-footer">
@@ -364,6 +420,97 @@
                                     <div class="modal-footer">
                                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                         <button type="button" class="btn btn-success" onclick="saveEditedVolume()">Save Volume</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- File System Edit Modal -->
+                        <div class="modal fade" id="editFileStorageModal" tabindex="-1">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-success text-white">
+                                        <h5 class="modal-title">Edit File System</h5>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <form id="editFileStorageForm">
+                                            <input type="hidden" id="editFileStorageIndex">
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label for="editFileStorageName" class="form-label">Name</label>
+                                                    <input type="text" class="form-control" id="editFileStorageName" placeholder="shared-fss">
+                                                    <small class="form-text text-muted">Optional OCI volume name</small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="editFileStorageMountPath" class="form-label">Mount Path <span class="text-danger">*</span></label>
+                                                    <input type="text" class="form-control" id="editFileStorageMountPath" required placeholder="/mnt/fss">
+                                                    <small class="form-text text-muted">Path inside the containers</small>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label for="editFileStorageMountTargetId" class="form-label">Mount Target OCID <span class="text-danger">*</span></label>
+                                                    <select class="form-select" id="editFileStorageMountTargetId" required onchange="handleFileStorageMountTargetChange()">
+                                                        <option value="">Loading mount targets...</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label for="editFileStorageExportId" class="form-label">Export OCID <span class="text-danger">*</span></label>
+                                                    <select class="form-select" id="editFileStorageExportId" required onchange="updateFileStorageExportRequirementMessage()">
+                                                        <option value="">Select a mount target first...</option>
+                                                    </select>
+                                                    <div id="editFileStorageExportRequirement" class="fss-requirement-hint mt-2">
+                                                        <i class="bi bi-exclamation-triangle"></i>
+                                                        <span>CI FSS requires every NFS client export option to use Ports: Privileged.</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="editFileStorageSubnetId" class="form-label">Subnet OCID</label>
+                                                    <select class="form-select" id="editFileStorageSubnetId">
+                                                        <option value="">Loading subnets...</option>
+                                                    </select>
+                                                    <small class="form-text text-muted">Required by OCI when multiple subnet paths exist</small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="editFileStorageSubPath" class="form-label">Sub Path</label>
+                                                    <input type="text" class="form-control" id="editFileStorageSubPath" placeholder="Optional">
+                                                    <small class="form-text text-muted">Optional directory inside the export</small>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label for="editFileStorageMountOptions" class="form-label">
+                                                        Mount Options
+                                                        <button type="button"
+                                                                class="fss-info-button"
+                                                                aria-label="Mount options info"
+                                                                data-bs-toggle="popover"
+                                                                data-bs-trigger="focus"
+                                                                data-bs-placement="top"
+                                                                data-bs-html="true"
+                                                                data-bs-title="Supported FSS mount options"
+                                                                data-bs-content="<strong>No value:</strong> sync, async, ro, rw, soft, hard, ac, noac<br><strong>With value:</strong> retrans=&lt;digits&gt;, for example retrans=11<br>Use comma-separated values. Unsupported options or invalid values are rejected.">
+                                                            <i class="bi bi-info-circle"></i>
+                                                        </button>
+                                                    </label>
+                                                    <input type="text" class="form-control" id="editFileStorageMountOptions" placeholder="hard,noac,retrans=11">
+                                                    <small class="form-text text-muted">Comma-separated NFSv3 options</small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="editFileStorageReadOnly">
+                                                        <label class="form-check-label" for="editFileStorageReadOnly">Read only</label>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="editFileStorageEncrypted" checked>
+                                                        <label class="form-check-label" for="editFileStorageEncrypted">Encrypted in transit</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="button" class="btn btn-success" onclick="saveEditedFileStorage()">Save File System</button>
                                     </div>
                                 </div>
                             </div>
