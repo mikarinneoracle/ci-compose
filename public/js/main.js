@@ -526,12 +526,12 @@ async function saveConfiguration() {
     
     // Validate required fields
     if (!config.compartmentId) {
-        alert('Compartment is required');
+        showNotification('Compartment is required', 'error');
         return;
     }
     
     if (!config.subnetId) {
-        alert('Subnet is required');
+        showNotification('Subnet is required', 'error');
         return;
     }
     
@@ -716,6 +716,18 @@ function loadPortsAndVolumesForCINameForDetails(ciName) {
 
 function getFileStorageName(fileStorage, index) {
     return (fileStorage.name && fileStorage.name.trim()) || `fss-${index}`;
+}
+
+function buildFileStoragesTag(sourceFileStorages = fileStoragesData) {
+    return (sourceFileStorages || [])
+        .map((fileStorage, idx) => getFileStorageName(fileStorage, idx))
+        .join(',');
+}
+
+function hasFileStoragesTag(freeformTags = {}) {
+    return Boolean(
+        typeof freeformTags.fileSystems === 'string' && freeformTags.fileSystems.trim()
+    );
 }
 
 const FSS_MOUNT_OPTIONS_WITHOUT_VALUE = new Set(['sync', 'async', 'ro', 'rw', 'soft', 'hard', 'ac', 'noac']);
@@ -904,6 +916,81 @@ function buildVnicsWithFileStorageSubnets(primarySubnetId, sourceFileStorages = 
     });
 
     return vnics;
+}
+
+function isOciFssVolume(volume) {
+    if (!volume || typeof volume !== 'object') {
+        return false;
+    }
+
+    const volumeType = String(volume.volumeType || volume.volume_type || '').toUpperCase();
+    return volumeType === 'OCI_FSS_FILE_SYSTEM' || Boolean(volume.mountTarget || volume.mount_target || volume.export);
+}
+
+function getVolumeObjectId(object) {
+    if (!object || typeof object !== 'object') {
+        return '';
+    }
+
+    return object.id || object.ocid || '';
+}
+
+function findVolumeMountInContainerInstance(instance, volumeName) {
+    const containers = Array.isArray(instance?.containers) ? instance.containers : [];
+
+    for (const container of containers) {
+        const volumeMounts = Array.isArray(container.volumeMounts)
+            ? container.volumeMounts
+            : (Array.isArray(container.volume_mounts) ? container.volume_mounts : []);
+
+        const matchingMount = volumeMounts.find((mount) =>
+            (mount.volumeName || mount.volume_name) === volumeName
+        );
+
+        if (matchingMount) {
+            return matchingMount;
+        }
+    }
+
+    return null;
+}
+
+function extractFileStoragesFromContainerInstance(instance) {
+    const fssVolumes = (Array.isArray(instance?.volumes) ? instance.volumes : []).filter(isOciFssVolume);
+
+    return fssVolumes.map((volume, index) => {
+        const name = (volume.name && String(volume.name).trim()) || `fss-${index}`;
+        const mount = findVolumeMountInContainerInstance(instance, name);
+        const mountOptions = volume.mountCommand?.mountOptions || volume.mount_command?.mount_options || [];
+        const security = volume.security || {};
+
+        return {
+            name,
+            mountPath: mount?.mountPath || mount?.mount_path || '',
+            mountTargetId: getVolumeObjectId(volume.mountTarget || volume.mount_target),
+            exportId: getVolumeObjectId(volume.export),
+            subnetId: volume.subnetId || volume.subnet_id || '',
+            subPath: mount?.subPath || mount?.sub_path || '',
+            mountOptions: formatMountOptions(mountOptions),
+            isReadOnly: typeof mount?.isReadOnly === 'boolean'
+                ? mount.isReadOnly
+                : (typeof mount?.is_read_only === 'boolean' ? mount.is_read_only : false),
+            isEncryptedInTransit: security.isEncryptedInTransit !== false && security.is_encrypted_in_transit !== false
+        };
+    });
+}
+
+function hasIncompleteFileStorageDefinitions(fileStorages = []) {
+    return fileStorages.some((fileStorage) =>
+        !fileStorage.mountPath ||
+        !fileStorage.mountTargetId ||
+        !fileStorage.exportId
+    );
+}
+
+function showMissingFileStorageDefinitionsWarning() {
+    const message = 'This Container Instance has File Systems (FSS), but CI Compose does not have enough FSS metadata to safely recreate it. Add the missing File System definitions before saving changes.';
+    showNotification(message, 'error', 10000);
 }
 
 async function showConfigModal() {
@@ -2176,7 +2263,10 @@ function displayContainerInstanceDetails(instance) {
         shapeConfig: instance.shapeConfig,
         containerRestartPolicy: instance.containerRestartPolicy || 'NEVER',
         lifecycleState: instance.lifecycleState,
-        freeformTags: instance.freeformTags || {}
+        freeformTags: instance.freeformTags || {},
+        containers: instance.containers || [],
+        volumes: instance.volumes || [],
+        vnics: instance.vnics || []
     };
     
     let html = '<div class="row">';
@@ -3708,9 +3798,23 @@ async function saveCIChanges(instanceId) {
         const savedPortsVolumes = loadPortsAndVolumesForCINameForDetails(config.projectName || currentEditingInstance.displayName);
         const detailsFileStorages = window[`detailsFileStorages_${instanceId}`];
         const fileStorages = Array.isArray(detailsFileStorages) ? detailsFileStorages : (savedPortsVolumes.fileStorages || []);
+        const instanceFileStorages = extractFileStoragesFromContainerInstance(currentEditingInstance);
+        const instanceHasFss = instanceFileStorages.length > 0 ||
+            (Array.isArray(currentEditingInstance.volumes) && currentEditingInstance.volumes.some(isOciFssVolume)) ||
+            hasFileStoragesTag(currentEditingInstance.freeformTags);
         
         if (containers.length === 0) {
             showNotification('Error: At least one container is required', 'error');
+            return;
+        }
+
+        if (instanceHasFss && fileStorages.length === 0) {
+            showMissingFileStorageDefinitionsWarning();
+            return;
+        }
+
+        if (instanceHasFss && hasIncompleteFileStorageDefinitions(fileStorages)) {
+            showMissingFileStorageDefinitionsWarning();
             return;
         }
 
@@ -3799,6 +3903,10 @@ async function saveCIChanges(instanceId) {
                 return `${volumeName}:${v.path}`;
             }).join(',');
             baseFreeformTags.volumes = volumesTag;
+        }
+
+        if (fileStorages.length > 0) {
+            baseFreeformTags.fileSystems = buildFileStoragesTag(fileStorages);
         }
         
         // Add port mappings - resolve from portIndex if port is not set
@@ -4442,6 +4550,12 @@ async function restartContainerInstance(instanceId) {
                     // Remove volumes tag if no volumes
                     delete baseFreeformTags.volumes;
                 }
+
+                if (restoreConfig.fileStorages && restoreConfig.fileStorages.length > 0) {
+                    baseFreeformTags.fileSystems = buildFileStoragesTag(restoreConfig.fileStorages);
+                } else {
+                    delete baseFreeformTags.fileSystems;
+                }
                 
                 // Clean containers data
                 const cleanedContainers = restoreConfig.containers.map(container => {
@@ -4692,8 +4806,7 @@ async function saveToResourceManager(instanceId) {
             currentEditingInstance.volumes.some((volume) => volume.volumeType === 'OCI_FSS_FILE_SYSTEM');
 
         if (configuredFileStorages.length > 0 || instanceHasFssVolumes) {
-            alert('OCI Resource Manager export does not support File Systems (FSS) yet. Remove File Systems from this deployment before exporting to Resource Manager, or create the Container Instance directly from CI Compose.');
-            showNotification('Resource Manager export does not support File Systems (FSS) yet.', 'warning', 8000);
+            showNotification('OCI Resource Manager export does not support File Systems (FSS) yet. Remove File Systems from this deployment before exporting to Resource Manager, or create the Container Instance directly from CI Compose.', 'warning', 10000);
             return;
         }
 
@@ -8218,6 +8331,10 @@ async function confirmCreateContainerInstance() {
             return `${volumeName}:${v.path}`;
         }).join(',');
         baseFreeformTags.volumes = volumesTag;
+    }
+
+    if (fileStoragesData.length > 0) {
+        baseFreeformTags.fileSystems = buildFileStoragesTag(fileStoragesData);
     }
     
     // Collect ports per container and add to tags as containerName=port pairs
