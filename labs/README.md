@@ -16,16 +16,19 @@ The Labs page provides access to experimental container instance configurations 
 
 ## Lab Configurations
 
-### NGINX with Object Storage and Logs
+### NGINX with Object Storage or File Storage and Logs
 
-A high-performance web server configuration with Object Storage integration and centralized logging capabilities.
+**New!** Now optionally with OCI File Storage.
+
+A high-performance web server configuration with Object Storage or File Storage integration and centralized logging capabilities.
 
 **Components:**
 - **NGINX** - Web server and reverse proxy
 - **Object Storage Sidecar** - Site content retrieval
+- **File Storage** - Optional OCI File Storage Service export mounted directly into the container instance
 - **Logs Sidecar** - Centralized log collection and monitoring
 
-**Technologies:** Web Server, Object Storage, Logging
+**Technologies:** Web Server, Object Storage, File Storage, Logging
 
 ---
 

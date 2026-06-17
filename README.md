@@ -54,6 +54,7 @@ Version 0.1.2 adds native OCI File Storage Service (FSS) support to Container In
 - **FSS selectors and validation**: The File System modal loads mount targets, exports, and subnets from the configured OCI compartment and region, and validates FSS export options required by Container Instances.
 - **Export path display**: FSS summaries and details show the export path (for example `/var`) instead of exposing long OCIDs as the primary display value.
 - **Container Instance list filtering**: The main Container Instances card now filters by configured CI name using display names only, so tags or mount paths containing the same text do not cause unrelated instances to appear.
+- **NGINX lab with FSS option**: The NGINX lab now shows both Object Storage and OCI File Storage paths, so web content can optionally come from an FSS export instead of the Object Storage sidecar.
 
 Version 0.1.1 introduced a modern dark theme with a teal/cyan color palette, replacing the previous light theme. This update provides:
 
@@ -316,3 +317,5 @@ oci container-instances container-instance restart \
 ## Labs
 
 For experimental features and labs, see [Labs](labs/README.md).
+
+The NGINX lab has been updated for 0.1.2 with an optional OCI File Storage path alongside the original Object Storage flow, including FSS setup steps and screenshots.
