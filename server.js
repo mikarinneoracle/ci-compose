@@ -1109,6 +1109,8 @@ app.post('/api/oci/container-instances/validate', async (req, res) => {
 
 // Container Instances - Create Container Instance
 app.post('/api/oci/container-instances', async (req, res) => {
+  let createSummary;
+
   try {
     const requestConfig = getOCIRequestConfig(req);
     const clients = createOCIClients(requestConfig);
@@ -1159,10 +1161,6 @@ app.post('/api/oci/container-instances', async (req, res) => {
           details: validationResult.errors,
           warnings: validationResult.warnings
         });
-      }
-      // Log warnings if any
-      if (validationResult.warnings.length > 0) {
-        console.warn('Sidecar validation warnings:', validationResult.warnings);
       }
     } catch (validationError) {
       return res.status(500).json({
@@ -1430,19 +1428,11 @@ app.post('/api/oci/container-instances', async (req, res) => {
       createContainerInstanceDetails: containerInstanceDetails
     };
 
-    const createSummary = summarizeCreateContainerInstanceDetails(containerInstanceDetails);
-    console.log('Creating container instance:', JSON.stringify(createSummary, null, 2));
+    createSummary = summarizeCreateContainerInstanceDetails(containerInstanceDetails);
 
     const response = hasOciFssVolumes(containerInstanceDetails.volumes)
       ? await createContainerInstanceRaw(requestConfig, containerInstancesClient, containerInstanceDetails)
       : await containerInstancesClient.createContainerInstance(createContainerInstanceRequest);
-
-    console.log('Container instance create submitted:', JSON.stringify({
-      displayName,
-      id: shortOcid(response.containerInstance?.id),
-      opcWorkRequestId: shortOcid(response.opcWorkRequestId),
-      opcRequestId: shortOcid(response.opcRequestId)
-    }));
     
     res.json({
       success: true,
@@ -1450,6 +1440,9 @@ app.post('/api/oci/container-instances', async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating container instance:', error);
+    if (createSummary) {
+      console.error('Failed container instance create payload summary:', JSON.stringify(createSummary, null, 2));
+    }
     if (error.ociResponseBody) {
       console.error('OCI createContainerInstance response body:', JSON.stringify(error.ociResponseBody, null, 2));
     }

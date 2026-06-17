@@ -8106,7 +8106,7 @@ function showCISummaryModal() {
         html += '<div class="col-12">';
         html += '<h5 class="border-bottom pb-2 mb-3">File Systems</h5>';
         html += '<div class="table-responsive"><table class="table table-sm">';
-        html += '<thead class="table-light"><tr><th>Name</th><th>Mount Path</th><th>Mount Target</th><th>Export</th><th>Read Only</th></tr></thead>';
+        html += '<thead class="table-light"><tr><th>Name</th><th>Mount Path</th><th>Export</th><th>Read Only</th></tr></thead>';
         html += '<tbody>';
 
         fileStoragesData.forEach((fileStorage, index) => {
@@ -8114,7 +8114,6 @@ function showCISummaryModal() {
             html += `<tr>`;
             html += `<td>${escapeHtml(getFileStorageName(fileStorage, index))}</td>`;
             html += `<td><code>${escapeHtml(fileStorage.mountPath || 'N/A')}</code></td>`;
-            html += `<td><code>${escapeHtml(fileStorage.mountTargetId || 'N/A')}</code></td>`;
             html += `<td><code title="${escapeHtmlAttribute(fileStorage.exportId || '')}">${escapeHtml(exportDisplay)}</code></td>`;
             html += `<td>${fileStorage.isReadOnly ? 'Yes' : 'No'}</td>`;
             html += `</tr>`;
