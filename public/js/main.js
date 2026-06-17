@@ -4682,9 +4682,22 @@ async function saveToResourceManager(instanceId) {
         const containers = window[`detailsContainers_${instanceId}`] || [];
         const volumes = window[`detailsVolumes_${instanceId}`] || [];
         const ports = window[`detailsPorts_${instanceId}`] || [];
-        
-        // Build Terraform configuration
         const config = getConfiguration();
+        const savedPortsVolumes = loadPortsAndVolumesForCINameForDetails(config.projectName || currentEditingInstance.displayName);
+        const detailsFileStorages = window[`detailsFileStorages_${instanceId}`];
+        const configuredFileStorages = Array.isArray(detailsFileStorages)
+            ? detailsFileStorages
+            : (savedPortsVolumes.fileStorages || []);
+        const instanceHasFssVolumes = Array.isArray(currentEditingInstance.volumes) &&
+            currentEditingInstance.volumes.some((volume) => volume.volumeType === 'OCI_FSS_FILE_SYSTEM');
+
+        if (configuredFileStorages.length > 0 || instanceHasFssVolumes) {
+            alert('OCI Resource Manager export does not support File Systems (FSS) yet. Remove File Systems from this deployment before exporting to Resource Manager, or create the Container Instance directly from CI Compose.');
+            showNotification('Resource Manager export does not support File Systems (FSS) yet.', 'warning', 8000);
+            return;
+        }
+
+        // Build Terraform configuration
         const architecture = currentEditingInstance.freeformTags?.architecture || 'x86';
         const shape = architecture === 'ARM64' ? 'CI.Standard.A1.Flex' : 'CI.Standard.E4.Flex';
         
