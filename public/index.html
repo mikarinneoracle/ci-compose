@@ -96,11 +96,6 @@
                             <div class="card-body">
                                 <div class="table-responsive">
                                     <table class="table table-sm" id="portsTable">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th colspan="2">Port</th>
-                                            </tr>
-                                        </thead>
                                         <tbody id="portsTableBody">
                                             <tr>
                                                 <td colspan="2" class="text-center text-muted">No ports added yet. Click "Add Port" to add one.</td>
@@ -125,17 +120,12 @@
                             <div class="card-body">
                                 <div class="table-responsive">
                                     <table class="table table-sm" id="volumesTable">
-                                        <thead class="table-light">
+                                        <tbody id="volumesTableBody">
                                             <tr>
-                                                <th colspan="2">Volume</th>
+                                                <td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
                                             </tr>
-                                        </thead>
-                                <tbody id="volumesTableBody">
-                                    <tr>
-                                        <td colspan="2" class="text-center text-muted">No volumes added yet. Click "Add Volume" to add one.</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                             <div class="card-footer bg-light">
@@ -154,11 +144,6 @@
                             <div class="card-body">
                                 <div class="table-responsive">
                                     <table class="table table-sm" id="fileStoragesTable">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th colspan="2">File System</th>
-                                            </tr>
-                                        </thead>
                                         <tbody id="fileStoragesTableBody">
                                             <tr>
                                                 <td colspan="2" class="text-center text-muted">No file systems added yet. Click "Add File System" to add one.</td>
@@ -448,13 +433,13 @@
                                                     <small class="form-text text-muted">Path inside the containers</small>
                                                 </div>
                                                 <div class="col-12">
-                                                    <label for="editFileStorageMountTargetId" class="form-label">Mount Target OCID <span class="text-danger">*</span></label>
+                                                    <label for="editFileStorageMountTargetId" class="form-label">Mount Target <span class="text-danger">*</span></label>
                                                     <select class="form-select" id="editFileStorageMountTargetId" required onchange="handleFileStorageMountTargetChange()">
                                                         <option value="">Loading mount targets...</option>
                                                     </select>
                                                 </div>
                                                 <div class="col-12">
-                                                    <label for="editFileStorageExportId" class="form-label">Export OCID <span class="text-danger">*</span></label>
+                                                    <label for="editFileStorageExportId" class="form-label">Export <span class="text-danger">*</span></label>
                                                     <select class="form-select" id="editFileStorageExportId" required onchange="updateFileStorageExportRequirementMessage()">
                                                         <option value="">Select a mount target first...</option>
                                                     </select>
@@ -464,7 +449,7 @@
                                                     </div>
                                                 </div>
                                                 <div class="col-md-6">
-                                                    <label for="editFileStorageSubnetId" class="form-label">Subnet OCID</label>
+                                                    <label for="editFileStorageSubnetId" class="form-label">Subnet</label>
                                                     <select class="form-select" id="editFileStorageSubnetId">
                                                         <option value="">Loading subnets...</option>
                                                     </select>

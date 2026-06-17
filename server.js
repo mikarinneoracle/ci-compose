@@ -815,14 +815,25 @@ app.get('/api/oci/container-instances', async (req, res) => {
       return res.status(400).json({ error: 'compartmentId is required' });
     }
 
-    const listContainerInstancesRequest = {
-      compartmentId: compartmentId
-    };
+    const items = [];
+    let page;
+    do {
+      const listContainerInstancesRequest = {
+        compartmentId: compartmentId,
+        limit: 100,
+        page,
+        sortBy: 'timeCreated',
+        sortOrder: 'DESC'
+      };
 
-    const response = await containerInstancesClient.listContainerInstances(listContainerInstancesRequest);
+      const response = await containerInstancesClient.listContainerInstances(listContainerInstancesRequest);
+      items.push(...(response.containerInstanceCollection?.items || []));
+      page = response.opcNextPage;
+    } while (page);
+
     res.json({
       success: true,
-      data: response.containerInstanceCollection.items
+      data: items
     });
   } catch (error) {
     console.error('Error listing container instances:', error);

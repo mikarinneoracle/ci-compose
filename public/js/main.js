@@ -1656,6 +1656,25 @@ function buildOCIUrl(path, additionalParams = {}, configOverride = null) {
     return queryString ? `${path}?${queryString}` : path;
 }
 
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function containerInstanceMatchesProjectName(instance, projectName) {
+    const configuredName = (projectName || '').trim();
+    if (!configuredName) return false;
+
+    const displayName = (instance.displayName || '').trim();
+    if (!displayName) return false;
+
+    const namePattern = new RegExp(`^${escapeRegExp(configuredName)}(?:$|\\s*\\d+$|[-_].+)`, 'i');
+    return namePattern.test(displayName);
+}
+
+function isDeletedContainerInstance(instance) {
+    return String(instance.lifecycleState || '').toUpperCase() === 'DELETED';
+}
+
 // Load and display container instances
 async function loadContainerInstances(showSpinner = false) {
     const contentDiv = document.getElementById('containerInstancesContent');
@@ -1682,17 +1701,9 @@ async function loadContainerInstances(showSpinner = false) {
         const data = await response.json();
         
         if (data.success && data.data && data.data.length > 0) {
-            // Filter container instances that match the CI name
-            const projectName = config.projectName.toLowerCase();
-            const matchingInstances = data.data.filter(instance => {
-                // Check if displayName contains the CI name
-                const displayName = (instance.displayName || '').toLowerCase();
-                // Also check freeformTags for CI name if available
-                const tags = instance.freeformTags || {};
-                const tagValues = Object.values(tags).join(' ').toLowerCase();
-                
-                return displayName.includes(projectName) || tagValues.includes(projectName);
-            });
+            const matchingInstances = data.data.filter(instance =>
+                containerInstanceMatchesProjectName(instance, config.projectName)
+            );
             
             if (matchingInstances.length > 0) {
                 // Store the count of unique display names (including deleted) for default CI name
@@ -1700,14 +1711,14 @@ async function loadContainerInstances(showSpinner = false) {
                 const uniqueNames = new Set(matchingInstances.map(instance => instance.displayName || ''));
                 containerInstancesCount = uniqueNames.size;
                 
-                // Sort by creation date (most recent first) and limit to last 10
+                // Sort by creation date (most recent first). Deleted filtering and display limit
+                // happen after sorting so deleted items cannot hide active instances.
                 const sortedInstances = matchingInstances
                     .sort((a, b) => {
                         const dateA = a.timeCreated ? new Date(a.timeCreated).getTime() : 0;
                         const dateB = b.timeCreated ? new Date(b.timeCreated).getTime() : 0;
                         return dateB - dateA; // Descending order (newest first)
-                    })
-                    .slice(0, 10); // Get last 10 (most recent)
+                    });
                 
                 // Skip fetching details on initial load to avoid rate limiting
                 // Details will be fetched when user clicks on an instance
@@ -1715,7 +1726,7 @@ async function loadContainerInstances(showSpinner = false) {
                 const instancesWithDetails = sortedInstances;
                 
                 // Check if any instance states have changed
-                let hasStateChange = false;
+                let hasStateChange = previousInstanceStates.size !== instancesWithDetails.length;
                 const currentStates = new Map();
                 
                 instancesWithDetails.forEach(instance => {
@@ -1756,15 +1767,16 @@ async function loadContainerInstances(showSpinner = false) {
 
 async function displayContainerInstancesWithDetails(instances) {
     const contentDiv = document.getElementById('containerInstancesContent');
+    const totalMatchingInstances = instances.length;
+    const hiddenDeletedCount = showDeletedCIs ? 0 : instances.filter(isDeletedContainerInstance).length;
     
     // Filter out DELETED instances if toggle is off
     let instancesToDisplay = instances;
     if (!showDeletedCIs) {
-        instancesToDisplay = instances.filter(instance => {
-            const state = instance.lifecycleState || 'UNKNOWN';
-            return state !== 'DELETED';
-        });
+        instancesToDisplay = instances.filter(instance => !isDeletedContainerInstance(instance));
     }
+
+    instancesToDisplay = instancesToDisplay.slice(0, 10);
     
     if (instancesToDisplay.length === 0) {
         if (instances.length > 0 && !showDeletedCIs) {
@@ -1843,9 +1855,9 @@ async function displayContainerInstancesWithDetails(instances) {
         }
     );
     
-    let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${instances.length} container instance(s)`;
-    if (!showDeletedCIs && instances.length > instancesWithDetails.length) {
-        html += ` (${instances.length - instancesWithDetails.length} deleted hidden)`;
+    let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${totalMatchingInstances} container instance(s)`;
+    if (hiddenDeletedCount > 0) {
+        html += ` (${hiddenDeletedCount} deleted hidden)`;
     }
     html += `</p>`;
     html += '<div class="table-responsive"><table class="table table-hover">';
@@ -2590,6 +2602,7 @@ function displayContainerInstanceDetails(instance) {
     html += '</div>';
     
     detailsDiv.innerHTML = html;
+    hydrateDetailsFileStorageExportPaths(containerInstanceId);
 }
 
 // CRUD functions for Containers in Details Modal
@@ -3475,18 +3488,23 @@ function refreshDetailsVolumesTable(instanceId) {
 function getFileStorageDetailsTooltip(fileStorage) {
     return [
         `Mount path: ${fileStorage.mountPath || 'N/A'}`,
-        `Export: ${fileStorage.exportId || 'N/A'}`,
+        fileStorage.exportPath ? `Export path: ${fileStorage.exportPath}` : null,
+        `Export OCID: ${fileStorage.exportId || 'N/A'}`,
         `Mount target: ${fileStorage.mountTargetId || 'N/A'}`,
         fileStorage.subnetId ? `Subnet: ${fileStorage.subnetId}` : null,
         fileStorage.subPath ? `Sub path: ${fileStorage.subPath}` : null
     ].filter(Boolean).join(' | ');
 }
 
+function getFileStorageExportDisplay(fileStorage) {
+    return (fileStorage.exportPath && fileStorage.exportPath.trim()) || getShortOcid(fileStorage.exportId) || 'N/A';
+}
+
 function renderDetailsFileSystemRow(fileStorage, idx, instanceId) {
     const displayName = getFileStorageName(fileStorage, idx);
     const mountPath = fileStorage.mountPath || 'N/A';
     const exportId = fileStorage.exportId || '';
-    const exportDisplay = getShortOcid(exportId) || 'N/A';
+    const exportDisplay = getFileStorageExportDisplay(fileStorage);
     const tooltip = getFileStorageDetailsTooltip(fileStorage);
     const actionsDisplay = isInEditMode ? 'table-cell' : 'none';
 
@@ -4991,20 +5009,16 @@ async function showCreateContainerInstanceModal() {
             const data = await response.json();
             
             if (data.success && data.data && data.data.length > 0) {
-                const projectName = config.projectName.toLowerCase();
-                const matchingInstances = data.data.filter(instance => {
-                    const displayName = (instance.displayName || '').toLowerCase();
-                    const tags = instance.freeformTags || {};
-                    const tagValues = Object.values(tags).join(' ').toLowerCase();
-                    return displayName.includes(projectName) || tagValues.includes(projectName);
-                });
+                const matchingInstances = data.data.filter(instance =>
+                    containerInstanceMatchesProjectName(instance, config.projectName)
+                );
                 
                 // Extract numbers from display names matching pattern "projectName N"
                 const numbers = [];
                 matchingInstances.forEach(instance => {
                     const displayName = instance.displayName || '';
                     // Match pattern: "projectName N" or "projectNameN" where N is a number
-                    const regex = new RegExp(`^${config.projectName}\\s*(\\d+)$`, 'i');
+                    const regex = new RegExp(`^${escapeRegExp(config.projectName)}\\s*(\\d+)$`, 'i');
                     const match = displayName.match(regex);
                     if (match) {
                         numbers.push(parseInt(match[1], 10));
@@ -7034,6 +7048,7 @@ function updateVolumesTable() {
 
 // File System CRUD functions
 let fileStorageMountTargetsCache = [];
+const fileStorageExportPathCache = new Map();
 
 function getShortOcid(ocid) {
     if (!ocid || ocid.length <= 24) {
@@ -7080,6 +7095,69 @@ function ensurePreviousSelectValue(select, value, labelPrefix) {
         addSelectOption(select, value, `${labelPrefix}: ${getShortOcid(value)}`);
     }
     select.value = value;
+}
+
+function getFileStorageExportPathCacheKey(mountTargetId, exportId) {
+    return `${mountTargetId || ''}|${exportId || ''}`;
+}
+
+async function hydrateFileStorageExportPath(fileStorage) {
+    if (!fileStorage || fileStorage.exportPath || !fileStorage.mountTargetId || !fileStorage.exportId) {
+        return false;
+    }
+
+    const cacheKey = getFileStorageExportPathCacheKey(fileStorage.mountTargetId, fileStorage.exportId);
+    if (fileStorageExportPathCache.has(cacheKey)) {
+        const cachedPath = fileStorageExportPathCache.get(cacheKey);
+        if (cachedPath) {
+            fileStorage.exportPath = cachedPath;
+            return true;
+        }
+        return false;
+    }
+
+    const config = getSavedOCIConfigSelection();
+    if (!config.compartmentId) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(buildOCIUrl('/api/oci/filestorage/exports', {
+            compartmentId: config.compartmentId,
+            mountTargetId: fileStorage.mountTargetId
+        }, config));
+        const data = await response.json();
+        const matchingExport = data.success && Array.isArray(data.data)
+            ? data.data.find((fssExport) => fssExport.id === fileStorage.exportId)
+            : null;
+
+        const exportPath = matchingExport?.path || '';
+        fileStorageExportPathCache.set(cacheKey, exportPath);
+        if (exportPath) {
+            fileStorage.exportPath = exportPath;
+            return true;
+        }
+    } catch (error) {
+        console.warn('Could not hydrate FSS export path:', error);
+    }
+
+    return false;
+}
+
+async function hydrateDetailsFileStorageExportPaths(instanceId) {
+    const fileStorages = window[`detailsFileStorages_${instanceId}`] || [];
+    if (fileStorages.length === 0) {
+        return;
+    }
+
+    const changedResults = await Promise.all(fileStorages.map((fileStorage) => hydrateFileStorageExportPath(fileStorage)));
+    if (!changedResults.some(Boolean)) {
+        return;
+    }
+
+    window[`detailsFileStorages_${instanceId}`] = fileStorages;
+    refreshDetailsFileSystemsTable(instanceId);
+    persistDetailsFileStorages(instanceId, fileStorages);
 }
 
 function updateFileStorageExportRequirementMessage() {
@@ -7264,10 +7342,14 @@ async function loadFileStorageExports(selectedExportId = '') {
                 const privilegedSourcePortStatus = hasUnprivilegedSourcePort
                     ? 'invalid'
                     : (exportOptions.length > 0 ? 'valid' : 'unknown');
+                if (fssExport.path) {
+                    fileStorageExportPathCache.set(getFileStorageExportPathCacheKey(mountTargetId, fssExport.id), fssExport.path);
+                }
 
                 addSelectOption(exportSelect, fssExport.id, labelParts.join(' - '), {
                     fileSystemId: fssExport.fileSystemId,
                     exportSetId: fssExport.exportSetId,
+                    exportPath: fssExport.path || '',
                     exportOptionsCount: exportOptions.length.toString(),
                     privilegedSourcePortStatus
                 });
@@ -7391,6 +7473,11 @@ function saveEditedFileStorage() {
         fileStorage.name = name;
     }
 
+    const exportPath = selectedExportOption?.dataset?.exportPath || '';
+    if (exportPath) {
+        fileStorage.exportPath = exportPath;
+    }
+
     const subnetId = document.getElementById('editFileStorageSubnetId').value.trim();
     if (subnetId) {
         fileStorage.subnetId = subnetId;
@@ -7470,8 +7557,9 @@ function updateFileStoragesTable() {
                 const tooltip = [
                     `Mount path: ${mountPath}`,
                     `Mount target: ${fileStorage.mountTargetId || 'N/A'}`,
-                    `Export: ${fileStorage.exportId || 'N/A'}`
-                ].join(' | ');
+                    fileStorage.exportPath ? `Export path: ${fileStorage.exportPath}` : null,
+                    `Export OCID: ${fileStorage.exportId || 'N/A'}`
+                ].filter(Boolean).join(' | ');
 
                 return `
                     <tr>
@@ -7481,7 +7569,7 @@ function updateFileStoragesTable() {
                                 data-bs-placement="top"
                                 data-bs-title="${escapeHtmlAttribute(tooltip)}"
                                 style="cursor: default;"
-                            >${escapeHtml(displayName)} <code>${escapeHtml(mountPath)}</code></span>
+                            >${escapeHtml(displayName)}</span>
                         </td>
                         <td style="border-bottom: 1px solid #dee2e6;">
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editFileStorage(${index})"><i class="bi bi-pencil"></i></button>
@@ -7502,11 +7590,12 @@ function updateFileStoragesTable() {
             createTbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="border-bottom: 1px solid #dee2e6;">No file systems added yet. Click "Add File System" to add one.</td></tr>';
         } else {
             createTbody.innerHTML = fileStoragesData.map((fileStorage, index) => {
+                const exportDisplay = getFileStorageExportDisplay(fileStorage);
                 return `
                     <tr>
                         <td style="border-bottom: 1px solid #dee2e6;">${escapeHtml(getFileStorageName(fileStorage, index))}</td>
                         <td style="border-bottom: 1px solid #dee2e6;"><code>${escapeHtml(fileStorage.mountPath || 'N/A')}</code></td>
-                        <td style="border-bottom: 1px solid #dee2e6;"><code>${escapeHtml(fileStorage.exportId || 'N/A')}</code></td>
+                        <td style="border-bottom: 1px solid #dee2e6;"><code title="${escapeHtmlAttribute(fileStorage.exportId || '')}">${escapeHtml(exportDisplay)}</code></td>
                         <td style="border-bottom: 1px solid #dee2e6;">
                             <button type="button" class="btn btn-success btn-sm me-1" onclick="editFileStorage(${index})"><i class="bi bi-pencil"></i></button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="deleteFileStorage(${index})"><i class="bi bi-trash"></i></button>
@@ -8021,11 +8110,12 @@ function showCISummaryModal() {
         html += '<tbody>';
 
         fileStoragesData.forEach((fileStorage, index) => {
+            const exportDisplay = getFileStorageExportDisplay(fileStorage);
             html += `<tr>`;
             html += `<td>${escapeHtml(getFileStorageName(fileStorage, index))}</td>`;
             html += `<td><code>${escapeHtml(fileStorage.mountPath || 'N/A')}</code></td>`;
             html += `<td><code>${escapeHtml(fileStorage.mountTargetId || 'N/A')}</code></td>`;
-            html += `<td><code>${escapeHtml(fileStorage.exportId || 'N/A')}</code></td>`;
+            html += `<td><code title="${escapeHtmlAttribute(fileStorage.exportId || '')}">${escapeHtml(exportDisplay)}</code></td>`;
             html += `<td>${fileStorage.isReadOnly ? 'Yes' : 'No'}</td>`;
             html += `</tr>`;
         });
