@@ -720,7 +720,11 @@ function getFileStorageName(fileStorage, index) {
 
 function buildFileStoragesTag(sourceFileStorages = fileStoragesData) {
     return (sourceFileStorages || [])
-        .map((fileStorage, idx) => getFileStorageName(fileStorage, idx))
+        .map((fileStorage, idx) => {
+            const fileStorageName = getFileStorageName(fileStorage, idx);
+            const mountPath = fileStorage.mountPath || fileStorage.path || '';
+            return `${fileStorageName}:${mountPath}`;
+        })
         .join(',');
 }
 
