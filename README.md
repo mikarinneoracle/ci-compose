@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="Boost-your-OCI-container-workflow.png" alt="CI Compose Banner" width="100%">
+  <img src="Boost-your-OCI-container-workflow-012.png" alt="CI Compose Banner" width="100%">
 </div>
 
 # CI Compose
@@ -15,7 +15,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Manage sidecars from the Sidecar Gallery (stock and custom sidecars)
 - Configure networking with port mappings and subnet selection. Subnet security lists are not modified automatically and must be updated manually as required.
 - Manage volumes and volume mounts shared between containers for data exchange
-- Mount OCI File Storage Service (FSS) exports into Container Instances as shared file systems
+- **New in 0.1.2:** Mount OCI File Storage Service (FSS) exports into Container Instances as shared file systems
 - View container logs (using OCI Logging sidecar) and instance details
 - Edit, restart, stop, and delete container instances
 - Duplicate container instances to quickly create new instances with the same configuration (name is automatically incremented)
@@ -63,7 +63,7 @@ Version 0.1.1 introduced a modern dark theme with a teal/cyan color palette, rep
 - **Consistent Styling**: All UI components including tables, modals, buttons, and forms have been updated to match the new dark theme
 - **Terminal-Style Logs**: Container logs are displayed with a black background and white text, providing a familiar terminal-like experience
 - **Container Instance Duplication**: Added a "Duplicate" button in the Container Instance details modal that allows you to quickly create a new instance with the same configuration. The instance name is automatically incremented (e.g., "pets 2" → "pets 3")
-- **Policies moved to dedicated menu**: Dynamic group and policies setup has been moved from the Configuration modal to a dedicated **Policies Setup** menu item. Use **Policies Setup** in the navigation to configure OCI dynamic groups and policies for sidecars and FSS-aware Container Instance workflows.
+- **Policies moved to dedicated menu**: Dynamic group and policies setup has been moved from the Configuration modal to a dedicated **Policies Setup** menu item. Use **Policies Setup** in the navigation to configure OCI dynamic groups and policies for sidecars.
 - **Sidecars with your own IAM credentials**: Sidecars can now be built and run using your own IAM credentials (e.g. OCI CLI config) instead of the default resource principal setting. See the **Policies Setup** modal, section "Running sidecars with your own IAM credentials", for instructions.
 
 The new color scheme maintains excellent accessibility while providing a contemporary developer-focused aesthetic that aligns with modern development tools and IDEs.
@@ -152,9 +152,11 @@ Use **Policies Setup** in the navigation to configure OCI dynamic groups and pol
 **Dynamic Group & Policies Setup for Sidecars:** CI Compose can use an OCI Dynamic Group and policies to enable resource principal authentication for container instances. After selecting a compartment in the Policies Setup modal, the application will generate:
 
 - **Dynamic Group Rule:** A rule that matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.
-- **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, File Storage Service (FSS file systems, mount targets, export sets, and exports), and Autonomous Database.
+- **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, and Autonomous Database.
 
-Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations. The dynamic group is created in the root compartment, while policies are created in the selected compartment. The generated policy set includes `manage file-family` for FSS access. These policies are required when sidecars run as resource principal to access OCI services.
+Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations. The dynamic group is created in the root compartment, while policies are created in the selected compartment. These policies are required when sidecars run as resource principal to access OCI services.
+
+**FSS note:** OCI File Storage Service mounts are configured directly in the Container Instance create request, not through sidecars. The OCI principal used to run CI Compose and create the Container Instance must have permission to use the referenced FSS resources, for example `Allow group <group-name> to use file-family in tenancy` when the Container Instance and FSS resources are in the same tenancy. This is separate from the sidecar dynamic group policies generated by the Policies Setup page.
 
 **Using your own IAM credentials:** Instead of resource principal, you can use your own IAM credentials by rebuilding sidecars with your OCI CLI setup. See the **Policies Setup** modal, section "Running sidecars with your own IAM credentials", for step-by-step instructions.
 

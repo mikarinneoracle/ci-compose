@@ -1167,7 +1167,6 @@ async function generatePoliciesDynamicGroupAndPolicies(compartmentId, ruleElemen
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-stacks in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage orm-jobs in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage compute-container-family in compartment ${compartmentName}`,
-            `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage file-family in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage autonomous-database in compartment ${compartmentName}`
         ];
         
