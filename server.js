@@ -448,18 +448,26 @@ app.get('/api/oci/compartments', async (req, res) => {
     
     const { identityClient: idClient } = createOCIClients({ configPath, profile });
     
-    // List all compartments
-    const listCompartmentsRequest = {
-      compartmentId: tenancyId,
-      compartmentIdInSubtree: true,
-      accessLevel: 'ACCESSIBLE'
-    };
-    
-    const response = await idClient.listCompartments(listCompartmentsRequest);
+    // OCI returns this endpoint in pages (25 items by default). Fetch every page
+    // so the dropdown has the same contents as `oci ... list --all`.
+    const compartments = [];
+    let page;
+    do {
+      const response = await idClient.listCompartments({
+        compartmentId: tenancyId,
+        compartmentIdInSubtree: true,
+        accessLevel: 'ACCESSIBLE',
+        // Do not expose deleted compartments in selection lists.
+        lifecycleState: 'ACTIVE',
+        page
+      });
+      compartments.push(...response.items);
+      page = response.opcNextPage;
+    } while (page);
     
     res.json({
       success: true,
-      compartments: response.items
+      compartments
     });
   } catch (error) {
     console.error('Error listing compartments:', error);
