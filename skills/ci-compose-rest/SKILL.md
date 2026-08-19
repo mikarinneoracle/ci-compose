@@ -15,10 +15,11 @@ Container Instance deployment lifecycle calls are allowed only through the local
 - Existing File Storage Service mount targets and exports in that compartment, when needed by a deployment.
 - Read-only logs in the selected configuration's `logGroupId`.
 - Read-only Autonomous Database and Vault names plus OCIDs in that compartment, only to configure the `AdbWallet` and `VaultReader` sidecars.
+- Read-only VCN and subnet discovery through CI Compose REST only.
 
-Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, Networking, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
+Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Networking may be listed only through the REST endpoints below; never use OCI CLI for VCNs or subnets, and never change networking resources. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
 
-When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, and sidecar-only ADB/Vault name and OCID discovery in the selected configuration scope.`
+When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, sidecar-only ADB/Vault name and OCID discovery, and read-only VCN/subnet discovery in the selected configuration scope.`
 
 ## Establish the selected scope
 
@@ -28,6 +29,17 @@ When a request is outside this boundary, do not call an OCI command or API. Repl
 4. Require the user to select one returned compartment. Use only that configuration's `compartmentId` for Object Storage, FSS, and Container Instance requests. For log reads, require the configuration's `logGroupId`; do not read another log group.
 
 Never infer a compartment or log group from a similar name. Do not reveal OCI private keys, config contents, or other secrets.
+
+## Networking discovery
+
+Use CI Compose REST, never OCI CLI, to choose or verify deployment networking in the selected compartment:
+
+- `GET /api/oci/networking/vcns?compartmentId=<compartmentId>` lists VCNs.
+- `GET /api/oci/networking/vcns/:vcnId` retrieves one VCN.
+- `GET /api/oci/networking/subnets?compartmentId=<compartmentId>&vcnId=<vcnId>` lists a VCN's subnets.
+- `GET /api/oci/networking/subnets?compartmentId=<compartmentId>&subnetId=<subnetId>` retrieves one subnet.
+
+Use the selected or configured subnet in the deployment payload. These calls are discovery-only: do not create, modify, or delete VCNs, subnets, route tables, gateways, security lists, or NSGs.
 
 ## Shared configurations
 
@@ -99,12 +111,25 @@ For PowerShell use `-Query 'key=value&other=value'`, `-QueryJson`, `-BodyJson`, 
 
 There is no in-place deployment update. Match CI Compose UI behavior:
 
-- **Create:** validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
+- **Create:** complete the input preflight below, validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
 - **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the operation deletes the existing Container Instance and creates a replacement with the same display name. Obtain explicit confirmation immediately before calling `DELETE /api/oci/container-instances/:instanceId`; wait for deletion to complete, then create the replacement with `POST /api/oci/container-instances`.
 
 Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except as the confirmed first step of a requested update or a separately confirmed delete request.
 
 Before any deployment containing `OCI_FSS_FILE_SYSTEM`, use only the allowed FSS discovery routes to confirm the selected export is active and read-write, the mount target is active, and the payload contains matching mount target, export, subnet, and `volumeMounts` values. If these checks cannot be completed within the allowed scope, stop and report the missing information.
+
+### New deployment input preflight
+
+Ports are optional. When no port is supplied and the selected or default subnet is public, ask whether the deployment needs an exposed port and obtain an explicit answer before creating it. The user may leave ports empty, especially for a private subnet. Do not infer a port.
+
+Inspect every selected sidecar and require its non-placeholder inputs before payload validation. Stop and list the missing values instead of creating a partial deployment:
+
+- `OsReader`: `os_bucket`.
+- `VaultReader`: `secret_ocid`.
+- `LogWriter`: `log_ocid`, `log_file`, and `log_header`.
+- `AdbWallet`: `adb_ocid` and `wallet_password`.
+
+The sidecar defaults `data_path`, `reload_delay`, `wallet_path`, and `secrets_file` may be retained unless the user requests a change. Never accept placeholder text such as `***put here ...***` as a value.
 
 ## Sidecar discovery and required inputs
 
