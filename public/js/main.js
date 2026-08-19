@@ -285,6 +285,7 @@ let mainPageAutoReloadInterval = null;
 let configurationState = { id: null, revision: null, config: {} };
 let configurationResources = {};
 let configurationPollInterval = null;
+const ACTIVE_CONFIGURATION_STORAGE_KEY = 'ciComposeActiveConfigurationId';
 
 function configurationPayload() {
     const name = configurationState.config.projectName || '';
@@ -295,6 +296,7 @@ function configurationPayload() {
 function applySharedConfiguration(saved) {
     configurationState = { id: saved.id, revision: saved.revision, config: saved.config || {} };
     configurationResources[saved.name] = saved.projectResources || { ports: [], volumes: [], fileStorages: [] };
+    localStorage.setItem(ACTIVE_CONFIGURATION_STORAGE_KEY, saved.id);
     loadPortsAndVolumesForCIName(saved.name, false);
     renderSavedConfigurationSelect();
 }
@@ -327,6 +329,7 @@ async function selectSavedConfiguration(id) {
 
 function createNewConfiguration() {
     configurationState = { id: null, revision: null, config: {} }; portsData = []; volumesData = []; fileStoragesData = [];
+    localStorage.removeItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
     resetConfigurationForm();
     renderSavedConfigurationSelect(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable();
 }
@@ -372,7 +375,11 @@ async function initialiseSharedConfiguration() {
             await persistSharedConfiguration();
         }
     }
-    if (!configurationState.id && (window.ciComposeSavedConfigurations || []).length > 0) await selectSavedConfiguration(window.ciComposeSavedConfigurations[0].id);
+    if (!configurationState.id && (window.ciComposeSavedConfigurations || []).length > 0) {
+        const savedId = localStorage.getItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
+        const savedConfiguration = (window.ciComposeSavedConfigurations || []).find(config => config.id === savedId);
+        await selectSavedConfiguration(savedConfiguration?.id || window.ciComposeSavedConfigurations[0].id);
+    }
     configurationPollInterval = setInterval(async () => {
         if (!configurationState.id || document.querySelector('.modal.show')) return;
         const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`); const data = await response.json();
