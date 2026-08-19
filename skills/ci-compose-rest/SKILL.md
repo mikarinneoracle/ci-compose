@@ -112,11 +112,13 @@ For PowerShell use `-Query 'key=value&other=value'`, `-QueryJson`, `-BodyJson`, 
 There is no in-place deployment update. Match CI Compose UI behavior:
 
 - **Create:** complete the input preflight below, validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
-- **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the replacement is created first with the same display name while the original remains running. Obtain explicit confirmation before `POST /api/oci/container-instances`. After the create request succeeds, tell the user to verify that the new instance appears in CI Compose UI. Do not poll, wait for readiness, or test the new instance.
+- **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the replacement is created first with the same display name while the original remains running. Obtain explicit confirmation before `POST /api/oci/container-instances`. After the create request succeeds, ask only whether the new instance appears in CI Compose UI. Do not poll, wait for readiness, or test the new instance.
 
-Only after the user confirms that the new instance is visible, ask for explicit confirmation to delete the original. Then call `DELETE /api/oci/container-instances/:instanceId`. If the user does not confirm visibility or deletion, leave the original untouched.
+If the user answers that the new instance is visible, delete the original immediately with `DELETE /api/oci/container-instances/:instanceId`; do not ask for a second deletion confirmation. If the user says no, is uncertain, or does not answer, leave the original untouched.
 
-Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except after the user has confirmed a successful replacement is visible, or as a separately confirmed delete request.
+For a standalone delete request, always ask an explicit `Are you sure you want to delete <instance name>?` confirmation before calling `DELETE /api/oci/container-instances/:instanceId`.
+
+Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except after the user has confirmed a successful replacement is visible, or after explicit confirmation for a standalone delete request.
 
 Before any deployment containing `OCI_FSS_FILE_SYSTEM`, use only the allowed FSS discovery routes to confirm the selected export is active and read-write, the mount target is active, and the payload contains matching mount target, export, subnet, and `volumeMounts` values. If these checks cannot be completed within the allowed scope, stop and report the missing information.
 

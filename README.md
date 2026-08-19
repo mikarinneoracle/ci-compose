@@ -90,6 +90,43 @@ For questions, support, or inquiries, please contact:
 
 ## Getting Started
 
+### Use the CI Compose REST Skill with Codex
+
+This repository includes a repo-scoped Codex skill for operating CI Compose
+through its local REST API. A user who clones the repository does **not** need
+to copy the skill into a personal Codex folder: Codex discovers skills from
+`.agents/skills` when it is started in the repository (or one of its
+subdirectories).
+
+After cloning, install and start CI Compose, then start a new Codex session in
+the cloned repository:
+
+```bash
+git clone https://github.com/mikarinneoracle/ci-compose.git
+cd ci-compose
+npm install
+npm run dev
+```
+
+Open the same folder in the Codex IDE extension, or run Codex from that folder.
+The `ci-compose-rest` skill is then available. Invoke it explicitly with
+`$ci-compose-rest` (or `/skills` in Codex CLI or the IDE extension), or let
+Codex select it when the request matches its description.
+
+The repository entry point at
+`.agents/skills/ci-compose-rest/SKILL.md` loads the canonical instructions in
+`skills/ci-compose-rest/SKILL.md`. This keeps the complete workflow and its
+OCI access restrictions versioned with the project. The skill requires the
+local CI Compose server to be running and uses only its REST API; it never
+calls the OCI CLI directly. It is restricted to the selected CI Compose
+configuration and its permitted Container Instance, Object Storage, existing
+FSS, log, ADB/Vault discovery, and read-only network operations.
+
+When the clone is updated with `git pull`, Codex detects changes to local
+skills automatically. If an updated skill does not appear in an already open
+session, restart Codex. To use the skill outside this repository, install or
+symlink the canonical skill into a user-level Codex skill location instead.
+
 ### Prerequisites
 
 Before you begin, ensure you have:
