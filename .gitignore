@@ -8,3 +8,8 @@ yarn-error.log*
 
 # Docker Compose integration plan (not tracked)
 DOCKER_COMPOSE_INTEGRATION_PLAN*.md
+
+# Local shared CI Compose configurations (may contain OCIDs and local paths)
+.ci-compose/
+
+skills/.DS_Store

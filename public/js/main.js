@@ -282,6 +282,88 @@ let previousInstanceStates = new Map(); // Map of instanceId -> lifecycleState
 
 // Store main page auto-reload interval ID
 let mainPageAutoReloadInterval = null;
+let configurationState = { id: null, revision: null, config: {} };
+let configurationResources = {};
+let configurationPollInterval = null;
+
+function configurationPayload() {
+    const name = configurationState.config.projectName || '';
+    return { name, revision: configurationState.revision, config: configurationState.config,
+        projectResources: configurationResources[name] || { ports: [], volumes: [], fileStorages: [] } };
+}
+
+function applySharedConfiguration(saved) {
+    configurationState = { id: saved.id, revision: saved.revision, config: saved.config || {} };
+    configurationResources[saved.name] = saved.projectResources || { ports: [], volumes: [], fileStorages: [] };
+    loadPortsAndVolumesForCIName(saved.name, false);
+    renderSavedConfigurationSelect();
+}
+
+async function fetchSavedConfigurations() {
+    const response = await fetch('/api/configs');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not load configurations');
+    window.ciComposeSavedConfigurations = data.configs || [];
+    renderSavedConfigurationSelect();
+}
+
+function renderSavedConfigurationSelect() {
+    const select = document.getElementById('savedConfigSelect');
+    if (!select) return;
+    const configs = window.ciComposeSavedConfigurations || [];
+    select.innerHTML = '<option value="">New configuration</option>';
+    configs.forEach(item => {
+        const option = document.createElement('option'); option.value = item.id; option.textContent = item.name;
+        option.selected = item.id === configurationState.id; select.appendChild(option);
+    });
+}
+
+async function selectSavedConfiguration(id) {
+    if (!id) return createNewConfiguration();
+    const response = await fetch(`/api/configs/${encodeURIComponent(id)}`); const data = await response.json();
+    if (!response.ok) return showNotification(data.error || 'Could not load configuration', 'error');
+    applySharedConfiguration(data.config); loadConfiguration(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable(); await loadPageContent();
+}
+
+function createNewConfiguration() {
+    configurationState = { id: null, revision: null, config: {} }; portsData = []; volumesData = []; fileStoragesData = [];
+    renderSavedConfigurationSelect(); loadConfiguration(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable();
+}
+
+async function persistSharedConfiguration() {
+    const payload = configurationPayload();
+    const creating = !configurationState.id;
+    let response = await fetch(creating ? '/api/configs' : `/api/configs/${encodeURIComponent(configurationState.id)}`, {
+        method: creating ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    let data = await response.json();
+    if (response.status === 409 && data.code === 'CONFIG_EXISTS' && creating && confirm(`A configuration named "${payload.name}" already exists. Overwrite it?`)) {
+        const existing = (window.ciComposeSavedConfigurations || []).find(item => item.name.toLocaleLowerCase() === payload.name.toLocaleLowerCase());
+        configurationState.id = existing?.id; configurationState.revision = existing?.revision;
+        return persistSharedConfiguration();
+    }
+    if (!response.ok) throw new Error(data.error || 'Could not save configuration');
+    applySharedConfiguration(data.config); await fetchSavedConfigurations();
+}
+
+async function initialiseSharedConfiguration() {
+    await fetchSavedConfigurations();
+    if ((window.ciComposeSavedConfigurations || []).length === 0) {
+        const legacy = JSON.parse(localStorage.getItem('appConfig') || '{}');
+        if (legacy.projectName) {
+            const legacyResources = JSON.parse(localStorage.getItem(`ciPortsVolumes_${legacy.projectName}`) || '{"ports":[],"volumes":[],"fileStorages":[]}');
+            configurationState.config = legacy; configurationResources[legacy.projectName] = legacyResources;
+            await persistSharedConfiguration();
+        }
+    }
+    if (!configurationState.id && (window.ciComposeSavedConfigurations || []).length > 0) await selectSavedConfiguration(window.ciComposeSavedConfigurations[0].id);
+    configurationPollInterval = setInterval(async () => {
+        if (!configurationState.id || document.querySelector('.modal.show')) return;
+        const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`); const data = await response.json();
+        if (response.ok && data.config.revision !== configurationState.revision) { applySharedConfiguration(data.config); await loadPageContent(); showNotification('Configuration updated externally.', 'info'); }
+        await fetchSavedConfigurations();
+    }, 5000);
+}
 
 // Function to start/restart main page auto-reload
 function startMainPageAutoReload() {
@@ -306,8 +388,9 @@ function startMainPageAutoReload() {
 }
 
 // Check server status on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadPageContent();
+document.addEventListener('DOMContentLoaded', async function() {
+    await initialiseSharedConfiguration();
+    await loadPageContent();
     startMainPageAutoReload();
 });
 
@@ -411,7 +494,7 @@ async function fetchCompartmentName(compartmentId) {
 
 // Configuration management functions
 function loadConfiguration() {
-    const config = JSON.parse(localStorage.getItem('appConfig') || '{}');
+    const config = getConfiguration();
     
     // Compartment and subnet will be set after they are loaded
     if (config.projectName) document.getElementById('projectName').value = config.projectName;
@@ -535,8 +618,7 @@ async function saveConfiguration() {
         return;
     }
     
-    // Save to localStorage
-    localStorage.setItem('appConfig', JSON.stringify(config));
+    configurationState.config = config;
     
     // Restart auto-reload with new interval
     startMainPageAutoReload();
@@ -560,6 +642,8 @@ async function saveConfiguration() {
         updateVolumesTable();
         updateFileStoragesTable();
     }
+
+    await persistSharedConfiguration();
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('configModal'));
@@ -588,8 +672,7 @@ async function saveConfiguration() {
 }
 
 function getConfiguration() {
-    const config = JSON.parse(localStorage.getItem('appConfig') || '{}');
-    return config;
+    return { ...configurationState.config };
 }
 
 function getCurrentOCIConfigSelection() {
@@ -624,15 +707,12 @@ let showDeletedCIs = false; // Toggle state for showing/hiding deleted CIs
 // Save ports, volumes and file systems for a specific CI name (projectName)
 function savePortsAndVolumesForCIName(ciName) {
     if (!ciName) return;
-    
-    const key = `ciPortsVolumes_${ciName}`;
-    const data = {
+    configurationResources[ciName] = {
         ports: portsData,
         volumes: volumesData,
         fileStorages: fileStoragesData
     };
-    localStorage.setItem(key, JSON.stringify(data));
-    console.log(`Saved ${portsData.length} ports, ${volumesData.length} volumes and ${fileStoragesData.length} file systems for CI name: ${ciName}`);
+    persistSharedConfiguration().catch(error => showNotification(`Could not save configuration: ${error.message}`, 'error'));
 }
 
 // Load ports, volumes and file systems for a specific CI name (projectName)
@@ -649,8 +729,7 @@ function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
         return;
     }
     
-    const key = `ciPortsVolumes_${ciName}`;
-    const saved = localStorage.getItem(key);
+    const saved = configurationResources[ciName];
     
     if (saved) {
         try {
@@ -694,8 +773,7 @@ function loadPortsAndVolumesForCINameForDetails(ciName) {
         return { ports: [], volumes: [], fileStorages: [] };
     }
     
-    const key = `ciPortsVolumes_${ciName}`;
-    const saved = localStorage.getItem(key);
+    const saved = configurationResources[ciName];
     
     if (saved) {
         try {

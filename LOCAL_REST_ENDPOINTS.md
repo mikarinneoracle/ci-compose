@@ -20,6 +20,10 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 | GET | `/api/oci/config/region` | `configPath`, `profile` | Returns the region for the selected profile. |
 | GET | `/api/oci/config/namespace` | OCI connection settings | Retrieves the Object Storage namespace. |
 | GET | `/api/oci/config/tenancy` | `configPath`, `profile` | Returns the tenancy OCID for the selected profile. |
+| GET | `/api/configs` | – | Lists local shared configuration metadata. |
+| POST | `/api/configs` | JSON: `name`, `config`, `projectResources` | Creates a local shared configuration. Returns `409` for an existing name. |
+| GET | `/api/configs/:configId` | path: `configId` | Retrieves a local shared configuration. |
+| PUT | `/api/configs/:configId` | path: `configId`; JSON: `revision`, `name`, `config`, `projectResources` | Updates a local shared configuration. Returns `409` on revision conflict. |
 
 ## IAM and resource listing
 

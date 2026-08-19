@@ -20,6 +20,7 @@ const common = require('oci-common');
 // Docker Compose Parser
 const dockerComposeParser = require('./server/utils/docker-compose-parser');
 const yaml = require('js-yaml');
+const configStore = require('./server/config-store');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -231,6 +232,24 @@ async function createContainerInstanceRaw(requestConfig, containerInstancesClien
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Shared local project configuration. This intentionally stores no OCI secrets.
+app.get('/api/configs', (req, res) => {
+  try { res.json({ success: true, configs: configStore.list() }); }
+  catch (error) { res.status(500).json({ error: error.message }); }
+});
+app.get('/api/configs/:configId', (req, res) => {
+  try { const config = configStore.get(req.params.configId); return config ? res.json({ success: true, config }) : res.status(404).json({ error: 'Configuration not found' }); }
+  catch (error) { res.status(500).json({ error: error.message }); }
+});
+app.post('/api/configs', (req, res) => {
+  try { res.status(201).json({ success: true, config: configStore.create(req.body) }); }
+  catch (error) { res.status(error.code === 'CONFIG_EXISTS' ? 409 : 400).json({ error: error.message, code: error.code }); }
+});
+app.put('/api/configs/:configId', (req, res) => {
+  try { const config = configStore.update(req.params.configId, req.body); return config ? res.json({ success: true, config }) : res.status(404).json({ error: 'Configuration not found' }); }
+  catch (error) { res.status(error.code === 'CONFIG_CONFLICT' || error.code === 'CONFIG_EXISTS' ? 409 : 400).json({ error: error.message, code: error.code }); }
+});
 
 // Helper function to read OCI config file
 function readOCIConfig(configPath, profile) {

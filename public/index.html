@@ -736,6 +736,13 @@
                                     <div class="modal-body">
                                         <form id="configForm">
                                             <div class="mb-3">
+                                                <label for="savedConfigSelect" class="form-label">Saved configuration</label>
+                                                <div class="input-group">
+                                                    <select class="form-select" id="savedConfigSelect" onchange="selectSavedConfiguration(this.value)"></select>
+                                                    <button class="btn btn-outline-primary" type="button" onclick="createNewConfiguration()" title="Create new configuration">+</button>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
                                                 <label for="projectName" class="form-label">CI Name</label>
                                                 <input type="text" class="form-control" id="projectName" placeholder="My CI">
                                                 <small class="form-text text-muted">Name for container instances and settings</small>
