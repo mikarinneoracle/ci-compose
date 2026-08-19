@@ -10,13 +10,28 @@ Use this skill only against the locally running CI Compose server. Read `../../L
 ## Start and call the API
 
 1. Confirm the server is available with `GET /api/health`.
-2. Run `scripts/invoke-ci-compose-api.ps1` for every request. The local PowerShell policy requires the `-ExecutionPolicy Bypass` form below. The helper prints a JSON response and supports query parameters plus JSON request bodies.
+2. On Windows, run `scripts/invoke-ci-compose-api.ps1` for every request. On macOS or Linux, run `scripts/invoke-ci-compose-api.sh`. Both helpers print the JSON response and support query parameters plus JSON request bodies.
 3. Pass OCI connection settings (`configPath`, `profile`, `region`) whenever they are needed. The defaults are `~/.oci/config`, `DEFAULT`, and the configured region.
 4. Discover OCIDs with the read-only listing endpoints before using an action endpoint.
 
-Use `GET /api/configs` to list the shared UI/API configurations, then `GET /api/configs/:configId` to retrieve one. Create a configuration with `POST /api/configs`; update it with `PUT /api/configs/:configId` and the revision returned by GET. The shared configuration contains no OCI secrets.
+## Shared configurations
+
+Use `GET /api/configs` to list shared UI/API configurations, then `GET /api/configs/:configId` to retrieve one. Create a configuration with `POST /api/configs`; update it with `PUT /api/configs/:configId` and the `revision` returned by GET. The shared configuration contains no OCI secrets.
 
 Treat `projectResources` in the selected configuration as the UI's shared deployment definition. When Codex creates or changes a deployment, update `projectName` and the matching `projectResources.ports`, `projectResources.volumes`, and `projectResources.fileStorages` in the same configuration. For an FSS definition, include at least `name`, `mountPath`, `mountTargetId`, `exportId`, `subnetId`, and `isEncryptedInTransit`. This keeps the UI cards consistent with REST-created resources.
+
+For create and update, use this shape:
+
+```json
+{
+  "name": "my-ci",
+  "revision": 1,
+  "config": { "projectName": "my-ci", "compartmentId": "ocid1.compartment..." },
+  "projectResources": { "ports": [], "volumes": [], "fileStorages": [] }
+}
+```
+
+`revision` is required only for `PUT`. A `409 CONFIG_CONFLICT` means another UI or skill update won; fetch the configuration again, merge the intended change, and ask before retrying. A `409 CONFIG_EXISTS` on `POST` means a same-name configuration exists; do not overwrite it without user confirmation.
 
 Example calls from the repository root:
 
@@ -31,7 +46,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skills\ci-compose-rest
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skills\ci-compose-rest\scripts\invoke-ci-compose-api.ps1 -Path /api/oci/container-instances -Query 'compartmentId=ocid1.compartment...&profile=DEFAULT'
 ```
 
-Use `-Query 'key=value&other=value'` for query parameters. `-QueryJson` is also available when a JSON object is more convenient. Use `-BodyJson` for a small JSON payload or `-BodyFile` for a JSON file. Use `-BaseUrl` only when CI Compose was launched with a non-default `PORT`.
+```bash
+# macOS/Linux: health check
+./skills/ci-compose-rest/scripts/invoke-ci-compose-api.sh --path /api/health
+
+# macOS/Linux: list shared configurations
+./skills/ci-compose-rest/scripts/invoke-ci-compose-api.sh --path /api/configs
+
+# macOS/Linux: update a configuration from a JSON file
+./skills/ci-compose-rest/scripts/invoke-ci-compose-api.sh \
+  --method PUT --path /api/configs/<configId> --body-file /path/to/config.json
+```
+
+For PowerShell use `-Query 'key=value&other=value'`, `-QueryJson`, `-BodyJson`, `-BodyFile`, and `-BaseUrl`. For Bash use `--query`, `--body-json`, `--body-file`, and `--base-url`. Use a non-default base URL only when CI Compose was launched with a non-default `PORT`.
 
 ## Safety workflow
 
