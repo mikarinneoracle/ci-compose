@@ -9,7 +9,7 @@ Use this skill only against the locally running CI Compose server. Read `../../L
 
 ## Scope boundary — enforce this
 
-Container Instance deployment lifecycle calls are allowed only through the local CI Compose REST API. The local OCI CLI may access only:
+The CI Compose REST API is the skill's exclusive OCI access path. Never invoke the OCI CLI directly. The skill may use only these CI Compose REST-backed resources:
 
 - Object Storage buckets and objects in the selected configuration's compartment.
 - Existing File Storage Service mount targets and exports in that compartment, when needed by a deployment.
@@ -17,7 +17,7 @@ Container Instance deployment lifecycle calls are allowed only through the local
 - Read-only Autonomous Database and Vault names plus OCIDs in that compartment, only to configure the `AdbWallet` and `VaultReader` sidecars.
 - Read-only VCN and subnet discovery through CI Compose REST only.
 
-Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Networking may be listed only through the REST endpoints below; never use OCI CLI for VCNs or subnets, and never change networking resources. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
+Do not use any OCI CLI command or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Networking may be listed only through the REST endpoints below, and networking resources must never be changed. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
 
 When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, sidecar-only ADB/Vault name and OCID discovery, and read-only VCN/subnet discovery in the selected configuration scope.`
 
@@ -28,7 +28,7 @@ When a request is outside this boundary, do not call an OCI command or API. Repl
 3. Resolve the tenancy with `GET /api/oci/config/tenancy`, then discover available targets only with `GET /api/oci/compartments?tenancyId=<tenancyId>`. This lists active, accessible compartments recursively.
 4. Require the user to select one returned compartment. Use only that configuration's `compartmentId` for Object Storage, FSS, and Container Instance requests. For log reads, require the configuration's `logGroupId`; do not read another log group.
 
-Never infer a compartment or log group from a similar name. Do not reveal OCI private keys, config contents, or other secrets.
+If the user selects a different returned compartment, update the shared configuration with `PUT /api/configs/:configId` and its latest revision before making scoped calls. Use the resulting `configId` for every scoped discovery endpoint and the configuration's compartment for the deployment. Never infer a compartment or log group from a similar name. Do not reveal OCI private keys, config contents, or other secrets.
 
 ## Networking discovery
 
@@ -133,14 +133,14 @@ The sidecar defaults `data_path`, `reload_delay`, `wallet_path`, and `secrets_fi
 
 ## Sidecar discovery and required inputs
 
-For `AdbWallet`, the local OCI CLI may use a read-only Autonomous Database list in the selected compartment to show each database `display-name` and OCID. Use the selected database OCID as `adb_ocid`; do not retrieve or create a wallet. The user must provide the `wallet_password`; retain the default `wallet_path` unless they request another path.
+For `AdbWallet`, use `GET /api/oci/database/autonomous-databases?configId=<configId>` to show each database `displayName` and OCID. Use the selected database OCID as `adb_ocid`; do not retrieve or create a wallet. The user must provide the `wallet_password`; retain the default `wallet_path` unless they request another path.
 
-For `VaultReader`, the local OCI CLI may use a read-only Vault list in the selected compartment to show each vault `display-name` and OCID. A vault OCID alone does **not** configure this sidecar: it requires a `secret_ocid`. Do not list secrets or retrieve secret content under this skill's current scope; ask the user to provide the secret OCID explicitly. Retain the default `secrets_file` path unless they request another path.
+For `VaultReader`, use `GET /api/oci/key-management/vaults?configId=<configId>` to show each vault `displayName` and OCID. A vault OCID alone does **not** configure this sidecar: it requires a `secret_ocid`. Do not list secrets or retrieve secret content under this skill's current scope; ask the user to provide the secret OCID explicitly. Retain the default `secrets_file` path unless they request another path.
 
-For `OsReader`, select a bucket in the selected compartment and set `os_bucket`; keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, use a log OCID in the selected configuration's `logGroupId`, then set `log_file` and `log_header`; do not use a log from another group.
+For `OsReader`, select a bucket in the selected compartment with the REST bucket endpoint and list its files with `GET /api/oci/object-storage/objects?configId=<configId>&namespace=<namespace>&bucketName=<bucketName>`; set `os_bucket` only after this check. Keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, use a log OCID in the selected configuration's `logGroupId`, then set `log_file` and `log_header`; do not use a log from another group.
 
 ## Object Storage, FSS, and logs
 
-Use the selected configuration's OCI CLI profile and region. For Object Storage, operate only on buckets and objects in the selected compartment; discover the namespace and existing bucket first. For FSS, use only existing mount targets and exports in the selected compartment. For logs, use `GET /api/oci/logging/logs/:logOcid` or `GET /api/oci/logging/test-search/:logGroupId` only when the requested group matches the selected configuration's `logGroupId`.
+For Object Storage, operate only on buckets and objects in the selected compartment through REST; discover the namespace and existing bucket first. For FSS, use only existing mount targets and exports in the selected compartment through REST. For logs, use `GET /api/oci/logging/logs/:logOcid` or `GET /api/oci/logging/test-search/:logGroupId` only when the requested group matches the selected configuration's `logGroupId`.
 
 Use `scripts/invoke-ci-compose-api.ps1` on Windows or `scripts/invoke-ci-compose-api.sh` on macOS/Linux for local REST calls. Report OCI status codes and errors concisely.

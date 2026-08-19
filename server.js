@@ -12,6 +12,8 @@ const containerinstances = require('oci-containerinstances');
 const filestorage = require('oci-filestorage');
 const logging = require('oci-logging');
 const loggingsearch = require('oci-loggingsearch');
+const database = require('oci-database');
+const keymanagement = require('oci-keymanagement');
 const resourcemanager = require('oci-resourcemanager');
 const vault = require('oci-vault');
 const secrets = require('oci-secrets');
@@ -86,6 +88,12 @@ function createOCIClients(config) {
       authenticationDetailsProvider: requestProvider
     }),
     loggingManagementClient: new logging.LoggingManagementClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    databaseClient: new database.DatabaseClient({
+      authenticationDetailsProvider: requestProvider
+    }),
+    kmsVaultClient: new keymanagement.KmsVaultClient({
       authenticationDetailsProvider: requestProvider
     }),
     logSearchClient: new loggingsearch.LogSearchClient({
@@ -250,6 +258,25 @@ app.put('/api/configs/:configId', (req, res) => {
   try { const config = configStore.update(req.params.configId, req.body); return config ? res.json({ success: true, config }) : res.status(404).json({ error: 'Configuration not found' }); }
   catch (error) { res.status(error.code === 'CONFIG_CONFLICT' || error.code === 'CONFIG_EXISTS' ? 409 : 400).json({ error: error.message, code: error.code }); }
 });
+
+function getConfigurationScope(req) {
+  const configId = String(req.query.configId || '').trim();
+  if (!configId) {
+    const error = new Error('configId is required'); error.statusCode = 400; throw error;
+  }
+  const configuration = configStore.get(configId);
+  if (!configuration) {
+    const error = new Error('Configuration not found'); error.statusCode = 404; throw error;
+  }
+  const compartmentId = configuration.config?.compartmentId;
+  if (!compartmentId) {
+    const error = new Error('Selected configuration has no compartmentId'); error.statusCode = 400; throw error;
+  }
+  if (req.query.compartmentId && req.query.compartmentId !== compartmentId) {
+    const error = new Error('compartmentId must match the selected configuration'); error.statusCode = 403; throw error;
+  }
+  return { configuration, compartmentId };
+}
 
 // Helper function to read OCI config file
 function readOCIConfig(configPath, profile) {
@@ -830,6 +857,84 @@ app.get('/api/oci/object-storage/buckets', async (req, res) => {
   } catch (error) {
     console.error('Error listing buckets:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Object Storage - List Objects in a selected configuration's bucket
+app.get('/api/oci/object-storage/objects', async (req, res) => {
+  try {
+    const { compartmentId } = getConfigurationScope(req);
+    const { objectStorageClient } = createOCIClients(getOCIRequestConfig(req));
+    const namespaceName = process.env.OCI_NAMESPACE || req.query.namespace;
+    const bucketName = req.query.bucketName;
+    if (!namespaceName || !bucketName) {
+      return res.status(400).json({ error: 'namespace and bucketName are required' });
+    }
+
+    const bucketResponse = await objectStorageClient.getBucket({ namespaceName, bucketName });
+    if (bucketResponse.bucket?.compartmentId !== compartmentId) {
+      return res.status(403).json({ error: 'Bucket is outside the selected configuration compartment' });
+    }
+
+    const objects = [];
+    const iterator = objectStorageClient.listObjectsRecordIterator({
+      namespaceName,
+      bucketName,
+      fields: 'name,size,timeCreated,timeModified,storageTier'
+    });
+    for await (const object of iterator) {
+      objects.push({
+        name: object.name,
+        size: object.size,
+        timeCreated: object.timeCreated,
+        timeModified: object.timeModified,
+        storageTier: object.storageTier
+      });
+    }
+    res.json({ success: true, data: objects });
+  } catch (error) {
+    console.error('Error listing Object Storage objects:', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Autonomous Database - List names and OCIDs for sidecar configuration
+app.get('/api/oci/database/autonomous-databases', async (req, res) => {
+  try {
+    const { compartmentId } = getConfigurationScope(req);
+    const { databaseClient } = createOCIClients(getOCIRequestConfig(req));
+    const response = await databaseClient.listAutonomousDatabases({ compartmentId, lifecycleState: 'AVAILABLE' });
+    res.json({
+      success: true,
+      data: (response.items || []).map(database => ({
+        id: database.id,
+        displayName: database.displayName,
+        lifecycleState: database.lifecycleState
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing Autonomous Databases:', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Vault - List names and OCIDs for sidecar configuration
+app.get('/api/oci/key-management/vaults', async (req, res) => {
+  try {
+    const { compartmentId } = getConfigurationScope(req);
+    const { kmsVaultClient } = createOCIClients(getOCIRequestConfig(req));
+    const response = await kmsVaultClient.listVaults({ compartmentId, lifecycleState: 'ACTIVE' });
+    res.json({
+      success: true,
+      data: (response.items || []).map(vault => ({
+        id: vault.id,
+        displayName: vault.displayName,
+        lifecycleState: vault.lifecycleState
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing Vaults:', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
