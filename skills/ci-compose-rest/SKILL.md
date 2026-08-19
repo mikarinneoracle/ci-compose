@@ -1,18 +1,32 @@
 ---
 name: ci-compose-rest
-description: Operate a locally running CI Compose server through its REST API instead of the browser UI. Use for querying OCI configuration and resources, importing or exporting Docker Compose, and managing OCI Container Instances, IAM policies, and Resource Manager stacks through CI Compose.
+description: Manage CI Compose deployments through its local REST API, with OCI access restricted to Container Instances, Object Storage, FSS, and logs in the selected configuration scope.
 ---
 
 # CI Compose REST
 
-Use this skill only against the locally running CI Compose server. Read `../../LOCAL_REST_ENDPOINTS.md` before selecting an endpoint; it is the complete, versioned contract for all supported `/api/` routes.
+Use this skill only against the locally running CI Compose server. Read `../../LOCAL_REST_ENDPOINTS.md` before selecting an endpoint.
 
-## Start and call the API
+## Scope boundary — enforce this
 
-1. Confirm the server is available with `GET /api/health`.
-2. On Windows, run `scripts/invoke-ci-compose-api.ps1` for every request. On macOS or Linux, run `scripts/invoke-ci-compose-api.sh`. Both helpers print the JSON response and support query parameters plus JSON request bodies.
-3. Pass OCI connection settings (`configPath`, `profile`, `region`) whenever they are needed. The defaults are `~/.oci/config`, `DEFAULT`, and the configured region.
-4. Discover OCIDs with the read-only listing endpoints before using an action endpoint.
+Container Instance deployment lifecycle calls are allowed only through the local CI Compose REST API. The local OCI CLI may access only:
+
+- Object Storage buckets and objects in the selected configuration's compartment.
+- Existing File Storage Service mount targets and exports in that compartment, when needed by a deployment.
+- Read-only logs in the selected configuration's `logGroupId`.
+
+Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, Networking, IAM, Resource Manager, Vault, Functions, Kubernetes, Database, or any other service. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
+
+When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, and logs in the selected configuration scope.`
+
+## Establish the selected scope
+
+1. Confirm the local server with `GET /api/health`.
+2. Load the selected shared configuration with `GET /api/configs` and `GET /api/configs/:configId`.
+3. Resolve the tenancy with `GET /api/oci/config/tenancy`, then discover available targets only with `GET /api/oci/compartments?tenancyId=<tenancyId>`. This lists active, accessible compartments recursively.
+4. Require the user to select one returned compartment. Use only that configuration's `compartmentId` for Object Storage, FSS, and Container Instance requests. For log reads, require the configuration's `logGroupId`; do not read another log group.
+
+Never infer a compartment or log group from a similar name. Do not reveal OCI private keys, config contents, or other secrets.
 
 ## Shared configurations
 
@@ -31,7 +45,27 @@ For create and update, use this shape:
 }
 ```
 
-`revision` is required only for `PUT`. A `409 CONFIG_CONFLICT` means another UI or skill update won; fetch the configuration again, merge the intended change, and ask before retrying. A `409 CONFIG_EXISTS` on `POST` means a same-name configuration exists; do not overwrite it without user confirmation.
+`revision` is required only for `PUT`. A `409 CONFIG_CONFLICT` means another UI or skill update won; fetch the configuration again, merge intentionally, and ask before retrying. Do not overwrite a `409 CONFIG_EXISTS` configuration without confirmation.
+
+## Container Instance deployment tags
+
+For every new or replacement deployment, build `freeformTags` exactly as the CI Compose UI does. Attach the same complete tag set to the Container Instance and every container:
+
+- `architecture`: the selected architecture; preserve the existing value on replacement, otherwise use the selected deployment architecture.
+- `composeImport`: preserve this tag only when the source deployment was imported from Docker Compose.
+- `volumes`: when non-empty, a comma-separated list of `volumeName:mountPath` entries.
+- `fileSystems`: when non-empty, a comma-separated list of `fileSystemName:mountPath` entries.
+- One tag per exposed container port: key is the container `displayName`, value is its port number as a string.
+
+Build a fresh tag set for a replacement so stale volume, FSS, or container-port tags are removed. Preserve only supported existing tags (`architecture` and, when applicable, `composeImport`).
+
+## Match CI Compose UI behavior
+
+For operations that CI Compose UI supports, use the same data model, discovery order, payload construction, validation, and post-action verification as the UI. This skill's scope boundary and explicit-confirmation requirements remain mandatory.
+
+For a new deployment, derive the display name from the selected configuration's `projectName`; do not invent a different base name. First list Container Instances in the selected compartment, including deleted instances. Match names case-insensitively against `^<projectName>\s*(<number>)$`, select one greater than the highest matched number, and use `<projectName> <nextNumber>`. Use `1` when no numbered deployment exists. For example, after `nginx 1` and `nginx 2`, create `nginx 3`.
+
+For an update, retain the existing deployment display name while following the delete-then-create replacement workflow below.
 
 Example calls from the repository root:
 
@@ -60,32 +94,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\skills\ci-compose-rest
 
 For PowerShell use `-Query 'key=value&other=value'`, `-QueryJson`, `-BodyJson`, `-BodyFile`, and `-BaseUrl`. For Bash use `--query`, `--body-json`, `--body-file`, and `--base-url`. Use a non-default base URL only when CI Compose was launched with a non-default `PORT`.
 
-## Safety workflow
+## Create and update deployments
 
-Treat these operations as state-changing and show the target OCI resources and payload summary, then obtain the user's explicit confirmation immediately before calling them:
+There is no in-place deployment update. Match CI Compose UI behavior:
 
-- Create or update a dynamic group or policy.
-- Create, delete, restart, or stop a Container Instance.
-- Create a Resource Manager stack.
+- **Create:** validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
+- **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the operation deletes the existing Container Instance and creates a replacement with the same display name. Obtain explicit confirmation immediately before calling `DELETE /api/oci/container-instances/:instanceId`; wait for deletion to complete, then create the replacement with `POST /api/oci/container-instances`.
 
-`/api/oci/container-instances/validate`, `/api/docker-compose/parse`, and `/api/docker-compose/export` are non-mutating and may be used to validate a planned action first. Do not expose OCI private keys, config contents, or other secrets in responses.
+Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except as the confirmed first step of a requested update or a separately confirmed delete request.
 
-## FSS preflight
+Before any deployment containing `OCI_FSS_FILE_SYSTEM`, use only the allowed FSS discovery routes to confirm the selected export is active and read-write, the mount target is active, and the payload contains matching mount target, export, subnet, and `volumeMounts` values. If these checks cannot be completed within the allowed scope, stop and report the missing information.
 
-Before creating a Container Instance with an `OCI_FSS_FILE_SYSTEM` volume, perform these read-only checks. Do not submit the create request until every check passes:
+## Object Storage, FSS, and logs
 
-1. Use the FSS export route to resolve the selected export and confirm it is `ACTIVE`, `READ_WRITE`, and every export client option has `requirePrivilegedSourcePort: true`.
-2. Use the subnet route to find the workload subnet CIDR and attached security-list IDs. Use the security-lists route to verify ingress permits that CIDR (or a broader source) on both TCP and UDP ports `111` and `2048-2051`.
-3. Confirm the mount target is `ACTIVE` and is reachable from the workload subnet. Prefer the same availability domain.
-4. Include the FSS volume's mount target OCID, export OCID, and a matching `volumeMounts` entry in the create payload.
+Use the selected configuration's OCI CLI profile and region. For Object Storage, operate only on buckets and objects in the selected compartment; discover the namespace and existing bucket first. For FSS, use only existing mount targets and exports in the selected compartment. For logs, use `GET /api/oci/logging/logs/:logOcid` or `GET /api/oci/logging/test-search/:logGroupId` only when the requested group matches the selected configuration's `logGroupId`.
 
-If a check fails, report the exact missing export option or protocol/port range and ask the user to correct it before creating or recreating the Container Instance.
-
-## Endpoint selection
-
-- Use configuration, compartment, availability-domain, network, FSS, logging, and instance-listing routes to discover input values.
-- For an Object Storage demo, obtain the namespace first, list buckets to avoid a name collision, then create the private bucket and upload text content with the Object Storage routes. For cleanup, delete each demo object before deleting its now-empty bucket.
-- Use `POST /api/docker-compose/parse` to turn Compose YAML into a Container Instance payload; validate that payload before creation.
-- Use `POST /api/docker-compose/export` to obtain Compose YAML from an instance or payload.
-- Use the Container Instance detail route before lifecycle actions and after them to verify the result.
-- Return the API result concisely, including OCI request errors and status codes when present.
+Use `scripts/invoke-ci-compose-api.ps1` on Windows or `scripts/invoke-ci-compose-api.sh` on macOS/Linux for local REST calls. Report OCI status codes and errors concisely.
