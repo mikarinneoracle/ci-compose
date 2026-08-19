@@ -78,7 +78,7 @@ For operations that CI Compose UI supports, use the same data model, discovery o
 
 For a new deployment, derive the display name from the selected configuration's `projectName`; do not invent a different base name. First list Container Instances in the selected compartment, including deleted instances. Match names case-insensitively against `^<projectName>\s*(<number>)$`, select one greater than the highest matched number, and use `<projectName> <nextNumber>`. Use `1` when no numbered deployment exists. For example, after `nginx 1` and `nginx 2`, create `nginx 3`.
 
-For an update, retain the existing deployment display name while following the delete-then-create replacement workflow below.
+For an update, retain the existing deployment display name while following the create-first replacement workflow below.
 
 Example calls from the repository root:
 
@@ -112,15 +112,17 @@ For PowerShell use `-Query 'key=value&other=value'`, `-QueryJson`, `-BodyJson`, 
 There is no in-place deployment update. Match CI Compose UI behavior:
 
 - **Create:** complete the input preflight below, validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
-- **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the operation deletes the existing Container Instance and creates a replacement with the same display name. Obtain explicit confirmation immediately before calling `DELETE /api/oci/container-instances/:instanceId`; wait for deletion to complete, then create the replacement with `POST /api/oci/container-instances`.
+- **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the replacement is created first with the same display name while the original remains running. Obtain explicit confirmation before `POST /api/oci/container-instances`. After the create request succeeds, tell the user to verify that the new instance appears in CI Compose UI. Do not poll, wait for readiness, or test the new instance.
 
-Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except as the confirmed first step of a requested update or a separately confirmed delete request.
+Only after the user confirms that the new instance is visible, ask for explicit confirmation to delete the original. Then call `DELETE /api/oci/container-instances/:instanceId`. If the user does not confirm visibility or deletion, leave the original untouched.
+
+Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except after the user has confirmed a successful replacement is visible, or as a separately confirmed delete request.
 
 Before any deployment containing `OCI_FSS_FILE_SYSTEM`, use only the allowed FSS discovery routes to confirm the selected export is active and read-write, the mount target is active, and the payload contains matching mount target, export, subnet, and `volumeMounts` values. If these checks cannot be completed within the allowed scope, stop and report the missing information.
 
 ### New deployment input preflight
 
-Ports are optional. When no port is supplied and the selected or default subnet is public, ask whether the deployment needs an exposed port and obtain an explicit answer before creating it. The user may leave ports empty, especially for a private subnet. Do not infer a port.
+Ports are optional, but an omitted port must be an explicit decision. When no port is supplied, retrieve the selected subnet with `GET /api/oci/networking/subnets?compartmentId=<compartmentId>&subnetId=<subnetId>`. Ask whether the deployment needs an exposed port unless the subnet is explicitly confirmed private by the user or its response has `prohibitPublicIpOnVnic: true`. The user may then leave ports empty; do not infer a port.
 
 Inspect every selected sidecar and require its non-placeholder inputs before payload validation. Stop and list the missing values instead of creating a partial deployment:
 
