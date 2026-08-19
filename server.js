@@ -938,6 +938,39 @@ app.get('/api/oci/key-management/vaults', async (req, res) => {
   }
 });
 
+// Vault - List active secret metadata for a selected vault in the configuration scope
+app.get('/api/oci/key-management/secrets', async (req, res) => {
+  try {
+    const { compartmentId } = getConfigurationScope(req);
+    const vaultId = String(req.query.vaultId || '').trim();
+    if (!vaultId) {
+      return res.status(400).json({ error: 'vaultId is required' });
+    }
+
+    const { vaultClient } = createOCIClients(getOCIRequestConfig(req));
+    const secretMetadata = [];
+    const iterator = vaultClient.listSecretsRecordIterator({
+      compartmentId,
+      vaultId,
+      lifecycleState: 'ACTIVE',
+      sortBy: 'NAME'
+    });
+    for await (const secret of iterator) {
+      secretMetadata.push({
+        id: secret.id,
+        secretName: secret.secretName,
+        vaultId: secret.vaultId,
+        lifecycleState: secret.lifecycleState
+      });
+    }
+
+    res.json({ success: true, data: secretMetadata });
+  } catch (error) {
+    console.error('Error listing Vault secrets:', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 // Container Instances - List Container Instances
 app.get('/api/oci/container-instances', async (req, res) => {
   try {

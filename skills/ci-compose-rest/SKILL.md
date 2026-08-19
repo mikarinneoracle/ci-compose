@@ -14,12 +14,12 @@ The CI Compose REST API is the skill's exclusive OCI access path. Never invoke t
 - Object Storage buckets and objects in the selected configuration's compartment.
 - Existing File Storage Service mount targets and exports in that compartment, when needed by a deployment.
 - Read-only logs in the selected configuration's `logGroupId`.
-- Read-only Autonomous Database and Vault names plus OCIDs in that compartment, only to configure the `AdbWallet` and `VaultReader` sidecars.
+- Read-only Autonomous Database, Vault, and Vault Secret names plus OCIDs in that compartment, only to configure the `AdbWallet` and `VaultReader` sidecars.
 - Read-only VCN and subnet discovery through CI Compose REST only.
 
-Do not use any OCI CLI command or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Networking may be listed only through the REST endpoints below, and networking resources must never be changed. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
+Do not use any OCI CLI command or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault and Secret resources beyond the allowed name/OCID listing. Never retrieve Secret contents. Networking may be listed only through the REST endpoints below, and networking resources must never be changed. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
 
-When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, sidecar-only ADB/Vault name and OCID discovery, and read-only VCN/subnet discovery in the selected configuration scope.`
+When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, sidecar-only ADB/Vault/Secret name and OCID discovery, and read-only VCN/subnet discovery in the selected configuration scope.`
 
 ## Establish the selected scope
 
@@ -139,7 +139,7 @@ The sidecar defaults `data_path`, `reload_delay`, `wallet_path`, and `secrets_fi
 
 For `AdbWallet`, use `GET /api/oci/database/autonomous-databases?configId=<configId>` to show each database `displayName` and OCID. Use the selected database OCID as `adb_ocid`; do not retrieve or create a wallet. The user must provide the `wallet_password`; retain the default `wallet_path` unless they request another path.
 
-For `VaultReader`, use `GET /api/oci/key-management/vaults?configId=<configId>` to show each vault `displayName` and OCID. A vault OCID alone does **not** configure this sidecar: it requires a `secret_ocid`. Do not list secrets or retrieve secret content under this skill's current scope; ask the user to provide the secret OCID explicitly. Retain the default `secrets_file` path unless they request another path.
+For `VaultReader`, use `GET /api/oci/key-management/vaults?configId=<configId>` to show each vault `displayName` and OCID. After the user selects a vault, use `GET /api/oci/key-management/secrets?configId=<configId>&vaultId=<vaultId>` to show its active `secretName` values and OCIDs. Use the selected Secret OCID as `secret_ocid`. This endpoint returns metadata only: never retrieve, display, or otherwise handle Secret contents. Retain the default `secrets_file` path unless the user requests another path.
 
 For `OsReader`, select a bucket in the selected compartment with the REST bucket endpoint and list its files with `GET /api/oci/object-storage/objects?configId=<configId>&namespace=<namespace>&bucketName=<bucketName>`; set `os_bucket` only after this check. Keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, use a log OCID in the selected configuration's `logGroupId`, then set `log_file` and `log_header`; do not use a log from another group.
 
