@@ -327,7 +327,23 @@ async function selectSavedConfiguration(id) {
 
 function createNewConfiguration() {
     configurationState = { id: null, revision: null, config: {} }; portsData = []; volumesData = []; fileStoragesData = [];
-    renderSavedConfigurationSelect(); loadConfiguration(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable();
+    resetConfigurationForm();
+    renderSavedConfigurationSelect(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable();
+}
+
+function resetConfigurationForm() {
+    const form = document.getElementById('configForm');
+    if (form) form.reset();
+
+    // `form.reset()` restores markup defaults. Set explicit defaults as the
+    // configuration fields may have been populated while editing another entry.
+    document.getElementById('ociConfigFile').value = '';
+    setOCIProfileValue('DEFAULT');
+    document.getElementById('region').value = '';
+    document.getElementById('compartmentId').innerHTML = '<option value="">Select a compartment...</option>';
+    document.getElementById('subnetId').innerHTML = '<option value="">Select a compartment first...</option>';
+    document.getElementById('logGroupId').innerHTML = '<option value="">Select a compartment first...</option>';
+    document.getElementById('autoReloadTime').value = '5';
 }
 
 async function persistSharedConfiguration() {
@@ -715,6 +731,12 @@ function savePortsAndVolumesForCIName(ciName) {
     persistSharedConfiguration().catch(error => showNotification(`Could not save configuration: ${error.message}`, 'error'));
 }
 
+function readProjectResources(saved) {
+    if (typeof saved === 'string') return JSON.parse(saved);
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) return saved;
+    throw new Error('Invalid saved ports, volumes, and file systems');
+}
+
 // Load ports, volumes and file systems for a specific CI name (projectName)
 function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
     if (!ciName) {
@@ -733,7 +755,7 @@ function loadPortsAndVolumesForCIName(ciName, updateTables = true) {
     
     if (saved) {
         try {
-            const data = JSON.parse(saved);
+            const data = readProjectResources(saved);
             portsData = data.ports || [];
             volumesData = data.volumes || [];
             fileStoragesData = data.fileStorages || [];
@@ -777,7 +799,7 @@ function loadPortsAndVolumesForCINameForDetails(ciName) {
     
     if (saved) {
         try {
-            const data = JSON.parse(saved);
+            const data = readProjectResources(saved);
             return {
                 ports: data.ports || [],
                 volumes: data.volumes || [],
