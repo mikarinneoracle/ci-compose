@@ -14,10 +14,11 @@ Container Instance deployment lifecycle calls are allowed only through the local
 - Object Storage buckets and objects in the selected configuration's compartment.
 - Existing File Storage Service mount targets and exports in that compartment, when needed by a deployment.
 - Read-only logs in the selected configuration's `logGroupId`.
+- Read-only Autonomous Database and Vault names plus OCIDs in that compartment, only to configure the `AdbWallet` and `VaultReader` sidecars.
 
-Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, Networking, IAM, Resource Manager, Vault, Functions, Kubernetes, Database, or any other service. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
+Do not use the OCI CLI or a CI Compose endpoint for any other OCI service. In particular, do not access or change Compute, Networking, IAM, Resource Manager, Functions, Kubernetes, Database resources beyond the allowed name/OCID listing, or Vault resources beyond the allowed name/OCID listing. Do not create, alter, or delete FSS infrastructure; use existing mount targets and exports only.
 
-When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, and logs in the selected configuration scope.`
+When a request is outside this boundary, do not call an OCI command or API. Reply: `Blocked: CI Compose skills are restricted to Container Instance deployments, Object Storage, existing FSS, logs, and sidecar-only ADB/Vault name and OCID discovery in the selected configuration scope.`
 
 ## Establish the selected scope
 
@@ -104,6 +105,14 @@ There is no in-place deployment update. Match CI Compose UI behavior:
 Do not restart or stop a Container Instance as a substitute for an update. Do not delete a deployment except as the confirmed first step of a requested update or a separately confirmed delete request.
 
 Before any deployment containing `OCI_FSS_FILE_SYSTEM`, use only the allowed FSS discovery routes to confirm the selected export is active and read-write, the mount target is active, and the payload contains matching mount target, export, subnet, and `volumeMounts` values. If these checks cannot be completed within the allowed scope, stop and report the missing information.
+
+## Sidecar discovery and required inputs
+
+For `AdbWallet`, the local OCI CLI may use a read-only Autonomous Database list in the selected compartment to show each database `display-name` and OCID. Use the selected database OCID as `adb_ocid`; do not retrieve or create a wallet. The user must provide the `wallet_password`; retain the default `wallet_path` unless they request another path.
+
+For `VaultReader`, the local OCI CLI may use a read-only Vault list in the selected compartment to show each vault `display-name` and OCID. A vault OCID alone does **not** configure this sidecar: it requires a `secret_ocid`. Do not list secrets or retrieve secret content under this skill's current scope; ask the user to provide the secret OCID explicitly. Retain the default `secrets_file` path unless they request another path.
+
+For `OsReader`, select a bucket in the selected compartment and set `os_bucket`; keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, use a log OCID in the selected configuration's `logGroupId`, then set `log_file` and `log_header`; do not use a log from another group.
 
 ## Object Storage, FSS, and logs
 
