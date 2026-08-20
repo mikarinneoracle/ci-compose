@@ -736,6 +736,14 @@
                                     <div class="modal-body">
                                         <form id="configForm">
                                             <div class="mb-3">
+                                                <label for="savedConfigSelect" class="form-label">Saved configuration</label>
+                                                <div class="input-group">
+                                                    <select class="form-select" id="savedConfigSelect" onchange="selectSavedConfiguration(this.value)"></select>
+                                                    <button class="btn btn-outline-primary" type="button" onclick="createNewConfiguration()" title="Create new configuration">+</button>
+                                                    <button class="btn btn-outline-danger" type="button" id="deleteSavedConfigButton" onclick="deleteSelectedConfiguration()" title="Delete selected configuration" aria-label="Delete selected configuration" disabled>&minus;</button>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
                                                 <label for="projectName" class="form-label">CI Name</label>
                                                 <input type="text" class="form-control" id="projectName" placeholder="My CI">
                                                 <small class="form-text text-muted">Name for container instances and settings</small>
@@ -1024,7 +1032,7 @@ FROM mikarinneoracle/ci-sidecar-os:0.1.1
                             multiple containers, sidecars, volumes, OCI File Storage Service file systems, and networking configurations.
                         </p>
                         <div class="alert alert-warning mt-3" role="alert">
-                            <strong>Notice:</strong> This software (version 0.1.2) is currently intended for experimental use and evaluation purposes.
+                            <strong>Notice:</strong> This software (version 1.0.0) is currently intended for experimental use and evaluation purposes.
                             It is not recommended for production environments at this time.
                         </div>
                     </div>

@@ -6,7 +6,7 @@
 
 CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastructure (OCI) Container Instances. It provides an intuitive interface for creating, configuring, and managing container instances with support for multiple containers, sidecars, volumes, OCI File Storage Service (FSS) file systems, and networking configurations.
 
-> **Notice:** This software (version 0.1.2) is currently intended for experimental use and evaluation purposes. It is not recommended for production environments at this time.
+> **Notice:** This software (version 1.0.0) is currently intended for experimental use and evaluation purposes. It is not recommended for production environments at this time.
 
 ## Features
 
@@ -45,7 +45,18 @@ Use any runtime or tooling in sidecars without impacting the application image.
 - **Kubernetes-style patterns, simplified**
 Gain multi-container and sidecar benefits without managing Kubernetes clusters.
 
-## UI Changes & Updates (Version 0.1.2)
+## What's New in 1.0.0
+
+Version 1.0.0 builds on 0.1.2 with project-backed configuration, safer configuration management, and a tested Codex workflow:
+
+- **File-backed shared configurations**: Configurations and their ports, volumes, and File Storage definitions are stored in `.ci-compose/configs.json`, so the UI and local REST API share one project definition.
+- **Reliable configuration selection**: The active configuration remains selected after a browser reload. Creating a new configuration now resets every form field, including the default log group, so values do not leak from another configuration.
+- **Confirmed configuration deletion**: The Configuration dialog has a **-** button for deleting the selected saved configuration. Deletion requires a confirmation and uses a revision check to prevent deleting a configuration changed elsewhere.
+- **Scoped REST discovery for sidecars**: The local REST API now provides selected-configuration discovery for Object Storage objects, FSS, logs, Autonomous Databases, Vaults, and Vault Secret metadata. Secret values are never returned.
+- **CI Compose Codex skill**: The repository includes a discoverable Codex skill that uses the local REST API exclusively, enforces the selected configuration scope, and keeps skill-created changes visible in the UI.
+- **Deployment workflow alignment**: Skill-driven deployment creation follows CI Compose naming, tags, ports, volumes, and FSS definitions. Updates use create-first replacement and remove the original only after the user confirms that the replacement appears in the UI.
+
+## Earlier UI Changes (Version 0.1.2)
 
 Version 0.1.2 adds native OCI File Storage Service (FSS) support to Container Instance workflows:
 
@@ -89,6 +100,52 @@ For questions, support, or inquiries, please contact:
 [@mikarinneoracle](https://github.com/mikarinneoracle)
 
 ## Getting Started
+
+### Getting Started with Codex Skills
+
+This repository includes a repo-scoped Codex skill for operating CI Compose
+through its local REST API. A user who clones the repository does **not** need
+to copy the skill into a personal Codex folder: Codex discovers skills from
+`.agents/skills` when it is started in the repository (or one of its
+subdirectories).
+
+After cloning, install and start CI Compose normally, then start a new Codex
+session in the cloned repository:
+
+```bash
+git clone https://github.com/mikarinneoracle/ci-compose.git
+cd ci-compose
+npm install
+npm run dev
+```
+
+Open the same folder in the Codex IDE extension, or run Codex from that folder.
+The `ci-compose-rest` skill is then available. Invoke it explicitly with
+`$ci-compose-rest` (or `/skills` in Codex CLI or the IDE extension), or let
+Codex select it when the request matches its description.
+
+Create a new saved configuration in the CI Compose **Configuration** dialog
+before using the skill for deployment work. Enter the required configuration
+values and save it normally. Alternatively, ask the skill to create a shared
+configuration, then use the UI to finish or refine its settings. Once a saved
+configuration is selected, you can continue using the skill for supported
+operations. Changes made through the skill are persisted to the same project
+configuration and are visible in the CI Compose UI.
+
+The repository entry point at
+`.agents/skills/ci-compose-rest/SKILL.md` loads the canonical instructions in
+`skills/ci-compose-rest/SKILL.md`. This keeps the complete workflow and its
+OCI access restrictions versioned with the project. The skill requires the
+local CI Compose server to be running and uses only its REST API; it never
+calls the OCI CLI directly. It is restricted to the selected CI Compose
+configuration and its permitted Container Instance, Object Storage, existing
+FSS, log, ADB/Vault/Secret metadata discovery, and read-only network
+operations.
+
+When the clone is updated with `git pull`, Codex detects changes to local
+skills automatically. If an updated skill does not appear in an already open
+session, restart Codex. To use the skill outside this repository, install or
+symlink the canonical skill into a user-level Codex skill location instead.
 
 ### Prerequisites
 

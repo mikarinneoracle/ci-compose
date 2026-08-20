@@ -1,0 +1,4 @@
+interface:
+  display_name: "CI Compose REST"
+  short_description: "Operate CI Compose through its local REST API"
+  default_prompt: "Use $ci-compose-rest to manage OCI Container Instances through the local CI Compose API."

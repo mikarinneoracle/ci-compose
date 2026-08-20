@@ -1,6 +1,6 @@
 # Local REST API endpoints
 
-The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 37 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
+The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 46 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
 
 ## Shared conventions
 
@@ -20,6 +20,17 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 | GET | `/api/oci/config/region` | `configPath`, `profile` | Returns the region for the selected profile. |
 | GET | `/api/oci/config/namespace` | OCI connection settings | Retrieves the Object Storage namespace. |
 | GET | `/api/oci/config/tenancy` | `configPath`, `profile` | Returns the tenancy OCID for the selected profile. |
+| GET | `/api/configs` | – | Lists local shared configuration metadata. |
+| POST | `/api/configs` | JSON: `name`, `config`, `projectResources` | Creates a local shared configuration. Returns `409` for an existing name. |
+| GET | `/api/configs/:configId` | path: `configId` | Retrieves a local shared configuration. |
+| PUT | `/api/configs/:configId` | path: `configId`; JSON: `revision`, `name`, `config`, `projectResources` | Updates a local shared configuration. Returns `409` on revision conflict. |
+| DELETE | `/api/configs/:configId` | path: `configId`; `revision` | Deletes a local shared configuration. Returns `409` on revision conflict. |
+
+### Shared configuration payload
+
+`POST /api/configs` requires a non-empty `name`; `PUT /api/configs/:configId` also requires the latest integer `revision`. Both accept a `config` object and `projectResources` object. The latter has `ports`, `volumes`, and `fileStorages` arrays. Ports must be integers from 1 to 65535. Each FSS entry must include `mountPath`, `mountTargetId`, `exportId`, and `subnetId`.
+
+`POST` returns `409` with `CONFIG_EXISTS` if the name already exists. `PUT` and `DELETE` return `409` with `CONFIG_CONFLICT` when their revision is stale; retrieve the configuration again before retrying.
 
 ## IAM and resource listing
 
@@ -34,7 +45,11 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 | GET | `/api/oci/instances` | `compartmentId` | Lists Compute instances. |
 | GET | `/api/oci/object-storage/namespaces` | OCI connection settings | Retrieves the Object Storage namespace. |
 | GET | `/api/oci/object-storage/buckets` | `namespace`, `compartmentId` | Lists Object Storage buckets. |
+| GET | `/api/oci/object-storage/objects` | `configId`, `namespace`, `bucketName` | Lists object metadata in a bucket that belongs to the selected configuration's compartment. |
 | GET | `/api/oci/logging/log-groups` | `compartmentId` | Lists Logging log groups. |
+| GET | `/api/oci/database/autonomous-databases` | `configId` | Lists available Autonomous Database names and OCIDs in the selected configuration's compartment. |
+| GET | `/api/oci/key-management/vaults` | `configId` | Lists active Vault names and OCIDs in the selected configuration's compartment. |
+| GET | `/api/oci/key-management/secrets` | `configId`, `vaultId` | Lists active secret names and OCIDs for the selected Vault in the selected configuration's compartment. Secret values are never returned. |
 
 ## Container Instances
 
