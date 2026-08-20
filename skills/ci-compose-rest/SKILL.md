@@ -141,7 +141,7 @@ For `AdbWallet`, use `GET /api/oci/database/autonomous-databases?configId=<confi
 
 For `VaultReader`, use `GET /api/oci/key-management/vaults?configId=<configId>` to show each vault `displayName` and OCID. After the user selects a vault, use `GET /api/oci/key-management/secrets?configId=<configId>&vaultId=<vaultId>` to show its active `secretName` values and OCIDs. Use the selected Secret OCID as `secret_ocid`. This endpoint returns metadata only: never retrieve, display, or otherwise handle Secret contents. Retain the default `secrets_file` path unless the user requests another path.
 
-For `OsReader`, select a bucket in the selected compartment with the REST bucket endpoint and list its files with `GET /api/oci/object-storage/objects?configId=<configId>&namespace=<namespace>&bucketName=<bucketName>`; set `os_bucket` only after this check. Keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, use a log OCID in the selected configuration's `logGroupId`, then set `log_file` and `log_header`; do not use a log from another group.
+For `OsReader`, select a bucket in the selected compartment with the REST bucket endpoint and list its files with `GET /api/oci/object-storage/objects?configId=<configId>&namespace=<namespace>&bucketName=<bucketName>`; set `os_bucket` only after this check. Keep `data_path` and `reload_delay` at their UI defaults unless the user requests changes. For `LogWriter`, discover the available log names and OCIDs with `GET /api/oci/logging/logs?configId=<configId>` and require the user to select one. The route is limited to the selected configuration's `logGroupId`. Use the selected OCID as `log_ocid`, then set `log_file` and `log_header`.
 
 ## Object Storage, FSS, and logs
 

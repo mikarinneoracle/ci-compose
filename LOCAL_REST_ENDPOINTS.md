@@ -1,6 +1,6 @@
 # Local REST API endpoints
 
-The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 46 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
+The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 47 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
 
 ## Shared conventions
 
@@ -47,6 +47,7 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 | GET | `/api/oci/object-storage/buckets` | `namespace`, `compartmentId` | Lists Object Storage buckets. |
 | GET | `/api/oci/object-storage/objects` | `configId`, `namespace`, `bucketName` | Lists object metadata in a bucket that belongs to the selected configuration's compartment. |
 | GET | `/api/oci/logging/log-groups` | `compartmentId` | Lists Logging log groups. |
+| GET | `/api/oci/logging/logs` | `configId` | Lists active log names and OCIDs only in the selected configuration's `logGroupId`. |
 | GET | `/api/oci/database/autonomous-databases` | `configId` | Lists available Autonomous Database names and OCIDs in the selected configuration's compartment. |
 | GET | `/api/oci/key-management/vaults` | `configId` | Lists active Vault names and OCIDs in the selected configuration's compartment. |
 | GET | `/api/oci/key-management/secrets` | `configId`, `vaultId` | Lists active secret names and OCIDs for the selected Vault in the selected configuration's compartment. Secret values are never returned. |

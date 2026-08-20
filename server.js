@@ -1034,6 +1034,48 @@ app.get('/api/oci/logging/log-groups', async (req, res) => {
   }
 });
 
+// Logging - List active logs in the selected configuration's default log group
+app.get('/api/oci/logging/logs', async (req, res) => {
+  try {
+    const { configuration } = getConfigurationScope(req);
+    const logGroupId = configuration.config?.logGroupId;
+    if (!logGroupId) {
+      return res.status(400).json({ error: 'Selected configuration has no logGroupId' });
+    }
+    if (req.query.logGroupId && req.query.logGroupId !== logGroupId) {
+      return res.status(403).json({ error: 'logGroupId must match the selected configuration' });
+    }
+
+    const { loggingManagementClient } = createOCIClients(getOCIRequestConfig(req));
+    const logs = [];
+    let page;
+    do {
+      const response = await loggingManagementClient.listLogs({
+        logGroupId,
+        lifecycleState: 'ACTIVE',
+        limit: 100,
+        page
+      });
+      logs.push(...(response.items || []));
+      page = response.opcNextPage;
+    } while (page);
+
+    res.json({
+      success: true,
+      data: logs.map(log => ({
+        id: log.id,
+        displayName: log.displayName,
+        logGroupId: log.logGroupId,
+        lifecycleState: log.lifecycleState,
+        logType: log.logType
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing logs:', error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 // Sidecar validation functions
 async function validateBucketExists(bucketName, compartmentId, namespaceName, tenancyId, clients) {
   try {
