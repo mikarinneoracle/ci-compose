@@ -55,7 +55,7 @@ Version 1.0.0 builds on 0.1.2 with project-backed configuration, safer configura
 - **Confirmed configuration deletion**: The Configuration dialog has a **-** button for deleting the selected saved configuration. Deletion requires a confirmation and uses a revision check to prevent deleting a configuration changed elsewhere.
 - **Scoped REST discovery for sidecars**: The local REST API now provides selected-configuration discovery for Object Storage objects, FSS, logs, Autonomous Databases, Vaults, and Vault Secret metadata. Secret values are never returned.
 - **CI Compose Codex skill**: The repository includes a discoverable Codex skill that uses the local REST API exclusively, enforces the selected configuration scope, and keeps skill-created changes visible in the UI.
-- **Deployment workflow alignment**: Skill-driven deployment creation follows CI Compose naming, tags, ports, volumes, and FSS definitions. Updates persist the replacement definition to the shared configuration immediately after creation, keeping the UI in sync, then remove the original automatically after that save succeeds.
+- **Deployment workflow alignment**: Skill-driven deployment creation follows CI Compose naming, tags, ports, volumes, and FSS definitions. Updates persist the replacement definition to the shared configuration before creating the OCI replacement, so the UI shows the planned change first; the original is removed automatically after the replacement create request succeeds.
 
 ## Earlier UI Changes (Version 0.1.2)
 
