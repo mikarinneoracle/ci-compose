@@ -319,6 +319,7 @@ function renderSavedConfigurationSelect() {
         const option = document.createElement('option'); option.value = item.id; option.textContent = item.name;
         option.selected = item.id === configurationState.id; select.appendChild(option);
     });
+    select.value = configurationState.id || '';
     if (deleteButton) deleteButton.disabled = !configurationState.id;
 }
 
