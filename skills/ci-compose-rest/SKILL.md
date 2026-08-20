@@ -45,7 +45,7 @@ Use the selected or configured subnet in the deployment payload. These calls are
 
 Use `GET /api/configs` to list shared UI/API configurations, then `GET /api/configs/:configId` to retrieve one. Create a configuration with `POST /api/configs`; update it with `PUT /api/configs/:configId` and the `revision` returned by GET. The shared configuration contains no OCI secrets.
 
-Treat `projectResources` in the selected configuration as the UI's shared deployment definition. When Codex creates or changes a deployment, update `projectName` and the matching `projectResources.ports`, `projectResources.volumes`, and `projectResources.fileStorages` in the same configuration. For an FSS definition, include at least `name`, `mountPath`, `mountTargetId`, `exportId`, `subnetId`, and `isEncryptedInTransit`. This keeps the UI cards consistent with REST-created resources.
+Treat `projectResources` in the selected configuration as the UI's shared deployment definition. When Codex creates or changes a deployment, update `projectName` and the matching `projectResources.ports`, `projectResources.volumes`, and `projectResources.fileStorages` in the same configuration. This is mandatory, not a best-effort UI enhancement. For an FSS definition, include at least `name`, `mountPath`, `mountTargetId`, `exportId`, `subnetId`, and `isEncryptedInTransit`. This keeps the UI cards consistent with REST-created resources.
 
 For create and update, use this shape:
 
@@ -114,7 +114,7 @@ There is no in-place deployment update. Match CI Compose UI behavior:
 - **Create:** complete the input preflight below, validate the complete payload, show the target compartment, Container Instance name, resources, FSS mounts, and tags, then obtain explicit confirmation before `POST /api/oci/container-instances`.
 - **Update:** first retrieve the existing Container Instance. Build, validate, and show the complete replacement payload and its tags. Explain that the replacement is created first with the same display name while the original remains running. Obtain explicit confirmation before `POST /api/oci/container-instances`. After the create request succeeds, ask only whether the new instance appears in CI Compose UI. Do not poll, wait for readiness, or test the new instance.
 
-If the user answers that the new instance is visible, delete the original immediately with `DELETE /api/oci/container-instances/:instanceId`; do not ask for a second deletion confirmation. If the user says no, is uncertain, or does not answer, leave the original untouched.
+If the user answers that the new instance is visible, first fetch the selected configuration's latest revision and persist the exact replacement `projectResources` with `PUT /api/configs/:configId`. Only after that save succeeds, delete the original immediately with `DELETE /api/oci/container-instances/:instanceId`; do not ask for a second deletion confirmation. If the configuration save returns a conflict or otherwise fails, leave the original untouched and report the issue. If the user says no, is uncertain, or does not answer, leave the original untouched.
 
 For a standalone delete request, always ask an explicit `Are you sure you want to delete <instance name>?` confirmation before calling `DELETE /api/oci/container-instances/:instanceId`.
 
