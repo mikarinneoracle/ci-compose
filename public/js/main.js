@@ -286,6 +286,8 @@ let currentModalInstanceId = null;
 
 // Track previous container instance states to detect changes
 let previousInstanceStates = new Map(); // Map of instanceId -> lifecycleState
+let containerInstancesLoadSequence = 0;
+let containerInstancesStateScope = null;
 
 // Store main page auto-reload interval ID
 let mainPageAutoReloadInterval = null;
@@ -375,6 +377,7 @@ async function selectSavedConfiguration(id) {
     const response = await fetch(`/api/configs/${encodeURIComponent(id)}`); const data = await response.json();
     if (!response.ok) return showNotification(data.error || 'Could not load configuration', 'error');
     applySharedConfiguration(data.config);
+    const selectedConfigId = data.config.id;
     loadConfiguration();
 
     // The compartment, subnet and log-group inputs are populated from OCI
@@ -383,6 +386,9 @@ async function selectSavedConfiguration(id) {
     await loadOCIProfiles();
     await Promise.all([loadRegionFromConfig(), loadCompartments()]);
 
+    // A newer selection may have completed while OCI form data was loading.
+    // Never let this older selection overwrite that newer page state.
+    if (configurationState.id !== selectedConfigId) return;
     updatePortsTable(); updateVolumesTable(); updateFileStoragesTable(); await loadPageContent();
 }
 
@@ -656,7 +662,7 @@ async function loadPageContent() {
     
     // Load container instances if we have required config
     if (config.compartmentId && config.projectName) {
-        await loadContainerInstances();
+        await loadContainerInstances(false, config);
     } else {
         document.getElementById('containerInstancesContent').innerHTML = 
             '<p class="text-muted">Please configure compartment and CI name to view container instances.</p>';
@@ -2102,30 +2108,64 @@ function isDeletedContainerInstance(instance) {
     return String(instance.lifecycleState || '').toUpperCase() === 'DELETED';
 }
 
+function isCurrentContainerInstancesLoad(loadId, config) {
+    const activeConfig = getConfiguration();
+    return loadId === containerInstancesLoadSequence
+        && activeConfig.projectName === config.projectName
+        && activeConfig.compartmentId === config.compartmentId
+        && activeConfig.region === config.region
+        && activeConfig.ociConfigFile === config.ociConfigFile
+        && activeConfig.ociConfigProfile === config.ociConfigProfile;
+}
+
+function getContainerInstancesStateScope(config) {
+    return JSON.stringify({
+        projectName: config.projectName || '',
+        compartmentId: config.compartmentId || '',
+        region: config.region || '',
+        ociConfigFile: config.ociConfigFile || '',
+        ociConfigProfile: config.ociConfigProfile || ''
+    });
+}
+
 // Load and display container instances
-async function loadContainerInstances(showSpinner = false) {
+async function loadContainerInstances(showSpinner = false, configOverride = null) {
     const contentDiv = document.getElementById('containerInstancesContent');
-    const config = getConfiguration();
+    const config = configOverride || getConfiguration();
+    if (configOverride && !isCurrentContainerInstancesLoad(containerInstancesLoadSequence, config)) return;
+    const loadId = ++containerInstancesLoadSequence;
+    const canRender = () => isCurrentContainerInstancesLoad(loadId, config);
+    const stateScope = getContainerInstancesStateScope(config);
+
+    // Instance lifecycle state comparisons are valid only within one selected
+    // configuration. Switching configuration must render its own table even
+    // if OCI happens to return unchanged lifecycle states from a previous
+    // configuration.
+    if (containerInstancesStateScope !== stateScope) {
+        previousInstanceStates.clear();
+        containerInstancesStateScope = stateScope;
+    }
     
     if (!config.compartmentId) {
-        contentDiv.innerHTML = '<p class="text-muted">Compartment ID is required. Please configure it first.</p>';
+        if (canRender()) contentDiv.innerHTML = '<p class="text-muted">Compartment ID is required. Please configure it first.</p>';
         return;
     }
     
     if (!config.projectName) {
-        contentDiv.innerHTML = '<p class="text-muted">CI name is required. Please configure it first.</p>';
+        if (canRender()) contentDiv.innerHTML = '<p class="text-muted">CI name is required. Please configure it first.</p>';
         return;
     }
     
     // Show spinner if requested
-    if (showSpinner) {
+    if (showSpinner && canRender()) {
         contentDiv.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="text-muted mt-2">Loading container instances...</p></div>';
     }
     
     try {
-        const params = buildQueryString();
+        const params = buildQueryString({}, config);
         const response = await fetch(`/api/oci/container-instances?${params}`);
         const data = await response.json();
+        if (!canRender()) return;
         
         if (data.success && data.data && data.data.length > 0) {
             const matchingInstances = data.data.filter(instance =>
@@ -2165,35 +2205,44 @@ async function loadContainerInstances(showSpinner = false) {
                     }
                 });
                 
-                // Only update the display if there's a state change or if this is the first load
-                if (hasStateChange || previousInstanceStates.size === 0) {
+                // A failed request leaves an error alert in the table. Render the
+                // next successful response even when OCI lifecycle states have
+                // not changed, otherwise a recovered server can leave stale
+                // "Failed to fetch" content visible indefinitely.
+                const hasVisibleLoadError = contentDiv.querySelector('.alert-danger') !== null;
+
+                // Only update the display if there's a state change, if this is
+                // the first load, or if a previous request rendered an error.
+                if (hasStateChange || previousInstanceStates.size === 0 || hasVisibleLoadError) {
                     // Update previous states
                     previousInstanceStates = currentStates;
                     
                     // Display instances with VNIC details (this function will fetch VNIC info and apply filter)
-                    await displayContainerInstancesWithDetails(instancesWithDetails);
+                    await displayContainerInstancesWithDetails(instancesWithDetails, loadId, config);
                 }
                 // If no state change, silently skip the update to avoid unnecessary DOM manipulation
             } else {
                 containerInstancesCount = 0;
                 // Always update the message with the current CI name
-                    contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
+                    if (canRender()) contentDiv.innerHTML = `<p class="text-muted">No container instances found matching CI name "${config.projectName}".</p>`;
             }
         } else {
             containerInstancesCount = 0;
             // Only update if content div is empty or shows error
-            if (contentDiv.innerHTML.includes('No container instances found.') === false) {
+            if (canRender() && contentDiv.innerHTML.includes('No container instances found.') === false) {
                 contentDiv.innerHTML = '<p class="text-muted">No container instances found.</p>';
             }
         }
     } catch (error) {
         console.error('Error loading container instances:', error);
-        contentDiv.innerHTML = `<div class="alert alert-danger">Error loading container instances: ${error.message}</div>`;
+        if (canRender()) contentDiv.innerHTML = `<div class="alert alert-danger">Error loading container instances: ${error.message}</div>`;
     }
 }
 
-async function displayContainerInstancesWithDetails(instances) {
+async function displayContainerInstancesWithDetails(instances, loadId = null, config = null) {
     const contentDiv = document.getElementById('containerInstancesContent');
+    const canRender = () => loadId === null || isCurrentContainerInstancesLoad(loadId, config);
+    if (!canRender()) return;
     const totalMatchingInstances = instances.length;
     const hiddenDeletedCount = showDeletedCIs ? 0 : instances.filter(isDeletedContainerInstance).length;
     
@@ -2206,6 +2255,7 @@ async function displayContainerInstancesWithDetails(instances) {
     instancesToDisplay = instancesToDisplay.slice(0, 10);
     
     if (instancesToDisplay.length === 0) {
+        if (!canRender()) return;
         if (instances.length > 0 && !showDeletedCIs) {
             contentDiv.innerHTML = '<p class="text-muted">No container instances to display (deleted instances are hidden).</p>';
         } else {
@@ -2230,7 +2280,7 @@ async function displayContainerInstancesWithDetails(instances) {
             // If vnicId not in list response, fetch instance details
             if (!vnicId && instance.id) {
                 try {
-                    const instanceResponse = await fetch(buildOCIUrl(`/api/oci/container-instances/${instance.id}`));
+                    const instanceResponse = await fetch(buildOCIUrl(`/api/oci/container-instances/${instance.id}`, {}, config));
                     const instanceData = await instanceResponse.json();
                     if (instanceData.success && instanceData.data && instanceData.data.vnics && instanceData.data.vnics.length > 0) {
                         vnicId = instanceData.data.vnics[0].vnicId || instanceData.data.vnics[0].id;
@@ -2253,7 +2303,7 @@ async function displayContainerInstancesWithDetails(instances) {
             // Now fetch VNIC details to get IPs
             if (vnicId) {
                 try {
-                    const vnicResponse = await fetch(buildOCIUrl(`/api/oci/networking/vnics/${vnicId}`));
+                    const vnicResponse = await fetch(buildOCIUrl(`/api/oci/networking/vnics/${vnicId}`, {}, config));
                     const vnicData = await vnicResponse.json();
                     const vnic = vnicData.vnic || vnicData.data;
                     if (vnic) {
@@ -2282,6 +2332,7 @@ async function displayContainerInstancesWithDetails(instances) {
         }
     );
     
+    if (!canRender()) return;
     let html = `<p class="text-muted mb-3">Showing ${instancesWithDetails.length} of ${totalMatchingInstances} container instance(s)`;
     if (hiddenDeletedCount > 0) {
         html += ` (${hiddenDeletedCount} deleted hidden)`;
@@ -2372,7 +2423,7 @@ async function displayContainerInstancesWithDetails(instances) {
     });
     
     html += '</tbody></table></div>';
-    contentDiv.innerHTML = html;
+    if (canRender()) contentDiv.innerHTML = html;
 }
 
 // Toggle function to show/hide deleted container instances

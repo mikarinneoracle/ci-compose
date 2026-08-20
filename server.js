@@ -875,9 +875,16 @@ app.get('/api/oci/object-storage/objects', async (req, res) => {
       return res.status(400).json({ error: 'namespace and bucketName are required' });
     }
 
-    const bucketResponse = await objectStorageClient.getBucket({ namespaceName, bucketName });
-    if (bucketResponse.bucket?.compartmentId !== compartmentId) {
-      return res.status(403).json({ error: 'Bucket is outside the selected configuration compartment' });
+    // Verify the bucket through the selected compartment's bucket list before
+    // listing objects. This uses the same scoped lookup as sidecar validation
+    // and avoids a getBucket response mismatch seen for valid buckets.
+    const bucketsResponse = await objectStorageClient.listBuckets({
+      namespaceName,
+      compartmentId
+    });
+    const bucket = (bucketsResponse.items || []).find((item) => item.name === bucketName);
+    if (!bucket) {
+      return res.status(404).json({ error: `The bucket '${bucketName}' does not exist in the selected configuration compartment` });
     }
 
     const objects = [];
