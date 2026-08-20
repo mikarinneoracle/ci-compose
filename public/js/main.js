@@ -120,6 +120,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (backdrop) backdrop.classList.add('modal-backdrop-level-3');
                 }
             });
+
+            // A Configuration modal is an editing surface. Defer shared
+            // configuration refreshes until it has closed so background
+            // polling cannot replace an open dropdown or form field.
+            if (closedModal.id === 'configModal') {
+                void pollSharedConfiguration();
+            }
         }, 0);
     });
 });
@@ -286,8 +293,14 @@ let configurationState = { id: null, revision: null, config: {} };
 let configurationResources = {};
 let configurationPollInterval = null;
 let configurationPollInFlight = false;
+let configurationRetryAfter = 0;
+let configurationRetryDelay = 0;
+let configurationConnectionLost = false;
+let configurationConnectionNotification = null;
 const ACTIVE_CONFIGURATION_STORAGE_KEY = 'ciComposeActiveConfigurationId';
 const CONFIGURATION_POLL_INTERVAL_MS = 1000;
+const CONFIGURATION_RETRY_DELAY_MS = 5000;
+const CONFIGURATION_MAX_RETRY_DELAY_MS = 30000;
 
 function configurationPayload() {
     const name = configurationState.config.projectName || '';
@@ -301,6 +314,38 @@ function applySharedConfiguration(saved) {
     localStorage.setItem(ACTIVE_CONFIGURATION_STORAGE_KEY, saved.id);
     loadPortsAndVolumesForCIName(saved.name, false);
     renderSavedConfigurationSelect();
+}
+
+function isConfigurationModalOpen() {
+    return document.getElementById('configModal')?.classList.contains('show');
+}
+
+function showConfigurationConnectionLost() {
+    if (configurationConnectionLost) return;
+    configurationConnectionLost = true;
+    configurationConnectionNotification = showNotification(
+        'CI Compose server is unavailable. Reconnecting automatically…',
+        'warning',
+        0
+    );
+}
+
+function markConfigurationConnectionRecovered() {
+    const wasDisconnected = configurationConnectionLost;
+    configurationConnectionLost = false;
+    configurationRetryAfter = 0;
+    configurationRetryDelay = 0;
+
+    if (configurationConnectionNotification) {
+        configurationConnectionNotification.remove();
+        if (configurationConnectionNotification === warningNotificationElement) {
+            warningNotificationElement = null;
+        }
+        configurationConnectionNotification = null;
+    }
+    if (wasDisconnected) {
+        showNotification('CI Compose server connection restored.', 'success');
+    }
 }
 
 async function fetchSavedConfigurations() {
@@ -329,7 +374,16 @@ async function selectSavedConfiguration(id) {
     if (!id) return createNewConfiguration();
     const response = await fetch(`/api/configs/${encodeURIComponent(id)}`); const data = await response.json();
     if (!response.ok) return showNotification(data.error || 'Could not load configuration', 'error');
-    applySharedConfiguration(data.config); loadConfiguration(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable(); await loadPageContent();
+    applySharedConfiguration(data.config);
+    loadConfiguration();
+
+    // The compartment, subnet and log-group inputs are populated from OCI
+    // asynchronously. Reload them for the newly selected configuration so
+    // the modal never retains empty options from the previously selected one.
+    await loadOCIProfiles();
+    await Promise.all([loadRegionFromConfig(), loadCompartments()]);
+
+    updatePortsTable(); updateVolumesTable(); updateFileStoragesTable(); await loadPageContent();
 }
 
 async function refreshActiveSharedConfiguration() {
@@ -409,6 +463,11 @@ function resetConfigurationForm() {
     const form = document.getElementById('configForm');
     if (form) form.reset();
 
+    // The saved-configuration selector lives inside this form. A native form
+    // reset would otherwise revert it to its first option ("New
+    // configuration"), even when a saved configuration is still active.
+    renderSavedConfigurationSelect();
+
     // `form.reset()` restores markup defaults. Set explicit defaults as the
     // configuration fields may have been populated while editing another entry.
     document.getElementById('projectName').value = '';
@@ -448,11 +507,6 @@ function applyExternalConfigurationUpdate(savedConfiguration) {
     updateVolumesTable();
     updateFileStoragesTable();
 
-    const configModal = document.getElementById('configModal');
-    if (configModal?.classList.contains('show')) {
-        loadConfiguration();
-    }
-
     // The table is intentionally refreshed separately. Its OCI request must
     // never delay or prevent the file-backed configuration from updating.
     void loadPageContent().catch(error => {
@@ -460,36 +514,77 @@ function applyExternalConfigurationUpdate(savedConfiguration) {
     });
 }
 
+async function restoreConfigurationAfterServerRecovery() {
+    await fetchSavedConfigurations();
+    if (configurationState.id) return;
+
+    const savedId = localStorage.getItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
+    const savedConfiguration = (window.ciComposeSavedConfigurations || []).find(config => config.id === savedId)
+        || (window.ciComposeSavedConfigurations || [])[0];
+    if (!savedConfiguration) return;
+
+    const response = await fetch(`/api/configs/${encodeURIComponent(savedConfiguration.id)}`);
+    const data = await response.json();
+    if (!response.ok || !data.config) {
+        throw new Error(data.error || 'Could not restore configuration');
+    }
+
+    applyExternalConfigurationUpdate(data.config);
+    startMainPageAutoReload();
+    markConfigurationConnectionRecovered();
+}
+
+async function pollSharedConfiguration() {
+    if (isConfigurationModalOpen() || configurationPollInFlight || Date.now() < configurationRetryAfter) return;
+
+    configurationPollInFlight = true;
+    try {
+        if (!configurationState.id) {
+            await restoreConfigurationAfterServerRecovery();
+            return;
+        }
+
+        const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`);
+        const data = await response.json();
+
+        if (response.ok && data.config && data.config.revision !== configurationState.revision) {
+            applyExternalConfigurationUpdate(data.config);
+            showNotification('Configuration updated externally.', 'info');
+        } else if (response.status === 404) {
+            await refreshActiveSharedConfiguration();
+        }
+
+        // Keep the saved configuration selector current without blocking
+        // the active configuration update above.
+        await fetchSavedConfigurations();
+        markConfigurationConnectionRecovered();
+    } catch (error) {
+        // A refused local-server request is reported by the browser's
+        // network layer already. Back off progressively to keep the
+        // console usable while still reconnecting automatically.
+        configurationRetryDelay = configurationRetryDelay
+            ? Math.min(configurationRetryDelay * 2, CONFIGURATION_MAX_RETRY_DELAY_MS)
+            : CONFIGURATION_RETRY_DELAY_MS;
+        configurationRetryAfter = Date.now() + configurationRetryDelay;
+        showConfigurationConnectionLost();
+    } finally {
+        configurationPollInFlight = false;
+    }
+}
+
 function startConfigurationPolling() {
     if (configurationPollInterval) clearInterval(configurationPollInterval);
 
-    configurationPollInterval = setInterval(async () => {
-        if (!configurationState.id || configurationPollInFlight) return;
-
-        configurationPollInFlight = true;
-        try {
-            const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`);
-            const data = await response.json();
-
-            if (response.ok && data.config && data.config.revision !== configurationState.revision) {
-                applyExternalConfigurationUpdate(data.config);
-                showNotification('Configuration updated externally.', 'info');
-            } else if (response.status === 404) {
-                await refreshActiveSharedConfiguration();
-            }
-
-            // Keep the saved configuration selector current without blocking
-            // the active configuration update above.
-            await fetchSavedConfigurations();
-        } catch (error) {
-            console.error('Could not poll shared configuration:', error);
-        } finally {
-            configurationPollInFlight = false;
-        }
+    configurationPollInterval = setInterval(() => {
+        if (isConfigurationModalOpen()) return;
+        void pollSharedConfiguration();
     }, CONFIGURATION_POLL_INTERVAL_MS);
 }
 
 async function initialiseSharedConfiguration() {
+    // Keep retrying even if the server is unavailable during initial page
+    // load. The UI can then recover without requiring a browser reload.
+    startConfigurationPolling();
     await fetchSavedConfigurations();
     if ((window.ciComposeSavedConfigurations || []).length === 0) {
         const legacy = JSON.parse(localStorage.getItem('appConfig') || '{}');
@@ -499,9 +594,6 @@ async function initialiseSharedConfiguration() {
             await persistSharedConfiguration();
         }
     }
-    // Start polling before selectSavedConfiguration() triggers the initial
-    // OCI table request, which can take longer than local config retrieval.
-    startConfigurationPolling();
     if (!configurationState.id && (window.ciComposeSavedConfigurations || []).length > 0) {
         const savedId = localStorage.getItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
         const savedConfiguration = (window.ciComposeSavedConfigurations || []).find(config => config.id === savedId);
@@ -533,9 +625,16 @@ function startMainPageAutoReload() {
 
 // Check server status on page load
 document.addEventListener('DOMContentLoaded', async function() {
-    await initialiseSharedConfiguration();
-    await loadPageContent();
-    startMainPageAutoReload();
+    try {
+        await initialiseSharedConfiguration();
+        await loadPageContent();
+        startMainPageAutoReload();
+    } catch (error) {
+        resetConfigurationForm();
+        await loadPageContent();
+        startMainPageAutoReload();
+        showConfigurationConnectionLost();
+    }
 });
 
 async function loadPageContent() {
@@ -1923,13 +2022,17 @@ function showNotification(message, type = 'info', duration = null) {
         warningNotificationElement = notification;
     }
     
-    setTimeout(() => {
-        notification.remove();
-        // Clear reference if it was the warning notification
-        if (notification === warningNotificationElement) {
-            warningNotificationElement = null;
-        }
-    }, timeoutDuration);
+    if (timeoutDuration > 0) {
+        setTimeout(() => {
+            notification.remove();
+            // Clear reference if it was the warning notification
+            if (notification === warningNotificationElement) {
+                warningNotificationElement = null;
+            }
+        }, timeoutDuration);
+    }
+
+    return notification;
 }
 
 // Check server health
