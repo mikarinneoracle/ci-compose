@@ -286,6 +286,7 @@ let configurationState = { id: null, revision: null, config: {} };
 let configurationResources = {};
 let configurationPollInterval = null;
 const ACTIVE_CONFIGURATION_STORAGE_KEY = 'ciComposeActiveConfigurationId';
+const CONFIGURATION_POLL_INTERVAL_MS = 1000;
 
 function configurationPayload() {
     const name = configurationState.config.projectName || '';
@@ -328,6 +329,37 @@ async function selectSavedConfiguration(id) {
     const response = await fetch(`/api/configs/${encodeURIComponent(id)}`); const data = await response.json();
     if (!response.ok) return showNotification(data.error || 'Could not load configuration', 'error');
     applySharedConfiguration(data.config); loadConfiguration(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable(); await loadPageContent();
+}
+
+async function refreshActiveSharedConfiguration() {
+    if (!configurationState.id) return true;
+
+    const configId = configurationState.id;
+    try {
+        const response = await fetch(`/api/configs/${encodeURIComponent(configId)}`);
+        const data = await response.json();
+        if (!response.ok || !data.config) {
+            throw new Error(data.error || 'Could not load configuration');
+        }
+
+        applySharedConfiguration(data.config);
+        await fetchSavedConfigurations();
+        return true;
+    } catch (error) {
+        // Never leave values from a previous configuration in the modal when
+        // the active entry no longer exists or cannot be read from the server.
+        if (configurationState.id === configId) {
+            configurationState = { id: null, revision: null, config: {} };
+            portsData = [];
+            volumesData = [];
+            fileStoragesData = [];
+            localStorage.removeItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
+            renderSavedConfigurationSelect();
+        }
+        console.error('Could not refresh active configuration:', error);
+        showNotification(`Could not load the latest configuration: ${error.message}`, 'error');
+        return false;
+    }
 }
 
 function createNewConfiguration() {
@@ -424,7 +456,7 @@ async function initialiseSharedConfiguration() {
         const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`); const data = await response.json();
         if (response.ok && data.config.revision !== configurationState.revision) { applySharedConfiguration(data.config); await loadPageContent(); showNotification('Configuration updated externally.', 'info'); }
         await fetchSavedConfigurations();
-    }, 5000);
+    }, CONFIGURATION_POLL_INTERVAL_MS);
 }
 
 // Function to start/restart main page auto-reload
@@ -1146,6 +1178,10 @@ function showMissingFileStorageDefinitionsWarning() {
 }
 
 async function showConfigModal() {
+    // Clear the form before reading from the shared store so stale values are
+    // never visible while the latest saved configuration is being loaded.
+    resetConfigurationForm();
+    await refreshActiveSharedConfiguration();
     loadConfiguration();
     await loadOCIProfiles();
     
@@ -1310,8 +1346,7 @@ async function loadCompartments() {
                 compartmentSelect.value = savedConfig.compartmentId;
                 // Load subnets after compartment is selected
                 if (savedConfig.compartmentId) {
-                    loadSubnets();
-                    loadLogGroups();
+                    await Promise.all([loadSubnets(), loadLogGroups()]);
                 }
                 // Update footer with compartment name
                 updateContainerInstancesFooter();
