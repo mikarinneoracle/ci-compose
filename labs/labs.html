@@ -31,6 +31,25 @@
             margin-bottom: 3rem;
             border-radius: 0.5rem;
         }
+        .codex-skills-banner {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            max-width: 58rem;
+            margin: 1.5rem auto 0;
+            padding: 1rem 1.25rem;
+            text-align: left;
+            background: rgba(15, 23, 42, 0.38);
+            border: 1px solid rgba(94, 234, 212, 0.8);
+            border-radius: 0.5rem;
+        }
+        .codex-skills-banner i {
+            color: #5eead4;
+            font-size: 1.8rem;
+        }
+        .codex-skills-banner p {
+            margin: 0;
+        }
     </style>
 </head>
 <body>
@@ -38,6 +57,10 @@
         <div class="header-section text-center">
             <h1 class="display-4 mb-3"><i class="bi bi-flask"></i> CI Compose Labs</h1>
             <p class="lead">Experimental features and advanced container instance configurations</p>
+            <div class="codex-skills-banner" role="note">
+                <i class="bi bi-terminal-fill" aria-hidden="true"></i>
+                <p><strong>New in 1.0.0 — Run labs with Codex Skills</strong><br>Create a separate saved configuration for each lab, then use <code>$ci-compose-rest</code> for supported configuration and deployment work. Changes remain visible in the CI Compose UI.</p>
+            </div>
         </div>
 
         <div class="row">
