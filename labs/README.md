@@ -2,6 +2,8 @@
 
 Experimental features and advanced container instance configurations
 
+> **New in 1.0.0 — Use Codex Skills with the labs:** Start CI Compose, create a separate saved configuration for each lab, and then use `$ci-compose-rest` for supported configuration and deployment work. Skill-created changes are stored in the same project configuration and remain visible in the CI Compose UI.
+
 > **Note:** Each lab includes a Docker Compose example that can be imported using the "Import Compose" feature in CI Compose for quick setup.
 
 ## Getting Started

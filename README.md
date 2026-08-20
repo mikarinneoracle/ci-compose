@@ -15,7 +15,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Manage sidecars from the Sidecar Gallery (stock and custom sidecars)
 - Configure networking with port mappings and subnet selection. Subnet security lists are not modified automatically and must be updated manually as required.
 - Manage volumes and volume mounts shared between containers for data exchange
-- **New in 0.1.2:** Mount OCI File Storage Service (FSS) exports into Container Instances as shared file systems
+- Mount OCI File Storage Service (FSS) exports into Container Instances as shared file systems
 - View container logs (using OCI Logging sidecar) and instance details
 - Edit, restart, stop, and delete container instances
 - Duplicate container instances to quickly create new instances with the same configuration (name is automatically incremented)
@@ -23,6 +23,7 @@ CI Compose is a comprehensive management tool designed for Oracle Cloud Infrastr
 - Export Container Instances configurations to OCI Resource Manager (Terraform)
 - Import Docker Compose YAML files to quickly set up Container Instances
 - CI/CD integration: Export to OCI Resource Manager for automated deployments using OCI CLI
+- Use the repository-scoped Codex Skills workflow for selected-configuration REST operations that stay visible in the UI
 
 > **No Lock-in:** Everything created with CI Compose is a standard OCI Container Instance. You can stop using CI Compose at any time and continue managing your container instances directly through the OCI Console, CLI, or any other OCI-compatible tool. There is no vendor lock-in or proprietary format.
 
