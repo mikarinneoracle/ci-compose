@@ -258,6 +258,10 @@ app.put('/api/configs/:configId', (req, res) => {
   try { const config = configStore.update(req.params.configId, req.body); return config ? res.json({ success: true, config }) : res.status(404).json({ error: 'Configuration not found' }); }
   catch (error) { res.status(error.code === 'CONFIG_CONFLICT' || error.code === 'CONFIG_EXISTS' ? 409 : 400).json({ error: error.message, code: error.code }); }
 });
+app.delete('/api/configs/:configId', (req, res) => {
+  try { const config = configStore.remove(req.params.configId, req.query.revision); return config ? res.json({ success: true, config }) : res.status(404).json({ error: 'Configuration not found' }); }
+  catch (error) { res.status(error.code === 'CONFIG_CONFLICT' ? 409 : 400).json({ error: error.message, code: error.code }); }
+});
 
 function getConfigurationScope(req) {
   const configId = String(req.query.configId || '').trim();

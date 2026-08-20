@@ -79,4 +79,15 @@ function update(id, payload) {
   store.configs[index] = config; writeStore(store); return config;
 }
 
-module.exports = { list, get, create, update };
+function remove(id, revision) {
+  const store = readStore(); const index = store.configs.findIndex(config => config.id === id);
+  if (index < 0) return null;
+  if (Number(revision) !== store.configs[index].revision) {
+    const error = new Error('Configuration changed externally'); error.code = 'CONFIG_CONFLICT'; throw error;
+  }
+  const [removed] = store.configs.splice(index, 1);
+  writeStore(store);
+  return removed;
+}
+
+module.exports = { list, get, create, update, remove };

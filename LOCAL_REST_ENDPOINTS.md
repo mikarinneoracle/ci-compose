@@ -1,6 +1,6 @@
 # Local REST API endpoints
 
-The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 45 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
+The application listens on `http://localhost:3000` by default; set the `PORT` environment variable to use another port. This document covers all 46 `/api/` routes in `server.js`. It does not cover static UI or lab resources.
 
 ## Shared conventions
 
@@ -24,12 +24,13 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 | POST | `/api/configs` | JSON: `name`, `config`, `projectResources` | Creates a local shared configuration. Returns `409` for an existing name. |
 | GET | `/api/configs/:configId` | path: `configId` | Retrieves a local shared configuration. |
 | PUT | `/api/configs/:configId` | path: `configId`; JSON: `revision`, `name`, `config`, `projectResources` | Updates a local shared configuration. Returns `409` on revision conflict. |
+| DELETE | `/api/configs/:configId` | path: `configId`; `revision` | Deletes a local shared configuration. Returns `409` on revision conflict. |
 
 ### Shared configuration payload
 
 `POST /api/configs` requires a non-empty `name`; `PUT /api/configs/:configId` also requires the latest integer `revision`. Both accept a `config` object and `projectResources` object. The latter has `ports`, `volumes`, and `fileStorages` arrays. Ports must be integers from 1 to 65535. Each FSS entry must include `mountPath`, `mountTargetId`, `exportId`, and `subnetId`.
 
-`POST` returns `409` with `CONFIG_EXISTS` if the name already exists. `PUT` returns `409` with `CONFIG_CONFLICT` when its revision is stale; retrieve the configuration again before retrying.
+`POST` returns `409` with `CONFIG_EXISTS` if the name already exists. `PUT` and `DELETE` return `409` with `CONFIG_CONFLICT` when their revision is stale; retrieve the configuration again before retrying.
 
 ## IAM and resource listing
 

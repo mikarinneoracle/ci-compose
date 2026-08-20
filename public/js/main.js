@@ -312,12 +312,14 @@ async function fetchSavedConfigurations() {
 function renderSavedConfigurationSelect() {
     const select = document.getElementById('savedConfigSelect');
     if (!select) return;
+    const deleteButton = document.getElementById('deleteSavedConfigButton');
     const configs = window.ciComposeSavedConfigurations || [];
     select.innerHTML = '<option value="">New configuration</option>';
     configs.forEach(item => {
         const option = document.createElement('option'); option.value = item.id; option.textContent = item.name;
         option.selected = item.id === configurationState.id; select.appendChild(option);
     });
+    if (deleteButton) deleteButton.disabled = !configurationState.id;
 }
 
 async function selectSavedConfiguration(id) {
@@ -332,6 +334,41 @@ function createNewConfiguration() {
     localStorage.removeItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
     resetConfigurationForm();
     renderSavedConfigurationSelect(); updatePortsTable(); updateVolumesTable(); updateFileStoragesTable();
+    loadPageContent();
+    startMainPageAutoReload();
+}
+
+async function deleteSelectedConfiguration() {
+    if (!configurationState.id) {
+        showNotification('Select a saved configuration to delete.', 'error');
+        return;
+    }
+
+    const name = configurationState.config.projectName || 'this configuration';
+    if (!confirm(`Are you sure you want to delete the configuration "${name}"? This cannot be undone.`)) return;
+
+    try {
+        const params = new URLSearchParams({ revision: String(configurationState.revision) });
+        const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}?${params.toString()}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not delete configuration');
+
+        delete configurationResources[name];
+        localStorage.removeItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
+        await fetchSavedConfigurations();
+
+        const remaining = window.ciComposeSavedConfigurations || [];
+        if (remaining.length > 0) {
+            await selectSavedConfiguration(remaining[0].id);
+        } else {
+            createNewConfiguration();
+            await loadPageContent();
+        }
+        startMainPageAutoReload();
+        showNotification('Configuration deleted successfully.', 'success');
+    } catch (error) {
+        showNotification(error.message, 'error');
+    }
 }
 
 function resetConfigurationForm() {
@@ -340,6 +377,7 @@ function resetConfigurationForm() {
 
     // `form.reset()` restores markup defaults. Set explicit defaults as the
     // configuration fields may have been populated while editing another entry.
+    document.getElementById('projectName').value = '';
     document.getElementById('ociConfigFile').value = '';
     setOCIProfileValue('DEFAULT');
     document.getElementById('region').value = '';
@@ -518,6 +556,8 @@ async function fetchCompartmentName(compartmentId) {
 // Configuration management functions
 function loadConfiguration() {
     const config = getConfiguration();
+
+    resetConfigurationForm();
     
     // Compartment and subnet will be set after they are loaded
     if (config.projectName) document.getElementById('projectName').value = config.projectName;
@@ -1525,8 +1565,9 @@ async function loadLogGroups() {
                 logGroupSelect.appendChild(option);
             });
             
-            // Restore saved value if exists
-            const savedConfig = JSON.parse(localStorage.getItem('appConfig') || '{}');
+            // Restore only the currently selected shared configuration. Do not
+            // carry a legacy localStorage value into a new configuration.
+            const savedConfig = getConfiguration();
             if (savedConfig.logGroupId) {
                 logGroupSelect.value = savedConfig.logGroupId;
             }
