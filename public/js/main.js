@@ -285,6 +285,7 @@ let mainPageAutoReloadInterval = null;
 let configurationState = { id: null, revision: null, config: {} };
 let configurationResources = {};
 let configurationPollInterval = null;
+let configurationPollInFlight = false;
 const ACTIVE_CONFIGURATION_STORAGE_KEY = 'ciComposeActiveConfigurationId';
 const CONFIGURATION_POLL_INTERVAL_MS = 1000;
 
@@ -436,6 +437,58 @@ async function persistSharedConfiguration() {
     applySharedConfiguration(data.config); await fetchSavedConfigurations();
 }
 
+function applyExternalConfigurationUpdate(savedConfiguration) {
+    applySharedConfiguration(savedConfiguration);
+
+    // Update all locally rendered configuration values immediately. Do not
+    // wait for the separate OCI Container Instances query to complete.
+    displayProjectName(savedConfiguration.config?.projectName);
+    updateContainerInstancesFooter();
+    updatePortsTable();
+    updateVolumesTable();
+    updateFileStoragesTable();
+
+    const configModal = document.getElementById('configModal');
+    if (configModal?.classList.contains('show')) {
+        loadConfiguration();
+    }
+
+    // The table is intentionally refreshed separately. Its OCI request must
+    // never delay or prevent the file-backed configuration from updating.
+    void loadPageContent().catch(error => {
+        console.error('Could not refresh page after external configuration update:', error);
+    });
+}
+
+function startConfigurationPolling() {
+    if (configurationPollInterval) clearInterval(configurationPollInterval);
+
+    configurationPollInterval = setInterval(async () => {
+        if (!configurationState.id || configurationPollInFlight) return;
+
+        configurationPollInFlight = true;
+        try {
+            const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`);
+            const data = await response.json();
+
+            if (response.ok && data.config && data.config.revision !== configurationState.revision) {
+                applyExternalConfigurationUpdate(data.config);
+                showNotification('Configuration updated externally.', 'info');
+            } else if (response.status === 404) {
+                await refreshActiveSharedConfiguration();
+            }
+
+            // Keep the saved configuration selector current without blocking
+            // the active configuration update above.
+            await fetchSavedConfigurations();
+        } catch (error) {
+            console.error('Could not poll shared configuration:', error);
+        } finally {
+            configurationPollInFlight = false;
+        }
+    }, CONFIGURATION_POLL_INTERVAL_MS);
+}
+
 async function initialiseSharedConfiguration() {
     await fetchSavedConfigurations();
     if ((window.ciComposeSavedConfigurations || []).length === 0) {
@@ -446,17 +499,14 @@ async function initialiseSharedConfiguration() {
             await persistSharedConfiguration();
         }
     }
+    // Start polling before selectSavedConfiguration() triggers the initial
+    // OCI table request, which can take longer than local config retrieval.
+    startConfigurationPolling();
     if (!configurationState.id && (window.ciComposeSavedConfigurations || []).length > 0) {
         const savedId = localStorage.getItem(ACTIVE_CONFIGURATION_STORAGE_KEY);
         const savedConfiguration = (window.ciComposeSavedConfigurations || []).find(config => config.id === savedId);
         await selectSavedConfiguration(savedConfiguration?.id || window.ciComposeSavedConfigurations[0].id);
     }
-    configurationPollInterval = setInterval(async () => {
-        if (!configurationState.id || document.querySelector('.modal.show')) return;
-        const response = await fetch(`/api/configs/${encodeURIComponent(configurationState.id)}`); const data = await response.json();
-        if (response.ok && data.config.revision !== configurationState.revision) { applySharedConfiguration(data.config); await loadPageContent(); showNotification('Configuration updated externally.', 'info'); }
-        await fetchSavedConfigurations();
-    }, CONFIGURATION_POLL_INTERVAL_MS);
 }
 
 // Function to start/restart main page auto-reload
