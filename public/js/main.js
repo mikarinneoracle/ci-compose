@@ -955,6 +955,20 @@ let fileStoragesData = []; // Array to store OCI File System data for creation
 let containerInstancesCount = 0; // Count of container instances found on front page (total including deleted)
 let showDeletedCIs = false; // Toggle state for showing/hiding deleted CIs
 
+function toggleResourceCard(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+
+    const isMinimized = card.classList.toggle('resource-card-minimized');
+    const toggle = card.querySelector('.resource-card-toggle');
+    if (!toggle) return;
+
+    const title = card.querySelector('h3')?.textContent.trim() || 'card';
+    toggle.setAttribute('aria-label', `${isMinimized ? 'Restore' : 'Minimize'} ${title}`);
+    toggle.setAttribute('title', isMinimized ? 'Restore' : 'Minimize');
+    toggle.innerHTML = `<i class="bi ${isMinimized ? 'bi-window' : 'bi-dash-lg'}" aria-hidden="true"></i>`;
+}
+
 // Save ports, volumes and file systems for a specific CI name (projectName)
 function savePortsAndVolumesForCIName(ciName) {
     if (!ciName) return;

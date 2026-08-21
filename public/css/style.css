@@ -428,6 +428,19 @@ table td strong,
     border-right: none !important;
 }
 
+/* Collapsible resource cards on the main page */
+.resource-card-toggle {
+    width: 2rem;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.resource-card-minimized .card-body,
+.resource-card-minimized .card-footer,
+.resource-card-minimized .resource-card-add {
+    display: none;
+}
+
 /* Fix for Port header in containers table (in modals) */
 #containersTable thead th,
 #containersTable th {
