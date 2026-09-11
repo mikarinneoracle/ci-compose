@@ -334,7 +334,7 @@ grant connect, resource to testuser;</pre>
                                     <strong>Name:</strong> sqlcli<br>
                                     <strong>Image:</strong> container-registry.oracle.com/database/sqlcl:latest<br>
                                     <strong>Command:</strong><br>
-                                    bash, -c, sleep 45 && echo 'EXECUTE ORDS.ENABLE_SCHEMA; COMMIT;' | sql -s testuser/testpwd@127.0.0.1:1521/freepdb1
+                                    bash, -c, sleep 60 && echo 'EXECUTE ORDS.ENABLE_SCHEMA; COMMIT;' | sql -s testuser/testpwd@127.0.0.1:1521/freepdb1
                                 </div>
                                 <div class="warning-box mt-2">
                                     <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> The command must be entered as comma separated (bash, -c, and the full command) in the Command field, not as environment variables.
@@ -572,4 +572,3 @@ services:
     </script>
 </body>
 </html>
-

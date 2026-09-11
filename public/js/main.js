@@ -19,6 +19,7 @@ function escapeHtmlAttribute(jsonString) {
 }
 
 const ENABLE_CONTAINER_ROW_TOOLTIPS = false;
+let configModalTransitioning = false;
 
 // Helper function to throttle API calls - process in batches with delays
 async function throttleApiCalls(items, batchSize, delayMs, asyncFn) {
@@ -61,6 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.addEventListener('show.bs.modal', (event) => {
         const modal = event.target;
+        if (modal.id === 'configModal') {
+            configModalTransitioning = true;
+        }
         const openCount = document.querySelectorAll('.modal.show').length; // modals already open before this one
         
         // Defer to ensure backdrop is in DOM
@@ -81,6 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (latestBackdrop) latestBackdrop.classList.add('modal-backdrop-level-3');
             }
         }, 0);
+    });
+
+    document.addEventListener('hide.bs.modal', (event) => {
+        if (event.target.id === 'configModal') {
+            // Keep background refresh paused until Bootstrap has completed its
+            // fade-out and removed the modal's backdrop.
+            configModalTransitioning = true;
+        }
     });
     
     document.addEventListener('hidden.bs.modal', (event) => {
@@ -125,6 +137,18 @@ document.addEventListener('DOMContentLoaded', () => {
             // configuration refreshes until it has closed so background
             // polling cannot replace an open dropdown or form field.
             if (closedModal.id === 'configModal') {
+                configModalTransitioning = false;
+
+                // Bootstrap normally removes its own backdrop. If a previous
+                // transition was interrupted, clear only an orphaned backdrop
+                // after the Configuration modal has fully closed. Never touch
+                // a backdrop while another modal remains visible.
+                if (document.querySelectorAll('.modal.show').length === 0) {
+                    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                }
                 void pollSharedConfiguration();
             }
         }, 0);
@@ -318,8 +342,8 @@ function applySharedConfiguration(saved) {
     renderSavedConfigurationSelect();
 }
 
-function isConfigurationModalOpen() {
-    return document.getElementById('configModal')?.classList.contains('show');
+function isConfigurationModalActive() {
+    return configModalTransitioning || document.getElementById('configModal')?.classList.contains('show');
 }
 
 function showConfigurationConnectionLost() {
@@ -541,7 +565,7 @@ async function restoreConfigurationAfterServerRecovery() {
 }
 
 async function pollSharedConfiguration() {
-    if (isConfigurationModalOpen() || configurationPollInFlight || Date.now() < configurationRetryAfter) return;
+    if (isConfigurationModalActive() || configurationPollInFlight || Date.now() < configurationRetryAfter) return;
 
     configurationPollInFlight = true;
     try {
@@ -582,7 +606,7 @@ function startConfigurationPolling() {
     if (configurationPollInterval) clearInterval(configurationPollInterval);
 
     configurationPollInterval = setInterval(() => {
-        if (isConfigurationModalOpen()) return;
+        if (isConfigurationModalActive()) return;
         void pollSharedConfiguration();
     }, CONFIGURATION_POLL_INTERVAL_MS);
 }
@@ -622,7 +646,7 @@ function startMainPageAutoReload() {
     if (autoReloadTime > 0) {
         mainPageAutoReloadInterval = setInterval(async () => {
             const currentConfig = getConfiguration();
-            if (currentConfig.compartmentId && currentConfig.projectName) {
+            if (!isConfigurationModalActive() && currentConfig.compartmentId && currentConfig.projectName) {
                 await loadContainerInstances();
             }
         }, autoReloadTime * 1000);
@@ -1347,6 +1371,10 @@ function showMissingFileStorageDefinitionsWarning() {
 }
 
 async function showConfigModal() {
+    // Pause polling before asynchronous form preparation starts, not only
+    // after Bootstrap has displayed the modal.
+    configModalTransitioning = true;
+
     // Clear the form before reading from the shared store so stale values are
     // never visible while the latest saved configuration is being loaded.
     resetConfigurationForm();
