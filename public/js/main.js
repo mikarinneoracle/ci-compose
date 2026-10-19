@@ -1632,6 +1632,7 @@ async function generatePoliciesDynamicGroupAndPolicies(compartmentId, ruleElemen
         // Generate policies
         const policies = [
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage object-family in compartment ${compartmentName}`,
+            `Allow dynamic-group ${dynamicGroupNameForPolicies} to use log-content in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage secret-family in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage virtual-network-family in compartment ${compartmentName}`,
             `Allow dynamic-group ${dynamicGroupNameForPolicies} to manage instance-family in compartment ${compartmentName}`,

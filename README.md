@@ -211,7 +211,7 @@ Use **Policies Setup** in the navigation to configure OCI dynamic groups and pol
 **Dynamic Group & Policies Setup for Sidecars:** CI Compose can use an OCI Dynamic Group and policies to enable resource principal authentication for container instances. After selecting a compartment in the Policies Setup modal, the application will generate:
 
 - **Dynamic Group Rule:** A rule that matches all container instances in the selected compartment. The dynamic group is named "ci-compose" and uses your active domain from the root compartment.
-- **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for Object Storage, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, and Autonomous Database.
+- **Policies:** Required policies for the dynamic group to manage resources in the selected compartment. These include permissions for Object Storage, Logging, Vault/Secrets, Networking, Compute, Resource Manager, Container Instances, and Autonomous Database. Logging uses `use log-content` to allow sidecars to read log content and write entries to existing logs; it does not grant permission to create logs or log groups.
 
 Click the "Create/Update Dynamic Group" and "Create/Update Policies" buttons to apply these configurations. The dynamic group is created in the root compartment, while policies are created in the selected compartment. These policies are required when sidecars run as resource principal to access OCI services.
 
