@@ -2412,7 +2412,7 @@ async function displayContainerInstancesWithDetails(instances, loadId = null, co
             containers.forEach(container => {
                 const containerName = container.displayName || container.name || 'N/A';
                 // Look for port in freeformTags using container name as key
-                const port = freeformTags[containerName];
+                const port = ContainerPortTags.port(freeformTags, containerName);
                 if (port && /^\d+$/.test(port)) {
                     containersList.push({ name: containerName, port: port });
                 } else {
@@ -2428,9 +2428,9 @@ async function displayContainerInstancesWithDetails(instances, loadId = null, co
             // Skip 'volumes' tag, only process container name -> port mappings
             if (key !== 'volumes' && typeof value === 'string' && /^\d+$/.test(value)) {
                 // Only add if not already in list (avoid duplicates)
-                const exists = containersList.some(c => c.name === key);
+                const exists = containersList.some(c => c.name === key || ContainerPortTags.key(c.name) === key);
                 if (!exists) {
-                    containersList.push({ name: key, port: value });
+                    containersList.push({ name: ContainerPortTags.name(key), port: value });
                 }
             }
         });
@@ -2823,7 +2823,7 @@ function displayContainerInstanceDetails(instance) {
     Object.entries(freeformTags).forEach(([key, value]) => {
         if (key !== 'volumes' && typeof value === 'string' && /^\d+$/.test(value)) {
             // If value is a number (port), it's a container name -> port mapping
-            portMap[key] = value;
+            portMap[ContainerPortTags.name(key)] = value;
         }
     });
     
@@ -2872,7 +2872,7 @@ function displayContainerInstanceDetails(instance) {
         const memory = resourceConfig.memoryInGBs || resourceConfig.memoryLimitInGBs || 1;
         const vcpus = resourceConfig.vcpus || resourceConfig.vcpusLimit || 1;
         
-        const portNum = portMap[containerName] || null;
+        const portNum = ContainerPortTags.port(freeformTags, containerName) || null;
         return {
             index: idx,
             containerId: container.containerId || container.id, // Preserve containerId for logs
@@ -4359,7 +4359,7 @@ async function saveCIChanges(instanceId) {
             
             // Add to tags if port is available
             if (portValue) {
-                baseFreeformTags[container.displayName] = portValue;
+                baseFreeformTags[ContainerPortTags.key(container.displayName)] = portValue;
             }
         });
         
@@ -8844,8 +8844,8 @@ async function confirmCreateContainerInstance() {
         if (container.portIndex !== undefined && container.portIndex !== null && container.portIndex !== '' && portsData[container.portIndex]) {
             const port = portsData[container.portIndex];
             const containerName = container.displayName || `container-${idx}`;
-            // Use container name as tag key, port number as value
-            baseFreeformTags[containerName] = port.port.toString();
+            // Encode the name for OCI's tag-key restrictions; keep displayName unchanged.
+            baseFreeformTags[ContainerPortTags.key(containerName)] = port.port.toString();
         }
     });
     
@@ -9516,7 +9516,7 @@ async function importToCreateCI() {
                 if (key !== 'architecture' && key !== 'volumes' && !isNaN(parseInt(value))) {
                     parsedPorts.push({
                         port: parseInt(value),
-                        name: key
+                        name: ContainerPortTags.name(key)
                     });
                 }
             });
@@ -9557,8 +9557,8 @@ async function importToCreateCI() {
         containersData = (parsedComposeData.containers || []).map(container => {
             // Find port index for this container
             let portIndex = null;
-            if (container.freeformTags && container.freeformTags[container.displayName]) {
-                const portNum = parseInt(container.freeformTags[container.displayName]);
+            if (ContainerPortTags.port(container.freeformTags, container.displayName)) {
+                const portNum = parseInt(ContainerPortTags.port(container.freeformTags, container.displayName));
                 portIndex = portsData.findIndex(p => {
                     const pNum = typeof p.port === 'number' ? p.port : parseInt(p.port);
                     return pNum === portNum;

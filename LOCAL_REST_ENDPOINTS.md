@@ -67,6 +67,8 @@ The application listens on `http://localhost:3000` by default; set the `PORT` en
 
 Each `containers[]` item supports `displayName`, `imageUrl`, `resourceConfig` (`vcpus`/`vcpusLimit`, `memoryInGBs`/`memoryLimitInGBs`), `environmentVariables`, `arguments`, `command`, `volumeMounts`, and `freeformTags`. The create route normalizes resource limits to OCI's `vcpusLimit` and `memoryLimitInGBs` fields.
 
+Container port tags use `encodeURIComponent(displayName).replace(/\./g, '%2E')` as the key and the port number as a string value (for example, `"Super%20Jet": "8080"`). Display names remain unchanged. The create route also normalizes legacy port keys containing spaces, periods or non-ASCII characters on both the instance and its containers. Port readers support encoded keys and legacy display-name keys.
+
 ## Logging, networking, and FSS
 
 | Method | Route | Input | Purpose |

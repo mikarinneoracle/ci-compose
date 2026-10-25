@@ -1,4 +1,5 @@
 const yaml = require('js-yaml');
+const ContainerPortTags = require('../../public/js/container-port-tags');
 
 /**
  * Parse Docker Compose YAML string to object
@@ -508,7 +509,7 @@ function convertToOCIPayload(composeObject, ociConfig) {
     const containerPorts = parsePorts(ports);
     if (containerPorts.length > 0) {
       // Use first port for freeformTags (single port only for depends_on)
-      freeformTags[displayName] = containerPorts[0].toString();
+      freeformTags[ContainerPortTags.key(displayName)] = containerPorts[0].toString();
     }
 
     // Environment variables

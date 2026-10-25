@@ -23,6 +23,7 @@ const common = require('oci-common');
 const dockerComposeParser = require('./server/utils/docker-compose-parser');
 const yaml = require('js-yaml');
 const configStore = require('./server/config-store');
+const ContainerPortTags = require('./public/js/container-port-tags');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1443,7 +1444,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
       
       // Add freeformTags to container if provided (e.g., port information)
       if (container.freeformTags && typeof container.freeformTags === 'object' && Object.keys(container.freeformTags).length > 0) {
-        containerDetail.freeformTags = container.freeformTags;
+        containerDetail.freeformTags = ContainerPortTags.normalize(container.freeformTags, containers);
       }
 
       return containerDetail;
@@ -1569,7 +1570,7 @@ app.post('/api/oci/container-instances', async (req, res) => {
     
     // Add freeformTags to container instance if provided
     if (freeformTags && typeof freeformTags === 'object' && Object.keys(freeformTags).length > 0) {
-      containerInstanceDetails.freeformTags = freeformTags;
+      containerInstanceDetails.freeformTags = ContainerPortTags.normalize(freeformTags, containers);
     }
 
     // Add volumes if provided
@@ -2568,8 +2569,8 @@ app.post('/api/docker-compose/export', async (req, res) => {
       }
 
       // Ports (from freeformTags)
-      if (freeformTags[container.displayName]) {
-        const portNum = parseInt(freeformTags[container.displayName]);
+      if (ContainerPortTags.port(freeformTags, container.displayName)) {
+        const portNum = parseInt(ContainerPortTags.port(freeformTags, container.displayName));
         if (!isNaN(portNum)) {
           service.ports = [`${portNum}:${portNum}`];
         }

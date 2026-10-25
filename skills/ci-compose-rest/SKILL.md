@@ -68,7 +68,7 @@ For every new or replacement deployment, build `freeformTags` exactly as the CI 
 - `composeImport`: preserve this tag only when the source deployment was imported from Docker Compose.
 - `volumes`: when non-empty, a comma-separated list of `volumeName:mountPath` entries.
 - `fileSystems`: when non-empty, a comma-separated list of `fileSystemName:mountPath` entries.
-- One tag per exposed container port: key is the container `displayName`, value is its port number as a string.
+- One tag per exposed container port: key is `encodeURIComponent(displayName).replace(/\./g, '%2E')`, value is its port number as a string. Use the shared `public/js/container-port-tags.js` helper when possible. For example, `Super Jet` uses `Super%20Jet`. Keep the actual `displayName` unchanged; OCI tag keys cannot contain spaces or periods. Read encoded keys first, with the original display name as a fallback for legacy tags.
 
 Build a fresh tag set for a replacement so stale volume, FSS, or container-port tags are removed. Preserve only supported existing tags (`architecture` and, when applicable, `composeImport`).
 
